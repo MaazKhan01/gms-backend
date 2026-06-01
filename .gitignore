@@ -1,0 +1,40 @@
+## .NET / Visual Studio
+*.user
+*.suo
+.vs/
+[Bb]in/
+[Oo]bj/
+[Ll]ogs/
+*.log
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+bld/
+[Bb]uild/
+[Pp]ublish/
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+
+## Rider / JetBrains
+.idea/
+
+## VS Code
+.vscode/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Secrets / environment
+appsettings.json
+appsettings.Development.json
+appsettings.Production.json
+secrets.json
+*.pfx
+*.p12
+.env
+.env.*

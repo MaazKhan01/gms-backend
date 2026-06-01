@@ -1,0 +1,5 @@
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=DESKTOP-THNJKQJ\\SUPERNOVA;Initial Catalog=ProjectTokyoDB;Persist Security Info=True;User ID=sa;Password=Inter123net!;TrustServerCertificate=True"
+  }
+}

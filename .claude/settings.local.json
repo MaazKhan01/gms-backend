@@ -1,0 +1,16 @@
+﻿{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"D:\\\\Office\\\\Eventful\\\\PortalBackend\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Office\\\\Eventful\\\\PortalBackend\" -Recurse -File -Filter \"*.cs\")",
+      "Bash(git update-index *)",
+      "Bash(chmod +x .git/hooks/pre-push)",
+      "Bash(icacls *)",
+      "PowerShell(icacls *)",
+      "Bash(git push *)",
+      "Bash(Test-Path *)",
+      "PowerShell(dotnet build *)"
+    ]
+  }
+}
