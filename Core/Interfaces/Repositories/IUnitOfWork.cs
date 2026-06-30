@@ -17,6 +17,13 @@ public interface IUnitOfWork : IDisposable
     // Auth tokens
     IGenericRepository<UserRefreshToken> UserRefreshTokens { get; }
 
+    // GMS — Events
+    IGenericRepository<Event> Events { get; }
+    IGenericRepository<Session> Sessions { get; }
+
+    // GMS — Account requests
+    IGenericRepository<AccountRequest> AccountRequests { get; }
+
     // Notifications
     IGenericRepository<Notification> Notifications { get; }
 

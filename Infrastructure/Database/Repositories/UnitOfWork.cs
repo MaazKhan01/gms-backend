@@ -23,6 +23,10 @@ public class UnitOfWork : IUnitOfWork
         OtpVerifications = new GenericRepository<OtpVerification>(_context);
         UserRefreshTokens = new GenericRepository<UserRefreshToken>(_context);
 
+        Events = new GenericRepository<Event>(_context);
+        Sessions = new GenericRepository<Session>(_context);
+        AccountRequests = new GenericRepository<AccountRequest>(_context);
+
         Notifications = new GenericRepository<Notification>(_context);
 
         UserLoginLogs = new GenericRepository<UserLoginLog>(_context);
@@ -35,6 +39,9 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<RolePermission> RolePermissions { get; private set; }
     public IGenericRepository<OtpVerification> OtpVerifications { get; private set; }
     public IGenericRepository<UserRefreshToken> UserRefreshTokens { get; private set; }
+    public IGenericRepository<Event> Events { get; private set; }
+    public IGenericRepository<Session> Sessions { get; private set; }
+    public IGenericRepository<AccountRequest> AccountRequests { get; private set; }
     public IGenericRepository<Notification> Notifications { get; private set; }
     public IGenericRepository<UserLoginLog> UserLoginLogs { get; private set; }
     public IGenericRepository<SystemErrorLog> SystemErrorLogs { get; private set; }

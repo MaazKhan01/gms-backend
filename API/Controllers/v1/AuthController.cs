@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Core.Common.Interfaces;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
+using Core.ViewModel.AccountRequest;
 using Core.ViewModel.Auth;
 using Core.ViewModel.Common;
 using DomainPersistence.Entities;
@@ -49,6 +50,28 @@ public class AuthController : Controllers.BaseApiController
             await _unitOfWork.SaveChangesAsync(ct);
         }
 
+        return ToResponse(result);
+    }
+
+    [HttpGet("roles")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RequestableRoles(
+        [FromServices] IAccountRequestService accountRequests,
+        CancellationToken ct)
+    {
+        var result = await accountRequests.GetRequestableRolesAsync(ct);
+        return ToResponse(result);
+    }
+
+    [HttpPost("register")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> Register(
+        [FromBody] RegisterAccountRequest request,
+        [FromServices] IAccountRequestService accountRequests,
+        CancellationToken ct)
+    {
+        var result = await accountRequests.SubmitAsync(request, ct);
         return ToResponse(result);
     }
 

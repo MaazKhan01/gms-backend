@@ -1,4 +1,5 @@
 ﻿using API.Configurations;
+using Scalar.AspNetCore;
 using Serilog;
 using Core.Helpers;
 using Core.Middlewares;
@@ -19,7 +20,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddApplicationServices(builder.Configuration);
-builder.Services.AddSwaggerDocumentation();
+builder.Services.AddOpenApiDocumentation();
 
 builder.Services.AddApiVersioning(options =>
 {
@@ -42,6 +43,15 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Apply migrations + seed roles/permissions/admin on startup (idempotent).
+using (var scope = app.Services.CreateScope())
+{
+    var sp = scope.ServiceProvider;
+    var db = sp.GetRequiredService<DomainPersistence.Entities.ApplicationDBContext>();
+    var seedLogger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("DataSeeder");
+    await Infrastructure.Data.DataSeeder.SeedAsync(db, app.Configuration, seedLogger);
+}
+
 app.UseRouting();
 app.UseCors("AllowAll");
 
@@ -50,12 +60,14 @@ app.UseRateLimiter();
 
 app.MapHub<RealTimeHubService>("/realtimehub");
 
-app.UseSwagger();
-app.UseSwaggerUI(options =>
+// OpenAPI document + Scalar API reference UI (replaces Swagger).
+app.MapOpenApi("/openapi/{documentName}.json");
+app.MapScalarApiReference("/scalar", options =>
 {
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "API v1");
-    options.ConfigObject.AdditionalItems.Add("persistAuthorization", "true");
-    options.ConfigObject.AdditionalItems["defaultModelsExpandDepth"] = -1;
+    options
+        .WithTitle("GMS API")
+        .WithOpenApiRoutePattern("/openapi/{documentName}.json")
+        .AddPreferredSecuritySchemes("Bearer");
 });
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();

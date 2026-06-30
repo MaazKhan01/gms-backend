@@ -15,6 +15,10 @@ namespace Infrastructure.Auth
         {
             var jwtSection = config.GetSection("Authentication:Jwt");
             var secret = jwtSection["JwtSecretKey"];
+            if (string.IsNullOrWhiteSpace(secret))
+                throw new InvalidOperationException(
+                    "Authentication:Jwt:JwtSecretKey is not configured. Copy API/appsettings.example.json " +
+                    "to API/appsettings.json and set a secret of at least 32 characters.");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
 
             services.AddAuthentication(options =>

@@ -14,18 +14,9 @@ using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;
 
-public class UserService : IUserService
+public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserService> _logger) : IUserService
 {
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly IMapper _mapper;
-    private readonly ILogger<UserService> _logger;
-
-    public UserService(IUnitOfWork unitOfWork, IMapper mapper, ILogger<UserService> logger)
-    {
-        _unitOfWork = unitOfWork;
-        _mapper = mapper;
-        _logger = logger;
-    }
+  
 
     public async Task<ApiResponse<UserResponse>> CreateUserAsync(CreateUserRequest request, CancellationToken ct = default)
     {

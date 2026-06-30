@@ -1,4 +1,6 @@
 ﻿using AutoMapper;
+using Core.ViewModel.AccountRequest;
+using Core.ViewModel.Event;
 using Core.ViewModel.Noification;
 using Core.ViewModel.Permission;
 using Core.ViewModel.Role;
@@ -48,5 +50,19 @@ public class MappingProfile : Profile
 
         // Notification mappings
         CreateMap<Notification, NotificationResponse>();
+
+        // Event mappings
+        CreateMap<Event, EventResponse>();
+        CreateMap<Session, SessionResponse>();
+        CreateMap<CreateEventRequest, Event>()
+            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => Guid.NewGuid()))
+            .ForMember(dest => dest.AppKey, opt => opt.Ignore())
+            .ForMember(dest => dest.Sessions, opt => opt.Ignore());
+        CreateMap<CreateSessionRequest, Session>()
+            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => Guid.NewGuid()))
+            .ForMember(dest => dest.Event, opt => opt.Ignore());
+
+        // Account request mappings
+        CreateMap<AccountRequest, AccountRequestResponse>();
     }
 }

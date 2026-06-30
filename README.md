@@ -19,7 +19,7 @@ A production-ready ASP.NET Core 9 boilerplate with Clean Architecture, JWT authe
 | Logging | Serilog (file rolling + console) |
 | Validation | FluentValidation |
 | Mapping | AutoMapper |
-| API Docs | Swagger / OpenAPI |
+| API Docs | OpenAPI (.NET native) + Scalar |
 | Rate Limiting | ASP.NET built-in sliding window |
 
 ---
@@ -91,7 +91,7 @@ dotnet ef database update
 dotnet run --project API
 ```
 
-Swagger UI: `https://localhost:{port}/swagger`
+Scalar API reference: `https://localhost:{port}/scalar` — OpenAPI document at `/openapi/v1.json`
 
 ---
 

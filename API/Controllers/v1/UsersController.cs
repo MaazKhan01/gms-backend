@@ -15,16 +15,8 @@ namespace API.Controllers.v1;
 [Route("api/v1/[controller]")]
 [Authorize]
 [ApiVersion("1.0")]
-public class UsersController : Controllers.BaseApiController
+public class UsersController(IUserService _userService, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
-    private readonly IUserService _userService;
-    private readonly ICurrentUser _currentUser;
-
-    public UsersController(IUserService userService, ICurrentUser currentUser)
-    {
-        _userService = userService;
-        _currentUser = currentUser;
-    }
 
     [HttpPost]
     [HasPermission(PermissionCodes.UsersCreate)]

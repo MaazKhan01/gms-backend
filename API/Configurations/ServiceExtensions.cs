@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using API.Configurations.OpenApi;
 using Core.Authorization;
 using Core.Common.Interfaces;
 using Core.Interfaces;
@@ -60,6 +60,8 @@ public static class ServiceExtensions
 
         // Domain services
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IEventService, EventService>();
+        services.AddScoped<IAccountRequestService, AccountRequestService>();
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IBlobService, BlobService>();
@@ -95,31 +97,12 @@ public static class ServiceExtensions
         return services;
     }
 
-    public static IServiceCollection AddSwaggerDocumentation(this IServiceCollection services)
+    public static IServiceCollection AddOpenApiDocumentation(this IServiceCollection services)
     {
-        services.AddSwaggerGen(c =>
+        // Native .NET 9 OpenAPI document generation (served to Scalar, not Swagger UI).
+        services.AddOpenApi("v1", options =>
         {
-            c.SwaggerDoc("v1", new OpenApiInfo { Title = "API", Version = "v1" });
-
-            c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-            {
-                Description = "JWT Authorization header. Enter: Bearer {token}",
-                Name = "Authorization",
-                In = ParameterLocation.Header,
-                Type = SecuritySchemeType.ApiKey,
-                Scheme = "Bearer"
-            });
-
-            c.AddSecurityRequirement(new OpenApiSecurityRequirement
-            {
-                {
-                    new OpenApiSecurityScheme
-                    {
-                        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-                    },
-                    Array.Empty<string>()
-                }
-            });
+            options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
         });
 
         return services;

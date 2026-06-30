@@ -366,16 +366,30 @@ public class AuthService(
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["JwtSecretKey"]));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+        var fullName = $"{user.FirstName} {user.LastName}".Trim();
         var claims = new List<Claim>
         {
+            // Standard claims (used by server-side auth handlers)
             new("sub", user.Id.ToString()),
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Email, user.Email ?? string.Empty),
-            new(ClaimTypes.Name, $"{user.FirstName} {user.LastName}".Trim()),
-            new("role", user.Role?.Name ?? string.Empty)
+            new(ClaimTypes.Name, fullName),
+            new("role", user.Role?.Name ?? string.Empty),
+
+            // Short-named claims so the frontend can decode everything it needs
+            // straight from the access token (no separate /me call or localStorage).
+            new("uid", user.Id.ToString()),
+            new("email", user.Email ?? string.Empty),
+            new("userName", user.UserName ?? string.Empty),
+            new("firstName", user.FirstName ?? string.Empty),
+            new("lastName", user.LastName ?? string.Empty),
+            new("fullName", fullName),
+            new("roleCode", user.Role?.Code ?? string.Empty),
+            new("roleId", user.RoleId?.ToString() ?? string.Empty),
         };
 
         // Fix 1: Add individual permission claims so [HasPermission] works
+        // (the frontend reads these as the "permission" array to gate UI).
         if (user.Role?.RolePermissions != null)
             foreach (var rp in user.Role.RolePermissions.Where(rp => rp.Permission != null))
                 claims.Add(new Claim("permission", rp.Permission.Code));
