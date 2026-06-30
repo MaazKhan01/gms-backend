@@ -26,6 +26,7 @@ public class UnitOfWork : IUnitOfWork
         Events = new GenericRepository<Event>(_context);
         Sessions = new GenericRepository<Session>(_context);
         AccountRequests = new GenericRepository<AccountRequest>(_context);
+        UserModuleGrants = new GenericRepository<UserModuleGrant>(_context);
 
         Notifications = new GenericRepository<Notification>(_context);
 
@@ -42,6 +43,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Event> Events { get; private set; }
     public IGenericRepository<Session> Sessions { get; private set; }
     public IGenericRepository<AccountRequest> AccountRequests { get; private set; }
+    public IGenericRepository<UserModuleGrant> UserModuleGrants { get; private set; }
     public IGenericRepository<Notification> Notifications { get; private set; }
     public IGenericRepository<UserLoginLog> UserLoginLogs { get; private set; }
     public IGenericRepository<SystemErrorLog> SystemErrorLogs { get; private set; }

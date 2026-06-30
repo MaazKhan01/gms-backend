@@ -12,6 +12,7 @@ public partial class ApplicationDBContext
     public virtual DbSet<Event> Events { get; set; }
     public virtual DbSet<Session> Sessions { get; set; }
     public virtual DbSet<AccountRequest> AccountRequests { get; set; }
+    public virtual DbSet<UserModuleGrant> UserModuleGrants { get; set; }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
@@ -75,6 +76,20 @@ public partial class ApplicationDBContext
                 .HasForeignKey(x => x.EventId)
                 .OnDelete(DeleteBehavior.Cascade);
             s.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<UserModuleGrant>(g =>
+        {
+            g.ToTable("UserModuleGrants");
+            g.HasKey(x => x.Id);
+            g.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            g.Property(x => x.Module).IsRequired().HasMaxLength(50);
+            g.Property(x => x.GrantedAt).HasDefaultValueSql("(sysutcdatetime())");
+            g.HasIndex(x => new { x.UserId, x.Module }).IsUnique();
+            g.HasOne(x => x.User)
+                .WithMany(x => x.ModuleGrants)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

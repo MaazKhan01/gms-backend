@@ -24,6 +24,9 @@ public interface IUnitOfWork : IDisposable
     // GMS — Account requests
     IGenericRepository<AccountRequest> AccountRequests { get; }
 
+    // GMS — Per-user module access
+    IGenericRepository<UserModuleGrant> UserModuleGrants { get; }
+
     // Notifications
     IGenericRepository<Notification> Notifications { get; }
 

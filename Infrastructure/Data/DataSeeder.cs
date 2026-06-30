@@ -116,21 +116,43 @@ public static class DataSeeder
         return map;
     }
 
-    // Seed the built-in GMS roles. Create-if-missing only: an existing role's
-    // permissions are left untouched so admin edits are preserved.
+    // Sync built-in GMS roles: create missing roles AND replace permissions for
+    // existing ones so RoleDefinitions.cs is always the source of truth.
+    // The admin role is managed separately (GrantAllPermissionsAsync) and is skipped here.
     private static async Task SeedDefinedRolesAsync(ApplicationDBContext db, CancellationToken ct)
     {
-        var existingCodes = new HashSet<string>(await db.Roles.Select(r => r.Code).ToListAsync(ct));
         var permMap = PermissionMap(db);
 
-        foreach (var def in RoleDefinitions.All.Where(d => !existingCodes.Contains(d.Code)))
+        foreach (var def in RoleDefinitions.All)
         {
-            var role = new Role { Id = Guid.NewGuid(), Code = def.Code, Name = def.Name, Description = def.Description };
-            db.Roles.Add(role);
+            var role = await db.Roles.FirstOrDefaultAsync(r => r.Code == def.Code, ct);
+            if (role == null)
+            {
+                role = new Role { Id = Guid.NewGuid(), Code = def.Code, Name = def.Name, Description = def.Description };
+                db.Roles.Add(role);
+            }
+            else
+            {
+                // Sync name/description in case it changed.
+                role.Name = def.Name;
+                role.Description = def.Description;
+            }
 
-            foreach (var code in def.Permissions.Distinct())
-                if (permMap.TryGetValue(code, out var pid))
-                    db.RolePermissions.Add(new RolePermission { Id = Guid.NewGuid(), RoleId = role.Id, PermissionId = pid });
+            // Diff: only remove stale links and add missing ones — never re-insert existing rows.
+            var existing = await db.RolePermissions.Where(rp => rp.RoleId == role.Id).ToListAsync(ct);
+            var currentPermIds = existing.Select(rp => rp.PermissionId).ToHashSet();
+
+            var desiredPermIds = def.Permissions.Distinct()
+                .Where(code => permMap.ContainsKey(code))
+                .Select(code => permMap[code])
+                .ToHashSet();
+
+            // Remove permissions no longer in the definition.
+            db.RolePermissions.RemoveRange(existing.Where(rp => !desiredPermIds.Contains(rp.PermissionId)));
+
+            // Add only permissions not already linked.
+            foreach (var pid in desiredPermIds.Where(id => !currentPermIds.Contains(id)))
+                db.RolePermissions.Add(new RolePermission { Id = Guid.NewGuid(), RoleId = role.Id, PermissionId = pid });
         }
     }
 

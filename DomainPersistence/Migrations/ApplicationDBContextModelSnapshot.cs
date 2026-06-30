@@ -139,8 +139,7 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("date");
 
                     b.Property<string>("ImageUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool?>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -148,12 +147,10 @@ namespace DomainPersistence.Migrations
                         .HasDefaultValueSql("((0))");
 
                     b.Property<string>("LogoDarkUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("LogoLightUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateOnly?>("StartDate")
                         .HasColumnType("date");
@@ -683,6 +680,40 @@ namespace DomainPersistence.Migrations
                     b.ToTable("UserLoginLogs");
                 });
 
+            modelBuilder.Entity("DomainPersistence.Entities.UserModuleGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime>("GrantedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<Guid>("GrantedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsGranted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Module")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Module")
+                        .IsUnique();
+
+                    b.ToTable("UserModuleGrants", (string)null);
+                });
+
             modelBuilder.Entity("DomainPersistence.Entities.UserRefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -793,6 +824,17 @@ namespace DomainPersistence.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("DomainPersistence.Entities.UserModuleGrant", b =>
+                {
+                    b.HasOne("DomainPersistence.Entities.User", "User")
+                        .WithMany("ModuleGrants")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("DomainPersistence.Entities.UserRefreshToken", b =>
                 {
                     b.HasOne("DomainPersistence.Entities.User", "User")
@@ -823,6 +865,8 @@ namespace DomainPersistence.Migrations
 
             modelBuilder.Entity("DomainPersistence.Entities.User", b =>
                 {
+                    b.Navigation("ModuleGrants");
+
                     b.Navigation("Notifications");
 
                     b.Navigation("SystemErrorLogs");

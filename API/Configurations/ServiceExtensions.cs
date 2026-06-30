@@ -62,6 +62,7 @@ public static class ServiceExtensions
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IAccountRequestService, AccountRequestService>();
+        services.AddScoped<IUserAccessService, UserAccessService>();
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IBlobService, BlobService>();

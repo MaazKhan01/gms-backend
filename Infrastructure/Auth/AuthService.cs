@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using Core.Constants;
 using Core.Interfaces;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -36,6 +37,7 @@ public class AuthService(
             .Include(u => u.Role)
                 .ThenInclude(r => r.RolePermissions)
                     .ThenInclude(rp => rp.Permission)
+            .Include(u => u.ModuleGrants)
             .FirstOrDefaultAsync(u => u.Email == model.Email && u.IsDeleted != true, ct);
 
         if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(model.Password, user.PasswordHash))
@@ -85,6 +87,7 @@ public class AuthService(
                 .Include(u => u.Role)
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
+                .Include(u => u.ModuleGrants)
                 .FirstOrDefaultAsync(u => u.Email == email && u.IsDeleted != true, ct);
 
             if (user == null || !user.IsActive)
@@ -275,6 +278,7 @@ public class AuthService(
                 .Include(u => u.Role)
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
+                .Include(u => u.ModuleGrants)
                 .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsDeleted != true, ct);
 
             if (user == null)
@@ -388,11 +392,19 @@ public class AuthService(
             new("roleId", user.RoleId?.ToString() ?? string.Empty),
         };
 
-        // Fix 1: Add individual permission claims so [HasPermission] works
-        // (the frontend reads these as the "permission" array to gate UI).
+        // Role-based permissions — gate both server [HasPermission] and frontend nav.
+        var addedPerms = new HashSet<string>();
         if (user.Role?.RolePermissions != null)
             foreach (var rp in user.Role.RolePermissions.Where(rp => rp.Permission != null))
-                claims.Add(new Claim("permission", rp.Permission.Code));
+                if (addedPerms.Add(rp.Permission.Code))
+                    claims.Add(new Claim("permission", rp.Permission.Code));
+
+        // Admin-granted extra module read access (cross-module view only).
+        if (user.ModuleGrants != null)
+            foreach (var grant in user.ModuleGrants.Where(g => g.IsGranted))
+                if (ModuleDefinitions.ViewPermissionBySlug.TryGetValue(grant.Module, out var perm)
+                    && addedPerms.Add(perm))
+                    claims.Add(new Claim("permission", perm));
 
         var token = new JwtSecurityToken(
             issuer: jwtSection["Issuer"],

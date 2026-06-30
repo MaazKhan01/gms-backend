@@ -23,50 +23,49 @@ public static class RoleDefinitions
 
     public static readonly RoleDef[] All =
     {
-        new("event-manager", "Event Manager", "Manage events, sessions, dashboards and reports", new[]
+        // Each role owns ONLY its core module + Dashboard.
+        // Cross-module visibility is granted per-user by admin via User Access.
+
+        new("event-manager", "Event Manager", "Manage events and sessions", new[]
         {
             PermissionCodes.EventsView, PermissionCodes.EventsCreate, PermissionCodes.EventsUpdate,
             PermissionCodes.EventsDelete, PermissionCodes.EventsManageStatus, PermissionCodes.EventsManageSessions,
-            PermissionCodes.DashboardView, PermissionCodes.ReportsView, PermissionCodes.ReportsGenerate,
-            PermissionCodes.GuestsView, PermissionCodes.InvitationsView,
+            PermissionCodes.DashboardView,
         }),
         new("invitations-manager", "Invitations Manager", "Design templates and send invitations", new[]
         {
-            PermissionCodes.InvitationsView, PermissionCodes.InvitationsManageTemplates, PermissionCodes.InvitationsSend,
-            PermissionCodes.GuestsView, PermissionCodes.DashboardView,
+            PermissionCodes.InvitationsView, PermissionCodes.InvitationsManageTemplates,
+            PermissionCodes.InvitationsSend, PermissionCodes.DashboardView,
         }),
         new("guest-relations-manager", "Guest Relations Manager", "Manage guests and registration", new[]
         {
             PermissionCodes.GuestsView, PermissionCodes.GuestsCreate, PermissionCodes.GuestsUpdate,
             PermissionCodes.GuestsDelete, PermissionCodes.GuestsImport, PermissionCodes.GuestsExport,
-            PermissionCodes.InvitationsView, PermissionCodes.TravelView, PermissionCodes.AccreditationView,
             PermissionCodes.DashboardView,
         }),
         new("travel-manager", "Travel & Logistics Manager", "Manage flights, hotels, transfers and visas", new[]
         {
             PermissionCodes.TravelView, PermissionCodes.TravelManage, PermissionCodes.TravelSyncHayya,
-            PermissionCodes.GuestsView, PermissionCodes.DashboardView,
+            PermissionCodes.DashboardView,
         }),
         new("accreditation-manager", "Accreditation Manager", "Issue and revoke accreditation badges", new[]
         {
-            PermissionCodes.AccreditationView, PermissionCodes.AccreditationIssue, PermissionCodes.AccreditationRevoke,
-            PermissionCodes.GuestsView, PermissionCodes.SeatingView, PermissionCodes.DashboardView,
+            PermissionCodes.AccreditationView, PermissionCodes.AccreditationIssue,
+            PermissionCodes.AccreditationRevoke, PermissionCodes.DashboardView,
         }),
         new("seating-manager", "Seating Manager", "Assign guests to seats on the floor plan", new[]
         {
-            PermissionCodes.SeatingView, PermissionCodes.SeatingAssign, PermissionCodes.VenueView,
-            PermissionCodes.GuestsView, PermissionCodes.DashboardView,
+            PermissionCodes.SeatingView, PermissionCodes.SeatingAssign, PermissionCodes.DashboardView,
         }),
         new("venue-manager", "Venue Manager", "Configure venues and floor plans", new[]
         {
-            PermissionCodes.VenueView, PermissionCodes.VenueManage, PermissionCodes.SeatingView,
-            PermissionCodes.DashboardView,
+            PermissionCodes.VenueView, PermissionCodes.VenueManage, PermissionCodes.DashboardView,
         }),
         new("protocol-manager", "Protocol Manager", "Manage protocol notes, checklists and meetings", new[]
         {
+            // Protocol and Meetings are tightly coupled — kept together.
             PermissionCodes.ProtocolView, PermissionCodes.ProtocolManage, PermissionCodes.ProtocolChecklist,
-            PermissionCodes.MeetingsView, PermissionCodes.MeetingsManage,
-            PermissionCodes.GuestsView, PermissionCodes.SeatingView, PermissionCodes.DashboardView,
+            PermissionCodes.MeetingsView, PermissionCodes.MeetingsManage, PermissionCodes.DashboardView,
         }),
         new("finance-manager", "Finance Manager", "Manage budgets, transactions and reports", new[]
         {

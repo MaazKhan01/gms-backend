@@ -1,5 +1,7 @@
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -9,8 +11,14 @@ using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;
 
-public class AccountRequestService(IUnitOfWork _unitOfWork, IMapper _mapper) : IAccountRequestService
+public class AccountRequestService(
+    IUnitOfWork _unitOfWork,
+    IMapper _mapper,
+    IEmailService _emailService,
+    IConfiguration _configuration,
+    ILogger<AccountRequestService> _logger) : IAccountRequestService
 {
+    private string LoginUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
     public async Task<ApiResponse<List<RequestableRoleResponse>>> GetRequestableRolesAsync(CancellationToken ct = default)
     {
         var roles = await _unitOfWork.Roles.QueryNoTracking()
@@ -136,6 +144,13 @@ public class AccountRequestService(IUnitOfWork _unitOfWork, IMapper _mapper) : I
 
         await _unitOfWork.SaveChangesAsync(ct);
 
+        // Fire-and-forget: email failure must not roll back the approval.
+        _ = Task.Run(async () =>
+        {
+            try { await _emailService.SendAccountApprovedAsync(req.Email, req.FirstName, LoginUrl); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not send approval email to {Email}", req.Email); }
+        });
+
         return ApiResponse<AccountRequestResponse>.SuccessResponse(
             _mapper.Map<AccountRequestResponse>(req), "Account approved");
     }
@@ -156,6 +171,12 @@ public class AccountRequestService(IUnitOfWork _unitOfWork, IMapper _mapper) : I
         _unitOfWork.AccountRequests.Update(req);
 
         await _unitOfWork.SaveChangesAsync(ct);
+
+        _ = Task.Run(async () =>
+        {
+            try { await _emailService.SendAccountRejectedAsync(req.Email, req.FirstName, req.ReviewNote); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not send rejection email to {Email}", req.Email); }
+        });
 
         return ApiResponse<AccountRequestResponse>.SuccessResponse(
             _mapper.Map<AccountRequestResponse>(req), "Request rejected");

@@ -20,6 +20,9 @@ public static class PermissionCodes
     public const string AccountRequestsView = "AccountRequests.View";
     public const string AccountRequestsManage = "AccountRequests.Manage";
 
+    // Per-user module access grants (admin only)
+    public const string UserAccessManage = "UserAccess.Manage";
+
     // ── GMS modules ─────────────────────────────────────────────────────
     // Each module exposes a `.View` (read-only, no action buttons) plus its
     // action permissions. Policies register automatically via reflection in
