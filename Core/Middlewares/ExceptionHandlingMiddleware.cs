@@ -13,18 +13,8 @@ using DomainPersistence.Entities;
 
 namespace Core.Middlewares;
 
-public class ExceptionHandlingMiddleware
+public class ExceptionHandlingMiddleware(RequestDelegate _next, ILogger<ExceptionHandlingMiddleware> _logger, IWebHostEnvironment _env)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
-    private readonly IWebHostEnvironment _env;
-
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger, IWebHostEnvironment env)
-    {
-        _next = next;
-        _logger = logger;
-        _env = env;
-    }
 
     public async Task InvokeAsync(HttpContext context, IUnitOfWork unitOfWork)
     {
@@ -36,32 +26,36 @@ public class ExceptionHandlingMiddleware
         {
             _logger.LogError(ex, "Unhandled exception on {Method} {Path}", context.Request.Method, context.Request.Path);
 
-            // Log to database — swallow secondary errors so the primary error is still returned
-            try
+            // Log to database — use a fresh context via a background task so a broken
+            // EF context state from the original exception can't prevent the error response.
+            _ = Task.Run(async () =>
             {
-                var userIdStr = context.User?.FindFirst("sub")?.Value
-                    ?? context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                Guid? userId = Guid.TryParse(userIdStr, out var uid) ? uid : null;
-
-                await unitOfWork.SystemErrorLogs.AddAsync(new SystemErrorLog
+                try
                 {
-                    Id = Guid.NewGuid(),
-                    ErrorMessage = ex.Message,
-                    StackTrace = ex.StackTrace,
-                    Source = ex.Source,
-                    RequestPath = context.Request.Path,
-                    RequestMethod = context.Request.Method,
-                    UserId = userId,
-                    IpAddress = context.Connection.RemoteIpAddress?.ToString(),
-                    RequestId = context.TraceIdentifier,
-                    OccurredAt = DateTime.UtcNow
-                });
-                await unitOfWork.SaveChangesAsync();
-            }
-            catch (Exception logEx)
-            {
-                _logger.LogError(logEx, "Failed to persist error log to database");
-            }
+                    var userIdStr = context.User?.FindFirst("sub")?.Value
+                        ?? context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    Guid? userId = Guid.TryParse(userIdStr, out var uid) ? uid : null;
+
+                    await unitOfWork.SystemErrorLogs.AddAsync(new SystemErrorLog
+                    {
+                        Id = Guid.NewGuid(),
+                        ErrorMessage = ex.Message,
+                        StackTrace = ex.StackTrace,
+                        Source = ex.Source,
+                        RequestPath = context.Request.Path,
+                        RequestMethod = context.Request.Method,
+                        UserId = userId,
+                        IpAddress = context.Connection.RemoteIpAddress?.ToString(),
+                        RequestId = context.TraceIdentifier,
+                        OccurredAt = DateTime.UtcNow
+                    });
+                    await unitOfWork.SaveChangesAsync();
+                }
+                catch (Exception logEx)
+                {
+                    _logger.LogError(logEx, "Failed to persist error log to database");
+                }
+            });
 
             await WriteErrorResponseAsync(context, ex);
         }
@@ -69,10 +63,18 @@ public class ExceptionHandlingMiddleware
 
     private Task WriteErrorResponseAsync(HttpContext context, Exception exception)
     {
+        // If the response has already started streaming we can't touch headers or status.
+        // Log and bail — the partial response is already on the wire.
+        if (context.Response.HasStarted)
+        {
+            _logger.LogWarning("Exception caught after response started; cannot rewrite response. {Message}", exception.Message);
+            return Task.CompletedTask;
+        }
+
+        context.Response.Clear();
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
-        // Fix 7: Never expose raw exception details outside Development
         var errors = _env.IsDevelopment()
             ? new List<string> { exception.Message }
             : new List<string> { "An unexpected error occurred. Please try again later." };
