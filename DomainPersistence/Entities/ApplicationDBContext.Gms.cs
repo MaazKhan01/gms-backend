@@ -13,6 +13,10 @@ public partial class ApplicationDBContext
     public virtual DbSet<Session> Sessions { get; set; }
     public virtual DbSet<AccountRequest> AccountRequests { get; set; }
     public virtual DbSet<UserModuleGrant> UserModuleGrants { get; set; }
+    public virtual DbSet<Guest> Guests { get; set; }
+    public virtual DbSet<GuestSession> GuestSessions { get; set; }
+    public virtual DbSet<Nationality> Nationalities { get; set; }
+    public virtual DbSet<InvitationTemplate> InvitationTemplates { get; set; }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
@@ -36,6 +40,86 @@ public partial class ApplicationDBContext
             a.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
+        modelBuilder.Entity<Nationality>(n =>
+        {
+            n.ToTable("Nationalities");
+            n.HasKey(x => x.Id);
+            n.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            n.Property(x => x.Name).IsRequired().HasMaxLength(100);
+            n.Property(x => x.NameAr).HasMaxLength(100);
+            n.Property(x => x.Code).IsRequired().HasMaxLength(3);
+            n.Property(x => x.Flag).HasMaxLength(10);
+            n.HasIndex(x => x.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<InvitationTemplate>(t =>
+        {
+            t.ToTable("InvitationTemplates");
+            t.HasKey(x => x.Id);
+            t.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            t.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            t.Property(x => x.NameAr).HasMaxLength(200);
+            t.Property(x => x.Language).IsRequired().HasMaxLength(10);
+            t.Property(x => x.Subject).IsRequired().HasMaxLength(500);
+            t.Property(x => x.SubjectAr).HasMaxLength(500);
+            t.Property(x => x.Body).HasColumnType("nvarchar(max)");
+            t.Property(x => x.BodyAr).HasColumnType("nvarchar(max)");
+            t.Property(x => x.TargetTiers).HasMaxLength(200);
+            t.Property(x => x.Color).HasMaxLength(20);
+            t.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            t.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            t.HasOne(x => x.Event)
+                .WithMany()
+                .HasForeignKey(x => x.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+            t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<Guest>(g =>
+        {
+            g.ToTable("Guests");
+            g.HasKey(x => x.Id);
+            g.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            g.Property(x => x.FirstName).IsRequired().HasMaxLength(150);
+            g.Property(x => x.LastName).IsRequired().HasMaxLength(150);
+            g.Property(x => x.Email).HasMaxLength(255);
+            g.Property(x => x.GuestType).HasMaxLength(50);
+            g.Property(x => x.Organization).HasMaxLength(300);
+            g.Property(x => x.Tier).HasMaxLength(50);
+            g.Property(x => x.InvitationStatus).HasMaxLength(30);
+            g.Property(x => x.FlightNumber).HasMaxLength(20);
+            g.Property(x => x.Hotel).HasMaxLength(300);
+            g.Property(x => x.AccreditationStatus).HasMaxLength(30);
+            g.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            g.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            g.HasOne<Event>()
+                .WithMany()
+                .HasForeignKey(x => x.EventId)
+                .OnDelete(DeleteBehavior.Restrict);
+            g.HasOne(x => x.Nationality)
+                .WithMany(x => x.Guests)
+                .HasForeignKey(x => x.NationalityId)
+                .OnDelete(DeleteBehavior.SetNull);
+            g.HasOne(x => x.InvitationTemplate)
+                .WithMany()
+                .HasForeignKey(x => x.InvitationTemplateId)
+                .OnDelete(DeleteBehavior.SetNull);
+            g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<GuestSession>(gs =>
+        {
+            gs.ToTable("GuestSessions");
+            gs.HasKey(x => new { x.GuestId, x.SessionId });
+            gs.HasOne(x => x.Guest)
+                .WithMany(x => x.GuestSessions)
+                .HasForeignKey(x => x.GuestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            gs.HasOne(x => x.Session)
+                .WithMany()
+                .HasForeignKey(x => x.SessionId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<Event>(e =>
         {

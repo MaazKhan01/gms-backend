@@ -15,6 +15,7 @@ public interface IEventService
     Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, Guid userId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteEventAsync(Guid id, Guid userId, CancellationToken ct = default);
 
+    Task<ApiResponse<List<SessionResponse>>> GetSessionsAsync(Guid eventId, CancellationToken ct = default);
     Task<ApiResponse<SessionResponse>> AddSessionAsync(Guid eventId, CreateSessionRequest request, Guid userId, CancellationToken ct = default);
     Task<ApiResponse<SessionResponse>> UpdateSessionAsync(Guid eventId, Guid sessionId, UpdateSessionRequest request, Guid userId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteSessionAsync(Guid eventId, Guid sessionId, Guid userId, CancellationToken ct = default);

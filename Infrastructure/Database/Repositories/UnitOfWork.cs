@@ -28,6 +28,11 @@ public class UnitOfWork : IUnitOfWork
         AccountRequests = new GenericRepository<AccountRequest>(_context);
         UserModuleGrants = new GenericRepository<UserModuleGrant>(_context);
 
+        Guests = new GenericRepository<Guest>(_context);
+        GuestSessions = new GenericRepository<GuestSession>(_context);
+        Nationalities = new GenericRepository<Nationality>(_context);
+        InvitationTemplates = new GenericRepository<InvitationTemplate>(_context);
+
         Notifications = new GenericRepository<Notification>(_context);
 
         UserLoginLogs = new GenericRepository<UserLoginLog>(_context);
@@ -35,6 +40,10 @@ public class UnitOfWork : IUnitOfWork
     }
 
     public IGenericRepository<User> Users { get; private set; }
+    public IGenericRepository<Guest> Guests { get; private set; }
+    public IGenericRepository<GuestSession> GuestSessions { get; private set; }
+    public IGenericRepository<Nationality> Nationalities { get; private set; }
+    public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<Role> Roles { get; private set; }
     public IGenericRepository<Permission> Permissions { get; private set; }
     public IGenericRepository<RolePermission> RolePermissions { get; private set; }

@@ -132,6 +132,22 @@ public class EmailService : IEmailService
         _logger.LogInformation("Account-rejected email sent to {Email}", email);
     }
 
+    public async Task SendGuestInvitationAsync(string toEmail, string guestName, string subject, string htmlBody, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail)) return;
+
+        // Wrap template body in a minimal branded container if it isn't already HTML
+        var body = htmlBody.TrimStart().StartsWith("<") ? htmlBody : $@"
+        <div style='font-family: Arial, sans-serif; line-height: 1.7; color: #333; max-width: 600px; margin: 0 auto;'>
+            {htmlBody}
+            <hr style='border:none;border-top:1px solid #eee;margin:24px 0;'/>
+            <p style='font-size:12px;color:#999;'>{_appName} · This invitation was sent on your behalf.</p>
+        </div>";
+
+        await SendEmailAsync(toEmail, subject, body, ct);
+        _logger.LogInformation("Guest invitation email sent to {Email}", toEmail);
+    }
+
     private async Task SendEmailAsync(string toEmail, string subject, string body, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(toEmail))

@@ -9,6 +9,8 @@ public interface IUnitOfWork : IDisposable
 {
     // Auth / RBAC
     IGenericRepository<User> Users { get; }
+    IGenericRepository<Guest> Guests { get; }
+    IGenericRepository<GuestSession> GuestSessions { get; }
     IGenericRepository<Role> Roles { get; }
     IGenericRepository<Permission> Permissions { get; }
     IGenericRepository<RolePermission> RolePermissions { get; }
@@ -20,6 +22,10 @@ public interface IUnitOfWork : IDisposable
     // GMS — Events
     IGenericRepository<Event> Events { get; }
     IGenericRepository<Session> Sessions { get; }
+
+    // GMS — Guests
+    IGenericRepository<Nationality> Nationalities { get; }
+    IGenericRepository<InvitationTemplate> InvitationTemplates { get; }
 
     // GMS — Account requests
     IGenericRepository<AccountRequest> AccountRequests { get; }

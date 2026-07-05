@@ -31,6 +31,7 @@ public static class DataSeeder
         await EnsureRoleAsync(db, Roles.USER, "User", "Standard user", ct);
         await GrantAllPermissionsAsync(db, adminRole, ct);
         await SeedDefinedRolesAsync(db, ct);
+        await SeedNationalitiesAsync(db, ct);
         await EnsureAdminUserAsync(db, config, adminRole, logger, ct);
 
         await db.SaveChangesAsync(ct);
@@ -180,5 +181,85 @@ public static class DataSeeder
         });
 
         logger?.LogWarning("Seeded admin user '{Email}'. Change the seeded password after first login.", email);
+    }
+
+    private static async Task SeedNationalitiesAsync(ApplicationDBContext db, CancellationToken ct)
+    {
+        if (await db.Nationalities.AnyAsync(ct)) return;
+
+        var countries = new[]
+        {
+            ("Afghanistan","أفغانستان","AF","🇦🇫"),("Albania","ألبانيا","AL","🇦🇱"),("Algeria","الجزائر","DZ","🇩🇿"),
+            ("Andorra","أندورا","AD","🇦🇩"),("Angola","أنغولا","AO","🇦🇴"),("Argentina","الأرجنتين","AR","🇦🇷"),
+            ("Armenia","أرمينيا","AM","🇦🇲"),("Australia","أستراليا","AU","🇦🇺"),("Austria","النمسا","AT","🇦🇹"),
+            ("Azerbaijan","أذربيجان","AZ","🇦🇿"),("Bahamas","جزر البهاما","BS","🇧🇸"),("Bahrain","البحرين","BH","🇧🇭"),
+            ("Bangladesh","بنغلاديش","BD","🇧🇩"),("Belarus","بيلاروسيا","BY","🇧🇾"),("Belgium","بلجيكا","BE","🇧🇪"),
+            ("Belize","بليز","BZ","🇧🇿"),("Benin","بنين","BJ","🇧🇯"),("Bhutan","بوتان","BT","🇧🇹"),
+            ("Bolivia","بوليفيا","BO","🇧🇴"),("Bosnia and Herzegovina","البوسنة والهرسك","BA","🇧🇦"),
+            ("Botswana","بوتسوانا","BW","🇧🇼"),("Brazil","البرازيل","BR","🇧🇷"),("Brunei","بروناي","BN","🇧🇳"),
+            ("Bulgaria","بلغاريا","BG","🇧🇬"),("Burkina Faso","بوركينا فاسو","BF","🇧🇫"),("Burundi","بوروندي","BI","🇧🇮"),
+            ("Cambodia","كمبوديا","KH","🇰🇭"),("Cameroon","الكاميرون","CM","🇨🇲"),("Canada","كندا","CA","🇨🇦"),
+            ("Cape Verde","الرأس الأخضر","CV","🇨🇻"),("Central African Republic","جمهورية أفريقيا الوسطى","CF","🇨🇫"),
+            ("Chad","تشاد","TD","🇹🇩"),("Chile","تشيلي","CL","🇨🇱"),("China","الصين","CN","🇨🇳"),
+            ("Colombia","كولومبيا","CO","🇨🇴"),("Comoros","جزر القمر","KM","🇰🇲"),("Congo","الكونغو","CG","🇨🇬"),
+            ("Costa Rica","كوستا ريكا","CR","🇨🇷"),("Croatia","كرواتيا","HR","🇭🇷"),("Cuba","كوبا","CU","🇨🇺"),
+            ("Cyprus","قبرص","CY","🇨🇾"),("Czech Republic","جمهورية التشيك","CZ","🇨🇿"),("Denmark","الدنمارك","DK","🇩🇰"),
+            ("Djibouti","جيبوتي","DJ","🇩🇯"),("Dominican Republic","جمهورية الدومينيكان","DO","🇩🇴"),
+            ("Ecuador","الإكوادور","EC","🇪🇨"),("Egypt","مصر","EG","🇪🇬"),("El Salvador","السلفادور","SV","🇸🇻"),
+            ("Equatorial Guinea","غينيا الاستوائية","GQ","🇬🇶"),("Eritrea","إريتريا","ER","🇪🇷"),
+            ("Estonia","إستونيا","EE","🇪🇪"),("Ethiopia","إثيوبيا","ET","🇪🇹"),("Fiji","فيجي","FJ","🇫🇯"),
+            ("Finland","فنلندا","FI","🇫🇮"),("France","فرنسا","FR","🇫🇷"),("Gabon","الغابون","GA","🇬🇦"),
+            ("Gambia","غامبيا","GM","🇬🇲"),("Georgia","جورجيا","GE","🇬🇪"),("Germany","ألمانيا","DE","🇩🇪"),
+            ("Ghana","غانا","GH","🇬🇭"),("Greece","اليونان","GR","🇬🇷"),("Guatemala","غواتيمالا","GT","🇬🇹"),
+            ("Guinea","غينيا","GN","🇬🇳"),("Guinea-Bissau","غينيا بيساو","GW","🇬🇼"),("Guyana","غيانا","GY","🇬🇾"),
+            ("Haiti","هايتي","HT","🇭🇹"),("Honduras","هندوراس","HN","🇭🇳"),("Hungary","المجر","HU","🇭🇺"),
+            ("Iceland","أيسلندا","IS","🇮🇸"),("India","الهند","IN","🇮🇳"),("Indonesia","إندونيسيا","ID","🇮🇩"),
+            ("Iran","إيران","IR","🇮🇷"),("Iraq","العراق","IQ","🇮🇶"),("Ireland","أيرلندا","IE","🇮🇪"),
+            ("Israel","إسرائيل","IL","🇮🇱"),("Italy","إيطاليا","IT","🇮🇹"),("Jamaica","جامايكا","JM","🇯🇲"),
+            ("Japan","اليابان","JP","🇯🇵"),("Jordan","الأردن","JO","🇯🇴"),("Kazakhstan","كازاخستان","KZ","🇰🇿"),
+            ("Kenya","كينيا","KE","🇰🇪"),("Kuwait","الكويت","KW","🇰🇼"),("Kyrgyzstan","قيرغيزستان","KG","🇰🇬"),
+            ("Laos","لاوس","LA","🇱🇦"),("Latvia","لاتفيا","LV","🇱🇻"),("Lebanon","لبنان","LB","🇱🇧"),
+            ("Lesotho","ليسوتو","LS","🇱🇸"),("Liberia","ليبيريا","LR","🇱🇷"),("Libya","ليبيا","LY","🇱🇾"),
+            ("Liechtenstein","ليختنشتاين","LI","🇱🇮"),("Lithuania","ليتوانيا","LT","🇱🇹"),("Luxembourg","لوكسمبورغ","LU","🇱🇺"),
+            ("Madagascar","مدغشقر","MG","🇲🇬"),("Malawi","ملاوي","MW","🇲🇼"),("Malaysia","ماليزيا","MY","🇲🇾"),
+            ("Maldives","جزر المالديف","MV","🇲🇻"),("Mali","مالي","ML","🇲🇱"),("Malta","مالطا","MT","🇲🇹"),
+            ("Mauritania","موريتانيا","MR","🇲🇷"),("Mauritius","موريشيوس","MU","🇲🇺"),("Mexico","المكسيك","MX","🇲🇽"),
+            ("Moldova","مولدوفا","MD","🇲🇩"),("Monaco","موناكو","MC","🇲🇨"),("Mongolia","منغوليا","MN","🇲🇳"),
+            ("Montenegro","الجبل الأسود","ME","🇲🇪"),("Morocco","المغرب","MA","🇲🇦"),("Mozambique","موزمبيق","MZ","🇲🇿"),
+            ("Myanmar","ميانمار","MM","🇲🇲"),("Namibia","ناميبيا","NA","🇳🇦"),("Nepal","نيبال","NP","🇳🇵"),
+            ("Netherlands","هولندا","NL","🇳🇱"),("New Zealand","نيوزيلندا","NZ","🇳🇿"),("Nicaragua","نيكاراغوا","NI","🇳🇮"),
+            ("Niger","النيجر","NE","🇳🇪"),("Nigeria","نيجيريا","NG","🇳🇬"),("North Korea","كوريا الشمالية","KP","🇰🇵"),
+            ("North Macedonia","مقدونيا الشمالية","MK","🇲🇰"),("Norway","النرويج","NO","🇳🇴"),("Oman","عُمان","OM","🇴🇲"),
+            ("Pakistan","باكستان","PK","🇵🇰"),("Palestine","فلسطين","PS","🇵🇸"),("Panama","بنما","PA","🇵🇦"),
+            ("Papua New Guinea","بابوا غينيا الجديدة","PG","🇵🇬"),("Paraguay","باراغواي","PY","🇵🇾"),("Peru","بيرو","PE","🇵🇪"),
+            ("Philippines","الفلبين","PH","🇵🇭"),("Poland","بولندا","PL","🇵🇱"),("Portugal","البرتغال","PT","🇵🇹"),
+            ("Qatar","قطر","QA","🇶🇦"),("Romania","رومانيا","RO","🇷🇴"),("Russia","روسيا","RU","🇷🇺"),
+            ("Rwanda","رواندا","RW","🇷🇼"),("Saudi Arabia","المملكة العربية السعودية","SA","🇸🇦"),("Senegal","السنغال","SN","🇸🇳"),
+            ("Serbia","صربيا","RS","🇷🇸"),("Sierra Leone","سيراليون","SL","🇸🇱"),("Singapore","سنغافورة","SG","🇸🇬"),
+            ("Slovakia","سلوفاكيا","SK","🇸🇰"),("Slovenia","سلوفينيا","SI","🇸🇮"),("Somalia","الصومال","SO","🇸🇴"),
+            ("South Africa","جنوب أفريقيا","ZA","🇿🇦"),("South Korea","كوريا الجنوبية","KR","🇰🇷"),("South Sudan","جنوب السودان","SS","🇸🇸"),
+            ("Spain","إسبانيا","ES","🇪🇸"),("Sri Lanka","سريلانكا","LK","🇱🇰"),("Sudan","السودان","SD","🇸🇩"),
+            ("Sweden","السويد","SE","🇸🇪"),("Switzerland","سويسرا","CH","🇨🇭"),("Syria","سوريا","SY","🇸🇾"),
+            ("Taiwan","تايوان","TW","🇹🇼"),("Tajikistan","طاجيكستان","TJ","🇹🇯"),("Tanzania","تنزانيا","TZ","🇹🇿"),
+            ("Thailand","تايلاند","TH","🇹🇭"),("Togo","توغو","TG","🇹🇬"),("Trinidad and Tobago","ترينيداد وتوباغو","TT","🇹🇹"),
+            ("Tunisia","تونس","TN","🇹🇳"),("Turkey","تركيا","TR","🇹🇷"),("Turkmenistan","تركمانستان","TM","🇹🇲"),
+            ("Uganda","أوغندا","UG","🇺🇬"),("Ukraine","أوكرانيا","UA","🇺🇦"),("United Arab Emirates","الإمارات العربية المتحدة","AE","🇦🇪"),
+            ("United Kingdom","المملكة المتحدة","GB","🇬🇧"),("United States","الولايات المتحدة","US","🇺🇸"),
+            ("Uruguay","أوروغواي","UY","🇺🇾"),("Uzbekistan","أوزبكستان","UZ","🇺🇿"),("Venezuela","فنزويلا","VE","🇻🇪"),
+            ("Vietnam","فيتنام","VN","🇻🇳"),("Yemen","اليمن","YE","🇾🇪"),("Zambia","زامبيا","ZM","🇿🇲"),
+            ("Zimbabwe","زيمبابوي","ZW","🇿🇼")
+        };
+
+        foreach (var (name, nameAr, code, flag) in countries)
+        {
+            db.Nationalities.Add(new Nationality
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                NameAr = nameAr,
+                Code = code,
+                Flag = flag
+            });
+        }
     }
 }

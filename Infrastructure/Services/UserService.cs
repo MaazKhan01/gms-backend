@@ -113,7 +113,7 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
 
             var users = await query
                 .Skip((request.PageNumber - 1) * request.PageSize)
-                .Take(request.PageSize)
+                .Take(request.PageSize).Include(u => u.Role)
                 .ToListAsync(ct);
 
             var paged = new PaginatedResponse<UserResponse>(

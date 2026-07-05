@@ -60,6 +60,9 @@ public static class ServiceExtensions
 
         // Domain services
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IGuestService, GuestService>();
+        services.AddScoped<INationalityService, NationalityService>();
+        services.AddScoped<IInvitationTemplateService, InvitationTemplateService>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IAccountRequestService, AccountRequestService>();
         services.AddScoped<IUserAccessService, UserAccessService>();

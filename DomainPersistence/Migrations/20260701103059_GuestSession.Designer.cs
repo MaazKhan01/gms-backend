@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260701103059_GuestSession")]
+    partial class GuestSession
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -240,6 +243,7 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("GuestType")
+                        .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
@@ -288,10 +292,6 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("EventId");
 
-                    b.HasIndex("InvitationTemplateId");
-
-                    b.HasIndex("NationalityId");
-
                     b.ToTable("Guests", (string)null);
                 });
 
@@ -303,126 +303,16 @@ namespace DomainPersistence.Migrations
                     b.Property<Guid>("SessionId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("GuestId1")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("GuestId", "SessionId");
+
+                    b.HasIndex("GuestId1");
 
                     b.HasIndex("SessionId");
 
                     b.ToTable("GuestSessions", (string)null);
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.InvitationTemplate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<string>("Body")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("BodyAr")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Color")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("EventId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<string>("Language")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("NameAr")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Subject")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("SubjectAr")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("TargetTiers")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EventId");
-
-                    b.ToTable("InvitationTemplates", (string)null);
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.Nationality", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
-
-                    b.Property<string>("Flag")
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("NameAr")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.ToTable("Nationalities", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Notification", b =>
@@ -989,29 +879,19 @@ namespace DomainPersistence.Migrations
                         .HasForeignKey("EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.HasOne("DomainPersistence.Entities.InvitationTemplate", "InvitationTemplate")
-                        .WithMany()
-                        .HasForeignKey("InvitationTemplateId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("DomainPersistence.Entities.Nationality", "Nationality")
-                        .WithMany("Guests")
-                        .HasForeignKey("NationalityId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("InvitationTemplate");
-
-                    b.Navigation("Nationality");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.GuestSession", b =>
                 {
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
-                        .WithMany("GuestSessions")
+                        .WithMany()
                         .HasForeignKey("GuestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("DomainPersistence.Entities.Guest", null)
+                        .WithMany("GuestSessions")
+                        .HasForeignKey("GuestId1");
 
                     b.HasOne("DomainPersistence.Entities.Session", "Session")
                         .WithMany()
@@ -1022,17 +902,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("Guest");
 
                     b.Navigation("Session");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.InvitationTemplate", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.Event", "Event")
-                        .WithMany()
-                        .HasForeignKey("EventId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Event");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Notification", b =>
@@ -1137,11 +1006,6 @@ namespace DomainPersistence.Migrations
             modelBuilder.Entity("DomainPersistence.Entities.Guest", b =>
                 {
                     b.Navigation("GuestSessions");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.Nationality", b =>
-                {
-                    b.Navigation("Guests");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Permission", b =>

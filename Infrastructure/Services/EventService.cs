@@ -156,6 +156,16 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
 
     // ── Sessions ────────────────────────────────────────────────────────────
 
+    public async Task<ApiResponse<List<SessionResponse>>> GetSessionsAsync(Guid eventId, CancellationToken ct = default)
+    {
+        var sessions = await _unitOfWork.Sessions.Query()
+            .Where(s => s.EventId == eventId)
+            .OrderBy(s => s.Date).ThenBy(s => s.Time)
+            .ToListAsync(ct);
+
+        return ApiResponse<List<SessionResponse>>.SuccessResponse(_mapper.Map<List<SessionResponse>>(sessions));
+    }
+
     public async Task<ApiResponse<SessionResponse>> AddSessionAsync(Guid eventId, CreateSessionRequest request, Guid userId, CancellationToken ct = default)
     {
         var ev = await _unitOfWork.Events.GetByIdAsync(eventId, ct);

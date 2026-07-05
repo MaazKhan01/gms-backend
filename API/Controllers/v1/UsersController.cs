@@ -24,7 +24,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     {
         var result = await _userService.CreateUserAsync(request, ct);
         if (result.Success)
-            return CreatedAtAction(nameof(GetUserById), new { id = result.Data.Id }, result);
+            return ToResponse( result);
         return ToResponse(result);
     }
 

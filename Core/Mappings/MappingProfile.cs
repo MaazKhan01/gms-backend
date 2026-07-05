@@ -1,6 +1,9 @@
 ﻿using AutoMapper;
 using Core.ViewModel.AccountRequest;
 using Core.ViewModel.Event;
+using Core.ViewModel.Guest;
+using Core.ViewModel.InvitationTemplate;
+using Core.ViewModel.Nationality;
 using Core.ViewModel.Noification;
 using Core.ViewModel.Permission;
 using Core.ViewModel.Role;
@@ -64,5 +67,28 @@ public class MappingProfile : Profile
 
         // Account request mappings
         CreateMap<AccountRequest, AccountRequestResponse>();
+
+        // Guest mappings
+        CreateMap<Guest, GuestResponse>()
+            .ForMember(dest => dest.SessionIds,
+                opt => opt.MapFrom(src => src.GuestSessions.Select(gs => gs.SessionId).ToList()))
+            .ForMember(dest => dest.NationalityName,
+                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Name : null))
+            .ForMember(dest => dest.NationalityCode,
+                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Code : null))
+            .ForMember(dest => dest.NationalityFlag,
+                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Flag : null))
+            .ForMember(dest => dest.InvitationTemplateName,
+                opt => opt.MapFrom(src => src.InvitationTemplate != null ? src.InvitationTemplate.Name : null));
+
+        // Nationality mappings
+        CreateMap<Nationality, NationalityResponse>();
+
+        // InvitationTemplate mappings
+        CreateMap<InvitationTemplate, InvitationTemplateResponse>()
+            .ForMember(dest => dest.TargetTiers,
+                opt => opt.MapFrom(src => string.IsNullOrEmpty(src.TargetTiers)
+                    ? new List<string>()
+                    : src.TargetTiers.Split(',', System.StringSplitOptions.RemoveEmptyEntries).ToList()));
     }
 }

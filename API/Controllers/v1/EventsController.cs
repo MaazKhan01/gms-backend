@@ -64,6 +64,11 @@ public class EventsController(IEventService _eventService, ICurrentUser _current
 
     // ── Sessions ────────────────────────────────────────────────────────────
 
+    [HttpGet("{id:guid}/sessions")]
+    [Authorize]
+    public async Task<IActionResult> GetSessions(Guid id, CancellationToken ct)
+        => ToResponse(await _eventService.GetSessionsAsync(id, ct));
+
     [HttpPost("{id:guid}/sessions")]
     [HasPermission(PermissionCodes.EventsManageSessions)]
     public async Task<IActionResult> AddSession(Guid id, [FromBody] CreateSessionRequest request, CancellationToken ct)
