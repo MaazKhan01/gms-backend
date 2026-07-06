@@ -62,6 +62,7 @@ public static class ServiceExtensions
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IGuestService, GuestService>();
         services.AddScoped<INationalityService, NationalityService>();
+        services.AddScoped<ILookupService, LookupService>();
         services.AddScoped<IInvitationTemplateService, InvitationTemplateService>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IAccountRequestService, AccountRequestService>();

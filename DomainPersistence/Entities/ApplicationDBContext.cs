@@ -19,6 +19,10 @@ public partial class ApplicationDBContext : DbContext
     public virtual DbSet<OtpVerification> OtpVerifications { get; set; }
     public virtual DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
 
+    // Lookups (generic reference data)
+    public virtual DbSet<LookupCategory> LookupCategories { get; set; }
+    public virtual DbSet<LookupItem> LookupItems { get; set; }
+
     // Notifications
     public virtual DbSet<Notification> Notifications { get; set; }
 
@@ -114,6 +118,40 @@ public partial class ApplicationDBContext : DbContext
             entity.HasOne(d => d.User)
                 .WithMany()
                 .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LookupCategory
+        modelBuilder.Entity<LookupCategory>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+            entity.Property(e => e.NameAr).HasMaxLength(150);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
+        // LookupItem
+        modelBuilder.Entity<LookupItem>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.CategoryId, e.Code })
+                .IsUnique()
+                .HasFilter("[Code] IS NOT NULL AND [IsDeleted] = 0");
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Code).HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.NameAr).HasMaxLength(300);
+            entity.Property(e => e.Metadata).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.IsDeleted).HasDefaultValueSql("((0))");
+            entity.HasOne(d => d.Category)
+                .WithMany(p => p.Items)
+                .HasForeignKey(d => d.CategoryId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

@@ -32,6 +32,8 @@ public class UnitOfWork : IUnitOfWork
         GuestSessions = new GenericRepository<GuestSession>(_context);
         Nationalities = new GenericRepository<Nationality>(_context);
         InvitationTemplates = new GenericRepository<InvitationTemplate>(_context);
+        LookupCategories = new GenericRepository<LookupCategory>(_context);
+        LookupItems = new GenericRepository<LookupItem>(_context);
 
         Notifications = new GenericRepository<Notification>(_context);
 
@@ -44,6 +46,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<GuestSession> GuestSessions { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
+    public IGenericRepository<LookupCategory> LookupCategories { get; private set; }
+    public IGenericRepository<LookupItem> LookupItems { get; private set; }
     public IGenericRepository<Role> Roles { get; private set; }
     public IGenericRepository<Permission> Permissions { get; private set; }
     public IGenericRepository<RolePermission> RolePermissions { get; private set; }

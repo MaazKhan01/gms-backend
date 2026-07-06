@@ -23,6 +23,10 @@ public static class PermissionCodes
     // Per-user module access grants (admin only)
     public const string UserAccessManage = "UserAccess.Manage";
 
+    // Lookups (generic reference data — admin managed)
+    public const string LookupsView = "Lookups.View";
+    public const string LookupsManage = "Lookups.Manage";
+
     // ── GMS modules ─────────────────────────────────────────────────────
     // Each module exposes a `.View` (read-only, no action buttons) plus its
     // action permissions. Policies register automatically via reflection in

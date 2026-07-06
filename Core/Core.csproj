@@ -7,13 +7,18 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Compile Remove="ViewModel\NewFolder\**" />
+	  <EmbeddedResource Remove="ViewModel\NewFolder\**" />
+	  <None Remove="ViewModel\NewFolder\**" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<Folder Include="Constants\NewFolder\" />
 		<Folder Include="Managers\" />
 		<Folder Include="Queries\" />
 		<Folder Include="Validators\" />
 		<Folder Include="Mappings\" />
 		<Folder Include="Authorization\" />
-		<Folder Include="ViewModel\NewFolder\" />
 
 		<PackageReference Include="AutoMapper" Version="12.0.1" />
 		<PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />
