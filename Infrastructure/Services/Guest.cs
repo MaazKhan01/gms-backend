@@ -8,6 +8,7 @@ using CsvHelper;
 using CsvHelper.Configuration;
 using DomainPersistence.Entities;
 using Elasticsearch.Net;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
@@ -131,6 +132,7 @@ public class GuestService(
         {
             var query = _unitOfWork.Guests.Query()
                 .Include(g => g.Nationality)
+                .Include(g => g.GuestSessions)
                 .Where(g => g.EventId == eventId);
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
@@ -173,7 +175,7 @@ public class GuestService(
             _unitOfWork.Guests.Remove(guest);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            return ApiResponse<bool>.SuccessResponse(_mapper.Map<bool>(true), "Guest Deleted Successfully!" );
+            return ApiResponse<bool>.SuccessResponse(true, "Guest deleted successfully");
         }
         catch (Exception ex)
         {
@@ -181,6 +183,103 @@ public class GuestService(
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting the guest");
         }
     }
+    public async Task<ApiResponse<GuestResponse>> UpdateGuestAsync(CreateGuestRequest request, CancellationToken ct)
+    {
+        try
+        {
+            if (request.Id == null || request.Id == Guid.Empty)
+                return ApiResponse<GuestResponse>.ErrorResponse("Guest Id is required");
+
+            var guest = await _unitOfWork.Guests.Query()
+                .Include(g => g.GuestSessions)
+                .Include(g => g.Nationality)
+                .Include(g => g.InvitationTemplate)
+                .FirstOrDefaultAsync(g => g.Id == request.Id.Value, ct);
+
+            if (guest == null)
+                return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
+
+            // Check for duplicate email within the same event (excluding this guest)
+            if (!string.IsNullOrWhiteSpace(request.Email))
+            {
+                var normalised = request.Email.ToLower().Trim();
+                var duplicate = await _unitOfWork.Guests.Query()
+                    .FirstOrDefaultAsync(g => g.Email == normalised && g.EventId == guest.EventId && g.Id != guest.Id, ct);
+
+                if (duplicate != null)
+                    return ApiResponse<GuestResponse>.ConflictResponse("A guest with this email already exists for this event");
+            }
+
+            guest.FirstName           = request.FirstName?.Trim() ?? guest.FirstName;
+            guest.LastName            = request.LastName?.Trim()  ?? guest.LastName;
+            guest.Email               = request.Email?.ToLower().Trim();
+            guest.GuestType           = request.GuestType         ?? guest.GuestType;
+            guest.Organization        = request.Organization;
+            guest.NationalityId       = request.NationalityId;
+            guest.Tier                = request.Tier              ?? guest.Tier;
+            guest.InvitationStatus    = request.InvitationStatus  ?? guest.InvitationStatus;
+            guest.ArrivalDate         = request.ArrivalDate;
+            guest.FlightNumber        = request.FlightNumber;
+            guest.Hotel               = request.Hotel;
+            guest.AccreditationStatus = request.AccreditationStatus ?? guest.AccreditationStatus;
+            guest.InvitationTemplateId = request.InvitationTemplateId;
+
+            _unitOfWork.Guests.Update(guest);
+
+            // Replace sessions only when the client explicitly sent the field (null = leave as-is)
+            if (request.SessionIds != null)
+            {
+                if (guest.GuestSessions.Any())
+                    _unitOfWork.GuestSessions.RemoveRange(guest.GuestSessions.ToList());
+
+                foreach (var sessionId in request.SessionIds)
+                    await _unitOfWork.GuestSessions.AddAsync(new GuestSession { GuestId = guest.Id, SessionId = sessionId }, ct);
+            }
+            // Send invitation email if a template was selected
+            if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
+            {
+                var template = await _unitOfWork.InvitationTemplates.Query()
+                    .FirstOrDefaultAsync(t => t.Id == request.InvitationTemplateId.Value, ct);
+
+                if (template != null)
+                {
+                    // Mark as sent before firing email so the status is correct in the response
+                    guest.InvitationStatus = GuestInvitationStatus.Sent;
+                    _unitOfWork.Guests.Update(guest);
+                    await _unitOfWork.SaveChangesAsync(ct);
+
+                    var guestName = $"{guest.FirstName} {guest.LastName}".Trim();
+                    var emailSubject = template.Subject;
+                    var emailBody = (template.Body ?? "")
+                        .Replace("{{GuestName}}", guestName)
+                        .Replace("{{FirstName}}", guest.FirstName)
+                        .Replace("{{LastName}}", guest.LastName);
+
+                    _ = Task.Run(async () =>
+                    {
+                        try { await _emailService.SendGuestInvitationAsync(guest.Email, guestName, emailSubject, emailBody); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Could not send invitation email to {Email}", guest.Email); }
+                    });
+                }
+            }
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            // Reload for a complete response
+            var updated = await _unitOfWork.Guests.Query()
+                .Include(g => g.GuestSessions)
+                .Include(g => g.Nationality)
+                .Include(g => g.InvitationTemplate)
+                .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
+
+            return ApiResponse<GuestResponse>.SuccessResponse(_mapper.Map<GuestResponse>(updated), "Guest updated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating guest {GuestId}", request.Id);
+            return ApiResponse<GuestResponse>.ServerErrorResponse("An error occurred while updating the guest");
+        }
+    }
+
     public async Task<ApiResponse<GuestResponse>> CreateGuestAsync(CreateGuestRequest request, CancellationToken ct = default)
     {
         try
@@ -278,7 +377,7 @@ public class GuestService(
             return ApiResponse<GuestResponse>.ServerErrorResponse("An error occurred while creating the guest");
         }
     }
-}
+   }
 
  sealed class GuestRow
 {

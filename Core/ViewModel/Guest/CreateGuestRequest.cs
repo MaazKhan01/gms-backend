@@ -5,6 +5,7 @@ namespace Core.ViewModel.Guest;
 
 public class CreateGuestRequest
 {
+    public Guid? Id { get; set; }
     public string FirstName { get; set; }
     public string LastName { get; set; }
     public string Email { get; set; }
@@ -20,5 +21,5 @@ public class CreateGuestRequest
     public string Hotel { get; set; }
     public string AccreditationStatus { get; set; }
     public Guid? InvitationTemplateId { get; set; }
-    public List<Guid> SessionIds { get; set; } = new();
+    public List<Guid>? SessionIds { get; set; }
 }

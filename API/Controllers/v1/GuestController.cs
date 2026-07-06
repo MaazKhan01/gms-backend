@@ -46,13 +46,13 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
     public async Task<IActionResult> ImportGuestCsv([FromQuery] Guid eventId, IFormFile file, CancellationToken ct)
     {
         if (eventId == Guid.Empty)
-            return BadRequest(ApiResponse<object>.ErrorResponse("eventId is required"));
+            return Ok(ApiResponse<object>.ErrorResponse("eventId is required"));
 
         if (file == null || file.Length == 0)
-            return BadRequest(ApiResponse<object>.ErrorResponse("Please upload a file"));
+            return Ok(ApiResponse<object>.ErrorResponse("Please upload a file"));
 
         if (!file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(ApiResponse<object>.ErrorResponse("Only CSV files are allowed"));
+            return Ok(ApiResponse<object>.ErrorResponse("Only CSV files are allowed"));
 
         using var stream = file.OpenReadStream();
         var result = await _guestService.ImportGuestCsvAsync(eventId, stream, _currentUser.UserId, ct);
@@ -67,7 +67,7 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
         return ToResponse(result);
     }
 
-    [HttpDelete("delete-selected")]
+    [HttpDelete("delete")]
     [HasPermission(PermissionCodes.GuestsDelete)]
     public async Task<IActionResult> DeleteSelected([FromQuery] Guid eventId, [FromBody] DeleteMultipleGuests request, CancellationToken ct)
     {
@@ -77,4 +77,13 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
         var result = await _guestService.BulkGuestsDeleteAsync(eventId, request, ct);
         return ToResponse(result);
     }
+    [HttpPut("{id:guid}")]
+    [HasPermission(PermissionCodes.GuestsUpdate)]
+    public async Task<IActionResult> UpdateGuest(Guid id, [FromBody] CreateGuestRequest request, CancellationToken ct)
+    {
+        request.Id = id;
+        var result = await _guestService.UpdateGuestAsync(request, ct);
+        return ToResponse(result);
+    }
+
 }

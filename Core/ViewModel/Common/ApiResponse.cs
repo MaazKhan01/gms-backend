@@ -20,7 +20,7 @@ public class ApiResponse<T>
         => new() { Success = true, Message = message, Data = data, StatusCode = 200 };
 
     public static ApiResponse<T> ErrorResponse(string message, List<string> errors = null)
-        => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 400 };
+        => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 200 };
 
     public static ApiResponse<T> NotFoundResponse(string message, List<string> errors = null)
         => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 404 };
