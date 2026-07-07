@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -207,6 +208,12 @@ public class LookupService(
             _logger.LogError(ex, "Error deleting lookup item {ItemId}", id);
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting the lookup item");
         }
+    }
+
+    public ApiResponse<Dictionary<string, List<LookupEnumOption>>> GetGuestEnums()
+    {
+        var sets = GuestEnumCatalog.All.ToDictionary(kv => kv.Key, kv => kv.Value);
+        return ApiResponse<Dictionary<string, List<LookupEnumOption>>>.SuccessResponse(sets);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

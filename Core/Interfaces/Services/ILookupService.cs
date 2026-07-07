@@ -15,4 +15,7 @@ public interface ILookupService
     Task<ApiResponse<LookupItemResponse>> CreateItemAsync(LookupItemRequest request, Guid userId, CancellationToken ct = default);
     Task<ApiResponse<LookupItemResponse>> UpdateItemAsync(LookupItemRequest request, Guid userId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteItemAsync(Guid id, Guid userId, CancellationToken ct = default);
+
+    /// <summary>Code-defined guest option sets (tier, type, statuses) — no DB access.</summary>
+    ApiResponse<Dictionary<string, List<LookupEnumOption>>> GetGuestEnums();
 }

@@ -17,6 +17,13 @@ public partial class ApplicationDBContext
     public virtual DbSet<GuestSession> GuestSessions { get; set; }
     public virtual DbSet<Nationality> Nationalities { get; set; }
     public virtual DbSet<InvitationTemplate> InvitationTemplates { get; set; }
+    public virtual DbSet<Meeting> Meetings { get; set; }
+    public virtual DbSet<Travel_logistics> Travel_logistics { get; set; }
+    public virtual DbSet<Location> Locations { get; set; }
+    public virtual DbSet<Venue> Venues { get; set; }
+    public virtual DbSet<VenueLayout> VenueLayouts { get; set; }
+    public virtual DbSet<VenueLayoutProp> VenueLayoutProps { get; set; }
+    public virtual DbSet<VenueBlock> VenueBlocks { get; set; }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {

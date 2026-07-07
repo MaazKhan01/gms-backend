@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260707110142_add_venue_table")]
+    partial class add_venue_table
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1296,12 +1299,6 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Category")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Color")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1320,8 +1317,8 @@ namespace DomainPersistence.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<Guid>("TypeId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -1332,180 +1329,6 @@ namespace DomainPersistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Venues");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.VenueBlock", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Category")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool?>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Label")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("Rows")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SeatsPerRow")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("VenueId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("VenueId");
-
-                    b.ToTable("VenueBlocks");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.VenueLayout", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool?>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<decimal>("OffsetX")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("OffsetY")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("Rotation")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("ScaleX")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("ScaleY")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Type")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("VenueId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("VenuePropsId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("X")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("Y")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("VenueId");
-
-                    b.HasIndex("VenuePropsId");
-
-                    b.ToTable("VenueLayouts");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.VenueLayoutProp", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool?>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Label")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("PitchH")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("PitchW")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("Row")
-                        .HasColumnType("int");
-
-                    b.Property<string>("RowName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("Seats")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("StageH")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("StageW")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("VenueLayoutProps");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Event", b =>
@@ -1702,30 +1525,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("DomainPersistence.Entities.VenueBlock", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.Venue", null)
-                        .WithMany("Blocks")
-                        .HasForeignKey("VenueId");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.VenueLayout", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.Venue", "Venue")
-                        .WithMany()
-                        .HasForeignKey("VenueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DomainPersistence.Entities.VenueLayoutProp", "VenueProps")
-                        .WithMany()
-                        .HasForeignKey("VenuePropsId");
-
-                    b.Navigation("Venue");
-
-                    b.Navigation("VenueProps");
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.Event", b =>
                 {
                     b.Navigation("Sessions");
@@ -1772,11 +1571,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("SystemErrorLogs");
 
                     b.Navigation("UserLoginLogs");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.Venue", b =>
-                {
-                    b.Navigation("Blocks");
                 });
 #pragma warning restore 612, 618
         }

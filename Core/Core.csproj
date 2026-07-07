@@ -7,12 +7,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <Compile Remove="ViewModel\NewFolder\**" />
-	  <EmbeddedResource Remove="ViewModel\NewFolder\**" />
-	  <None Remove="ViewModel\NewFolder\**" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<Folder Include="Constants\NewFolder\" />
 		<Folder Include="Managers\" />
 		<Folder Include="Queries\" />

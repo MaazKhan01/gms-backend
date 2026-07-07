@@ -63,4 +63,13 @@ public class LookupController(ILookupService _lookupService, ICurrentUser _curre
         var result = await _lookupService.DeleteItemAsync(id, _currentUser.UserId, ct);
         return ToResponse(result);
     }
+
+    // Code-defined guest option sets (tier, type, statuses) for form dropdowns.
+    // Any authenticated user can read these — they're static reference lists.
+    [HttpGet("enums/guest")]
+    public IActionResult GetGuestEnums()
+    {
+        var result = _lookupService.GetGuestEnums();
+        return ToResponse(result);
+    }
 }

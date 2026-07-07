@@ -25,3 +25,13 @@ public static class GuestAccreditationStatus
     public const string Issued    = "issued";
     public const string Revoked   = "revoked";
 }
+
+public static class GuestTier
+{
+    public const string VVIP = "vvip";
+    public const string VIP = "vip";
+    public const string Speaker = "speaker";
+    public const string Delegate = "delegate";
+    public const string Press = "press";
+    public const string Observer = "observer";
+}
