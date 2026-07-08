@@ -24,7 +24,10 @@ public partial class ApplicationDBContext
     public virtual DbSet<VenueLayout> VenueLayouts { get; set; }
     public virtual DbSet<VenueLayoutProp> VenueLayoutProps { get; set; }
     public virtual DbSet<VenueBlock> VenueBlocks { get; set; }
-
+    public virtual DbSet<SeatProperties> SeatProperties { get; set; }
+    public virtual DbSet<Seating> Seatings { get; set; }
+    public virtual DbSet<SeatAssign> SeatAssigns { get; set; }
+    public virtual DbSet<VenueBox> VenueBoxs { get; set; }
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AccountRequest>(a =>
@@ -166,6 +169,10 @@ public partial class ApplicationDBContext
                 .WithMany(x => x.Sessions)
                 .HasForeignKey(x => x.EventId)
                 .OnDelete(DeleteBehavior.Cascade);
+            s.HasOne(x => x.Venue)
+                .WithMany()
+                .HasForeignKey(x => x.VenueId)
+                .OnDelete(DeleteBehavior.Restrict);
             s.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -181,6 +188,133 @@ public partial class ApplicationDBContext
                 .WithMany(x => x.ModuleGrants)
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Venue / Seating module ──────────────────────────────────────────
+        // Most relationships use Restrict to avoid SQL Server multiple-cascade-path
+        // errors; the app relies on soft-delete anyway. Only the two leaf ownership
+        // edges (prop→seats, seating→assignments) cascade.
+        modelBuilder.Entity<Venue>(v =>
+        {
+            v.ToTable("Venues");
+            v.HasKey(x => x.Id);
+            v.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            v.Property(x => x.Name).IsRequired().HasMaxLength(300);
+            v.Property(x => x.Color).HasMaxLength(20);
+            v.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            v.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            v.HasOne(x => x.Type)
+                .WithMany()
+                .HasForeignKey(x => x.TypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VenueBox>(b =>
+        {
+            b.ToTable("VenueBoxes");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            b.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            b.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            b.HasOne(x => x.Venue)
+                .WithMany(x => x.VenueBoxes)
+                .HasForeignKey(x => x.VenueId)
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.Event)
+                .WithMany()
+                .HasForeignKey(x => x.EventId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VenueBlock>(bl =>
+        {
+            bl.ToTable("VenueBlocks");
+            bl.HasKey(x => x.Id);
+            bl.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            bl.Property(x => x.Label).HasMaxLength(200);
+            bl.Property(x => x.Category).HasMaxLength(100);
+            bl.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            bl.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            bl.HasOne(x => x.VenueBox)
+                .WithMany(x => x.Blocks)
+                .HasForeignKey(x => x.VenueBoxId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VenueLayout>(l =>
+        {
+            l.ToTable("VenueLayouts");
+            l.HasKey(x => x.Id);
+            l.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            l.Property(x => x.Type).HasMaxLength(50);
+            l.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            l.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            l.HasOne(x => x.VenueBox)
+                .WithMany(x => x.VenueLayouts)
+                .HasForeignKey(x => x.VenueBoxId)
+                .OnDelete(DeleteBehavior.Restrict);
+            l.HasOne(x => x.Block)
+                .WithMany(x => x.VenueLayouts)
+                .HasForeignKey(x => x.VenueBlockId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VenueLayoutProp>(p =>
+        {
+            p.ToTable("VenueLayoutProps");
+            p.HasKey(x => x.Id);
+            p.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            p.Property(x => x.Code).HasMaxLength(100);
+            p.Property(x => x.Label).HasMaxLength(300);
+            p.Property(x => x.Color).HasMaxLength(20);
+            p.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            p.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            p.HasOne(x => x.Layout)
+                .WithMany(x => x.VenueLayoutProps)
+                .HasForeignKey(x => x.VenueLayoutId)
+                .OnDelete(DeleteBehavior.Restrict);
+            p.HasMany(x => x.Seats)
+                .WithOne()
+                .HasForeignKey("VenueLayoutPropId")
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SeatProperties>(sp =>
+        {
+            sp.ToTable("SeatProperties");
+            sp.HasKey(x => x.Id);
+            sp.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            sp.Property(x => x.Code).HasMaxLength(100);
+            sp.Property(x => x.Color).HasMaxLength(20);
+            sp.Property(x => x.Status).HasMaxLength(30);
+            sp.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            sp.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
+        modelBuilder.Entity<Seating>(se =>
+        {
+            se.ToTable("Seatings");
+            se.HasKey(x => x.Id);
+            se.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            se.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            se.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            se.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Restrict);
+            se.HasOne(x => x.Venue).WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            se.HasOne(x => x.VenueBox).WithMany().HasForeignKey(x => x.VenueBoxId).OnDelete(DeleteBehavior.Restrict);
+            se.HasOne(x => x.Session).WithMany().HasForeignKey(x => x.EventSessionId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SeatAssign>(sa =>
+        {
+            sa.ToTable("SeatAssigns");
+            sa.HasKey(x => x.Id);
+            sa.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            sa.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            sa.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            sa.HasOne(x => x.Seating).WithMany(x => x.SeatsDetail).HasForeignKey(x => x.SeatingId).OnDelete(DeleteBehavior.Cascade);
+            sa.HasOne(x => x.Seat).WithMany().HasForeignKey(x => x.SeatId).OnDelete(DeleteBehavior.Restrict);
+            sa.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Restrict);
+            sa.HasIndex(x => new { x.SeatingId, x.SeatId }).IsUnique();
         });
     }
 }

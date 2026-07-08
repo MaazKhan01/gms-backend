@@ -275,6 +275,7 @@ public static class DataSeeder
             ("AIRPORT",      "Airports",        "المطارات",       "Airports with IATA codes and locations"),
             ("VEHICLE_TYPE", "Vehicle Types",   "أنواع المركبات", "Ground-transport vehicle categories"),
             ("HOTEL",        "Hotels",          "الفنادق",        "Accommodation options for guests"),
+            ("VENUE_TYPE",   "Venue Types",     "أنواع القاعات",  "Categories of venues / halls"),
         };
 
         var categoryByCode = new Dictionary<string, LookupCategory>();
@@ -341,6 +342,16 @@ public static class DataSeeder
             ("FS",   "Four Seasons Hotel Doha",   "فور سيزونز الدوحة",     new() { ["city"] = "Doha", ["address"] = "The Corniche" }),
             ("MO",   "Mandarin Oriental Doha",    "ماندارين أورينتال",     new() { ["city"] = "Doha", ["address"] = "Msheireb Downtown" }),
             ("STR",  "St. Regis Doha",            "سانت ريجيس الدوحة",     new() { ["city"] = "Doha", ["address"] = "West Bay, Doha Corniche" }),
+        });
+
+        await SeedItemsIfEmptyAsync(db, categoryByCode["VENUE_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
+        {
+            ("AUDITORIUM",      "Auditorium",      "قاعة محاضرات", new()),
+            ("BALLROOM",        "Ballroom",        "قاعة احتفالات", new()),
+            ("CONFERENCE_HALL", "Conference Hall", "قاعة مؤتمرات",  new()),
+            ("MEETING_ROOM",    "Meeting Room",    "غرفة اجتماعات", new()),
+            ("STADIUM",         "Stadium",         "استاد",         new()),
+            ("OUTDOOR",         "Outdoor",         "مساحة خارجية",  new()),
         });
     }
 
