@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "dotnet",
+  "packages": {
+    "dotnet": "9"
+  },
+  "steps": {
+    "build": {
+      "commands": [
+        "dotnet publish API/API.csproj -c Release -o /app/out"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "dotnet /app/out/API.dll"
+  }
+}
