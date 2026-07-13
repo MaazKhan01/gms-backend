@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260712094818_EnrichVenueBlock")]
+    partial class EnrichVenueBlock
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -996,12 +999,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValueSql("((0))");
 
-                    b.Property<bool>("IsDisabled")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("SeatInfo")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Status")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
@@ -1578,12 +1575,6 @@ namespace DomainPersistence.Migrations
                     b.Property<Guid>("VenueBoxId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<double>("X")
-                        .HasColumnType("float");
-
-                    b.Property<double>("Y")
-                        .HasColumnType("float");
-
                     b.HasKey("Id");
 
                     b.HasIndex("VenueBoxId");
@@ -1615,9 +1606,6 @@ namespace DomainPersistence.Migrations
                     b.Property<Guid?>("EventId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int?>("Height")
-                        .HasColumnType("int");
-
                     b.Property<bool?>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -1634,9 +1622,6 @@ namespace DomainPersistence.Migrations
 
                     b.Property<Guid>("VenueId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("Width")
-                        .HasColumnType("int");
 
                     b.HasKey("Id");
 

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
 using Core.Interfaces.Repositories;
 using DomainPersistence.Entities;
+using Infrastructure.Services;
 
 namespace Infrastructure.Database.Repositories;
 
@@ -28,6 +29,15 @@ public class UnitOfWork : IUnitOfWork
         AccountRequests = new GenericRepository<AccountRequest>(_context);
         UserModuleGrants = new GenericRepository<UserModuleGrant>(_context);
 
+        Venues = new GenericRepository<Venue>(_context);
+        VenueBoxes = new GenericRepository<VenueBox>(_context);
+        VenueBlocks = new GenericRepository<VenueBlock>(_context);
+        VenueLayouts = new GenericRepository<VenueLayout>(_context);
+        VenueLayoutProps = new GenericRepository<VenueLayoutProp>(_context);
+        SeatProperties = new GenericRepository<SeatProperties>(_context);
+        Seatings = new GenericRepository<Seating>(_context);
+        SeatAssigns = new GenericRepository<SeatAssign>(_context);
+
         Guests = new GenericRepository<Guest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
         Nationalities = new GenericRepository<Nationality>(_context);
@@ -44,6 +54,14 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<User> Users { get; private set; }
     public IGenericRepository<Guest> Guests { get; private set; }
     public IGenericRepository<GuestSession> GuestSessions { get; private set; }
+    public IGenericRepository<Venue> Venues { get; private set; }
+    public IGenericRepository<VenueBox> VenueBoxes { get; private set; }
+    public IGenericRepository<VenueBlock> VenueBlocks { get; private set; }
+    public IGenericRepository<VenueLayout> VenueLayouts { get; private set; }
+    public IGenericRepository<VenueLayoutProp> VenueLayoutProps { get; private set; }
+    public IGenericRepository<SeatProperties> SeatProperties { get; private set; }
+    public IGenericRepository<Seating> Seatings { get; private set; }
+    public IGenericRepository<SeatAssign> SeatAssigns { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<LookupCategory> LookupCategories { get; private set; }

@@ -8,6 +8,7 @@ using Core.ViewModel.Noification;
 using Core.ViewModel.Permission;
 using Core.ViewModel.Role;
 using Core.ViewModel.User;
+using Core.ViewModel.Venue;
 using DomainPersistence.Entities;
 using System;
 using System.Linq;
@@ -90,5 +91,20 @@ public class MappingProfile : Profile
                 opt => opt.MapFrom(src => string.IsNullOrEmpty(src.TargetTiers)
                     ? new List<string>()
                     : src.TargetTiers.Split(',', System.StringSplitOptions.RemoveEmptyEntries).ToList()));
+
+        // Venue mappings
+        CreateMap<Venue, GetVenueResonse>()
+            .ForMember(dest => dest.VenueName, opt => opt.MapFrom(src => src.Name))
+            .ForMember(dest => dest.VenueType, opt => opt.MapFrom(src => src.TypeId ?? Guid.Empty))
+            .ForMember(dest => dest.Category, opt => opt.MapFrom(src => src.Category ?? new List<string>()));
+        CreateMap<VenueBox, VenueBoxDto>()
+            .ForMember(dest => dest.VenueElements, opt => opt.MapFrom(src => src.VenueLayouts));
+        CreateMap<VenueBlock, VenueBlockDto>();
+        CreateMap<VenueLayout, VenueLayoutDto>()
+            .ForMember(dest => dest.Props, opt => opt.MapFrom(src => src.VenueLayoutProps));
+        CreateMap<VenueLayoutProp, VenueLayoutPropDto>()
+            // Seats always returned in order
+            .ForMember(dest => dest.Seats, opt => opt.MapFrom(src => src.Seats.OrderBy(s => s.Index)));
+        CreateMap<SeatProperties, SeatPropertyDto>();
     }
 }

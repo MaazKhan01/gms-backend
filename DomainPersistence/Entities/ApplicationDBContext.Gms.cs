@@ -224,6 +224,10 @@ public partial class ApplicationDBContext
                 .WithMany()
                 .HasForeignKey(x => x.EventId)
                 .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(x => x.Session)
+                .WithMany()
+                .HasForeignKey(x => x.SessionId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<VenueBlock>(bl =>
@@ -231,6 +235,7 @@ public partial class ApplicationDBContext
             bl.ToTable("VenueBlocks");
             bl.HasKey(x => x.Id);
             bl.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            bl.Property(x => x.Type).HasMaxLength(50);
             bl.Property(x => x.Label).HasMaxLength(200);
             bl.Property(x => x.Category).HasMaxLength(100);
             bl.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
@@ -272,6 +277,10 @@ public partial class ApplicationDBContext
             p.HasOne(x => x.Layout)
                 .WithMany(x => x.VenueLayoutProps)
                 .HasForeignKey(x => x.VenueLayoutId)
+                .OnDelete(DeleteBehavior.Restrict);
+            p.HasOne(x => x.Block)
+                .WithMany(x => x.Props)
+                .HasForeignKey(x => x.VenueBlockId)
                 .OnDelete(DeleteBehavior.Restrict);
             p.HasMany(x => x.Seats)
                 .WithOne()

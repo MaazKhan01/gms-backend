@@ -10,8 +10,8 @@ namespace DomainPersistence.Entities
     {
         public string Name { get; set; }
         public Guid? TypeId { get; set; }
-        public List<string>? Category {  get; set; } = new List<string>();
-        public string? Color { get; set; } = string.Empty;
+        public List<string>? Category {  get; set; } 
+        public string? Color { get; set; }
         public virtual LookupItem? Type { get; set; }
         public virtual ICollection<VenueBox>? VenueBoxes { get; set; }
     }

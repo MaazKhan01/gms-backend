@@ -12,6 +12,8 @@ namespace DomainPersistence.Entities
         public int? Index { get; set; }
         public string? Color { get; set; }
         public string? Status { get; set; }
+        public bool IsDisabled { get; set; } = false;
+        public string? SeatInfo { get; set; }
         //public Guid SeatId { get; set; } 
         //public virtual Seating Seating { get; set; }
     }

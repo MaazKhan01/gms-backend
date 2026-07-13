@@ -36,6 +36,15 @@ public interface IUnitOfWork : IDisposable
 
     // GMS — Per-user module access
     IGenericRepository<UserModuleGrant> UserModuleGrants { get; }
+    //Venue
+    IGenericRepository<Venue> Venues { get; }
+    IGenericRepository<VenueBox> VenueBoxes { get; }
+    IGenericRepository<VenueBlock> VenueBlocks { get; }
+    IGenericRepository<VenueLayout> VenueLayouts { get; }
+    IGenericRepository<VenueLayoutProp> VenueLayoutProps { get; }
+    IGenericRepository<SeatProperties> SeatProperties { get; }
+    IGenericRepository<Seating> Seatings { get; }
+    IGenericRepository<SeatAssign> SeatAssigns { get; }
 
     // Notifications
     IGenericRepository<Notification> Notifications { get; }

@@ -276,6 +276,7 @@ public static class DataSeeder
             ("VEHICLE_TYPE", "Vehicle Types",   "أنواع المركبات", "Ground-transport vehicle categories"),
             ("HOTEL",        "Hotels",          "الفنادق",        "Accommodation options for guests"),
             ("VENUE_TYPE",   "Venue Types",     "أنواع القاعات",  "Categories of venues / halls"),
+            ("ELEMENT_TYPE", "Element Types",   "أنواع العناصر",  "Venue layout element/shape types"),
         };
 
         var categoryByCode = new Dictionary<string, LookupCategory>();
@@ -352,6 +353,15 @@ public static class DataSeeder
             ("MEETING_ROOM",    "Meeting Room",    "غرفة اجتماعات", new()),
             ("STADIUM",         "Stadium",         "استاد",         new()),
             ("OUTDOOR",         "Outdoor",         "مساحة خارجية",  new()),
+        });
+
+        await SeedItemsIfEmptyAsync(db, categoryByCode["ELEMENT_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
+        {
+            ("round",   "Round Table",      "طاولة دائرية",  new()),
+            ("rect",    "Rectangular Table","طاولة مستطيلة", new()),
+            ("stadium", "Stadium Block",    "كتلة مدرجات",   new()),
+            ("stage",   "Stage",            "منصة",          new()),
+            ("pitch",   "Pitch Area",       "منطقة ملعب",    new()),
         });
     }
 

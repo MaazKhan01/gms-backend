@@ -1,0 +1,473 @@
+﻿using AutoMapper;
+using Azure;
+using Core.Interfaces.Repositories;
+using Core.Interfaces.Services;
+using Core.ViewModel.Common;
+using Core.ViewModel.User;
+using Core.ViewModel.Venue;
+using DomainPersistence.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Graph;
+using Smtp2Go.Api.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Infrastructure.Services
+{
+    public class VenueService(IUnitOfWork _unitOfWork,IMapper _mapper, ILogger<VenueService> _logger ) : IVenueService
+    {
+        public async Task<ApiResponse<GetVenueResonse>> GetVenueByIdAsync(Guid venueId, CancellationToken ct)
+        {
+            try {
+                var venue = await _unitOfWork.Venues.Query()
+     .Include(v => v.VenueBoxes!)
+         .ThenInclude(vb => vb.Blocks)
+             .ThenInclude(b => b.Props)
+                 .ThenInclude(p => p.Seats)
+
+     .Include(v => v.VenueBoxes!)
+         .ThenInclude(vb => vb.VenueLayouts)
+             .ThenInclude(l => l.VenueLayoutProps)
+                 .ThenInclude(p => p.Seats)
+
+     .FirstOrDefaultAsync(v => v.Id == venueId, ct);
+                if (venue == null)
+                {
+                    return ApiResponse<GetVenueResonse>.NotFoundResponse("Venue doesn't existed");
+                }
+                return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue));
+            }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error Get Venue");
+                return ApiResponse<GetVenueResonse>.ServerErrorResponse("Error: Failed to Get Venue.");
+
+            }
+        }
+
+        public async Task<ApiResponse<List<GetVenueResonse>>> GetVenuesAsync(CancellationToken ct)
+        {
+            try
+            {
+                // Lightweight list (scalars only) — the editor fetches full boxes via GetById on select.
+                var venues = await _unitOfWork.Venues.Query()
+                    .OrderBy(v => v.Name)
+                    .ToListAsync(ct);
+                var list = venues.Select(v => _mapper.Map<GetVenueResonse>(v)).ToList();
+                return ApiResponse<List<GetVenueResonse>>.SuccessResponse(list);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error listing venues");
+                return ApiResponse<List<GetVenueResonse>>.ServerErrorResponse("Error: Failed to list venues.");
+            }
+        }
+        public async Task<ApiResponse<bool>> DeleteVenueAsync(Guid id, CancellationToken ct)
+        {
+            try
+            {
+                if (id == Guid.Empty)
+                    return ApiResponse<bool>.ErrorResponse("Venue id is required.");
+
+                var venue = await _unitOfWork.Venues.Query()
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.Blocks)
+                            .ThenInclude(bl => bl.Props)
+                                .ThenInclude(p => p.Seats)
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.VenueLayouts)
+                            .ThenInclude(l => l.VenueLayoutProps)
+                                .ThenInclude(p => p.Seats)
+                    .FirstOrDefaultAsync(v => v.Id == id, ct);
+
+                if (venue is null)
+                    return ApiResponse<bool>.NotFoundResponse("Venue not found.");
+
+                var boxes = venue.VenueBoxes?.ToList() ?? new List<VenueBox>();
+
+                var allProps = boxes
+                    .SelectMany(b =>
+                        (b.Blocks?.SelectMany(bl => bl.Props) ?? Enumerable.Empty<VenueLayoutProp>())
+                        .Concat(b.VenueLayouts?.SelectMany(l => l.VenueLayoutProps) ?? Enumerable.Empty<VenueLayoutProp>()))
+                    .ToList();
+                var allSeats = allProps.SelectMany(p => p.Seats ?? new List<SeatProperties>()).ToList();
+
+                // Refuse to delete a venue whose seats are already assigned to guests.
+                var hasAssignedSeat = allSeats.Any(s =>
+                    string.Equals(s.Status?.Trim(), "assigned", StringComparison.OrdinalIgnoreCase));
+                if (hasAssignedSeat)
+                    return ApiResponse<bool>.ConflictResponse(
+                        "Cannot delete this venue — one or more seats are already assigned to guests.");
+
+                // Defensive check: a seat can be assigned without its Status text being kept
+                // in sync, so also look for real SeatAssign rows referencing these seats.
+                if (allSeats.Count > 0)
+                {
+                    var seatIds = allSeats.Select(s => s.Id).ToList();
+                    var hasSeatAssign = await _unitOfWork.SeatAssigns.Query()
+                        .AnyAsync(sa => seatIds.Contains(sa.SeatId), ct);
+                    if (hasSeatAssign)
+                        return ApiResponse<bool>.ConflictResponse(
+                            "Cannot delete this venue — one or more seats are already assigned to guests.");
+                }
+
+                // A Seating row means this venue was actually used for an event's seating;
+                // refuse rather than silently destroying that record (Seating->Venue is also
+                // a Restrict FK, so leaving this unchecked would otherwise crash on SaveChanges).
+                var hasSeating = await _unitOfWork.Seatings.Query().AnyAsync(s => s.VenueId == id, ct);
+                if (hasSeating)
+                    return ApiResponse<bool>.ConflictResponse(
+                        "Cannot delete this venue — it already has event seating data.");
+
+                // Safe to delete: bottom-up per box (seats → props → blocks/layouts), then
+                // the boxes themselves, then the venue — all in one SaveChanges call.
+                foreach (var box in boxes)
+                    ClearBoxChildren(box);
+                if (boxes.Count > 0)
+                    _unitOfWork.VenueBoxes.RemoveRange(boxes);
+                _unitOfWork.Venues.Remove(venue);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                return ApiResponse<bool>.SuccessResponse(true, "Venue deleted successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting venue {VenueId}", id);
+                return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting the venue.");
+            }
+        }
+        public async Task<ApiResponse<bool>> DeleteVenueBoxAsync(  Guid id, Guid venueId, Guid eventId, Guid sessionId, CancellationToken ct)
+        {
+            try
+            {
+                if (id == Guid.Empty)
+                    return ApiResponse<bool>.ErrorResponse("Venue box id is required.");
+
+                if (venueId == Guid.Empty)
+                    return ApiResponse<bool>.ErrorResponse("Venue id is required.");
+
+                if (eventId == Guid.Empty && sessionId == Guid.Empty)
+                    return ApiResponse<bool>.ErrorResponse("Either eventId or sessionId must be provided.");
+
+                IQueryable<VenueBox> query = _unitOfWork.VenueBoxes.Query()
+                    .Where(x => x.Id == id && x.VenueId == venueId)
+                    .Include(x => x.Blocks!)
+                        .ThenInclude(b => b.Props)
+                            .ThenInclude(p => p.Seats)
+                    .Include(x => x.VenueLayouts!)
+                        .ThenInclude(l => l.VenueLayoutProps)
+                            .ThenInclude(p => p.Seats);
+
+                if (eventId != Guid.Empty)
+                    query = query.Where(x => x.EventId == eventId);
+
+                if (sessionId != Guid.Empty)
+                    query = query.Where(x => x.SessionId == sessionId);
+
+                var venueBox = await query.SingleOrDefaultAsync(ct);
+
+                if (venueBox is null)
+                    return ApiResponse<bool>.NotFoundResponse("Venue box not found.");
+
+                ClearBoxChildren(venueBox);
+                _unitOfWork.VenueBoxes.Remove(venueBox);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                return ApiResponse<bool>.SuccessResponse(true, "Venue box deleted successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting venue box. VenueBoxId: {VenueBoxId}", id);
+                return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting the venue box.");
+            }
+        }
+        public async Task<ApiResponse<GetVenueResonse>> CreateVenueAsync(CreateVenueRequest request, Guid userId, CancellationToken ct= default)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.VenueName))
+                    return ApiResponse<GetVenueResonse>.ErrorResponse("Venue name is required");
+                var venue = new Venue
+                {
+                    Id = Guid.NewGuid(),
+                    Name = request.VenueName.Trim(),
+                    TypeId = request.VenueType == Guid.Empty ? null : request.VenueType,
+                    // Drop empty/blank category entries (e.g. Swagger's placeholder "")
+                    Category = request.Category?
+                        .Where(c => !string.IsNullOrWhiteSpace(c))
+                        .Select(c => c.Trim())
+                        .ToList() ?? new(),
+                    Color = request.Color,
+                };
+                venue.SetCreationAudit(userId);
+
+                // Ignore blank blocks (a block must have a label); only build a box if real blocks remain
+                var blocks = request.Blocks?
+                    .Where(b => !string.IsNullOrWhiteSpace(b.Label))
+                    .ToList();
+
+                if (blocks is { Count: > 0 })
+                {
+                    //create a box canvas to store blocks in it
+                    var defaultBox = new VenueBox
+                    {
+                        Id = Guid.NewGuid(),
+                        VenueId = venue.Id,
+
+                        // Each block is a stadium unit: type + rotation + a prop holding
+                        // the grid, with seats auto-generated (A1, B1 …) from Rows × SeatsPerRow.
+                        Blocks = blocks.Select(b =>
+                        {
+                            var block = new VenueBlock
+                            {
+                                Id = Guid.NewGuid(),
+                                Type = "stadium",
+                                X = b.X,
+                                Y = b.Y,
+                                Rotation = b.Rotation,
+                                Label = b.Label.Trim(),
+                                Category = b.Category,
+                                Rows = b.Rows,
+                                SeatsPerRow = b.SeatsPerRow,
+                            };
+                            block.Props = new List<VenueLayoutProp>
+                            {
+                                new()
+                                {
+                                    Id = Guid.NewGuid(),
+                                    VenueBlockId = block.Id,
+                                    Code = block.Label,
+                                    Label = block.Label,
+                                    Row = b.Rows,
+                                    SeatsQuantity = b.SeatsPerRow,
+                                    RowNames = new(),
+                                    Seats = GenerateSeats(new CreateVenueLayoutPropDto
+                                    {
+                                        Row = b.Rows,
+                                        SeatsQuantity = b.SeatsPerRow,
+                                        RowNames = new(),
+                                    }),
+                                }
+                            };
+                            return block;
+                        }).ToList(),
+                    };
+                    venue.VenueBoxes = new List<VenueBox> { defaultBox };
+                }
+
+                await _unitOfWork.Venues.AddAsync(venue, ct);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                var dto = _mapper.Map<GetVenueResonse>(venue);
+                // No blocks added → no box; return null instead of an empty array
+                if (venue.VenueBoxes is not { Count: > 0 }) dto.VenueBoxes = null;
+
+                return ApiResponse<GetVenueResonse>.SuccessResponse(dto, "Venue created");
+            }
+            catch(Exception ex) {
+                _logger.LogError(ex, "Error Creating Venue");
+                return ApiResponse<GetVenueResonse>.ServerErrorResponse("Error: Failed to Create Venue.");
+            }
+
+        }
+
+        public async Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, CancellationToken ct)
+        {
+            try
+            {
+                if (request.VenueId == Guid.Empty)
+                    return ApiResponse<GetVenueResonse>.ErrorResponse("VenueId is required");
+
+                var venueExists = await _unitOfWork.Venues.AnyAsync(v => v.Id == request.VenueId, ct);
+                if (!venueExists)
+                    return ApiResponse<GetVenueResonse>.NotFoundResponse("Venue not found");
+
+                // Empty eventId = venue default arrangement; otherwise event-scoped
+                var normalizedEventId = eventId == Guid.Empty ? (Guid?)null : eventId;
+
+                // Each (venue, event, session) scope has exactly one box. If one already
+                // exists, replace it: delete it outright (bottom-up, same as
+                // DeleteVenueBoxAsync) and insert a fresh box below. Mutating the existing
+                // box in place (reassigning its child collections while it's still tracked)
+                // trips EF's automatic cascade-delete fixup on the loaded children and
+                // produces a spurious DbUpdateConcurrencyException — deleting outright and
+                // re-inserting sidesteps that entirely.
+                var existingBox = await _unitOfWork.VenueBoxes.Query()
+                    .Include(x => x.Blocks!)
+                        .ThenInclude(b => b.Props)
+                            .ThenInclude(p => p.Seats)
+                    .Include(x => x.VenueLayouts!)
+                        .ThenInclude(l => l.VenueLayoutProps)
+                            .ThenInclude(p => p.Seats)
+                    .FirstOrDefaultAsync(x => x.VenueId == request.VenueId
+                        && x.EventId == normalizedEventId
+                        && x.SessionId == request.SessionId, ct);
+
+                var isNewBox = existingBox == null;
+                if (existingBox != null)
+                {
+                    ClearBoxChildren(existingBox);
+                    _unitOfWork.VenueBoxes.Remove(existingBox);
+                }
+
+                var box = new VenueBox
+                {
+                    Id = Guid.NewGuid(),
+                    VenueId = request.VenueId,
+                    EventId = normalizedEventId,
+                    SessionId = request.SessionId,
+                    Width = request.Width,
+                    Height = request.Height,
+                };
+
+                // Blocks (skip blank labels)
+                var blocks = request.VenueBlocks?
+                    .Where(b => !string.IsNullOrWhiteSpace(b.Label))
+                    .Select(b => new VenueBlock
+                    {
+                        Id = Guid.NewGuid(),
+                        VenueBoxId = box.Id,
+                        Type = "stadium",
+                        X = b.X,
+                        Y = b.Y,
+                        Rotation = b.Rotation,
+                        Label = b.Label.Trim(),
+                        Category = b.Category,
+                        Rows = b.Rows,
+                        SeatsPerRow = b.SeatsPerRow,
+                    }).ToList();
+                box.Blocks = blocks ?? new List<VenueBlock>();
+
+                // Layout elements (skip blank types), each with its props → seats
+                var layouts = request.VenueLayouts?
+                    .Where(l => !string.IsNullOrWhiteSpace(l.Type))
+                    .Select(l => new VenueLayout
+                    {
+                        Id = Guid.NewGuid(),
+                        VenueBoxId = box.Id,
+                        Type = l.Type.Trim(),
+                        X = l.X,
+                        Y = l.Y,
+                        Rotation = l.Rotation,
+                        ScaleX = l.ScaleX,
+                        ScaleY = l.ScaleY,
+                        OffsetX = l.OffsetX,
+                        OffsetY = l.OffsetY,
+                        VenueLayoutProps = (l.Props ?? new()).Select(p => new VenueLayoutProp
+                        {
+                            Id = Guid.NewGuid(),
+                            Code = p.Code,
+                            Label = p.Label,
+                            Row = p.Row,
+                            SeatsQuantity = p.SeatsQuantity,
+                            RowNames = p.RowNames ?? new(),
+                            PitchW = p.PitchW,
+                            PitchH = p.PitchH,
+                            StageW = p.StageW,
+                            StageH = p.StageH,
+                            Color = p.Color,
+                            Seats = GenerateSeats(p),
+                        }).ToList(),
+                    }).ToList();
+                box.VenueLayouts = layouts ?? new List<VenueLayout>();
+
+                await _unitOfWork.VenueBoxes.AddAsync(box, ct);   // cascades blocks + layouts + props + seats
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                // Reload venue with its boxes → blocks + layouts → props → seats for the response
+                var venue = await _unitOfWork.Venues.Query()
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.Blocks)
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.VenueLayouts)
+                            .ThenInclude(l => l.VenueLayoutProps)
+                                .ThenInclude(p => p.Seats)
+                    .FirstOrDefaultAsync(v => v.Id == request.VenueId, ct);
+
+                return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue),
+                    isNewBox ? "Venue box created" : "Venue box updated");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving venue box");
+                return ApiResponse<GetVenueResonse>.ServerErrorResponse("Error: Failed to save venue box.");
+            }
+        }
+
+        // Mark an entire box subtree (blocks/layouts → props → seats) for removal.
+        // The FK relationships under a box use Restrict (Block/Layout → Box, and the
+        // two paths into VenueLayoutProp) to avoid SQL Server's multiple-cascade-path
+        // error, so the whole subtree has to be removed explicitly, bottom-up, in the
+        // same SaveChanges call as whatever happens to the box itself (delete, or a
+        // replace-in-place update).
+        private void ClearBoxChildren(VenueBox box)
+        {
+            var blockProps  = box.Blocks?.SelectMany(b => b.Props) ?? Enumerable.Empty<VenueLayoutProp>();
+            var layoutProps = box.VenueLayouts?.SelectMany(l => l.VenueLayoutProps) ?? Enumerable.Empty<VenueLayoutProp>();
+            var allProps = blockProps.Concat(layoutProps).ToList();
+            var allSeats = allProps.SelectMany(p => p.Seats ?? new List<SeatProperties>()).ToList();
+
+            if (allSeats.Count > 0) _unitOfWork.SeatProperties.RemoveRange(allSeats);
+            if (allProps.Count > 0) _unitOfWork.VenueLayoutProps.RemoveRange(allProps);
+            if (box.Blocks is { Count: > 0 }) _unitOfWork.VenueBlocks.RemoveRange(box.Blocks);
+            if (box.VenueLayouts is { Count: > 0 }) _unitOfWork.VenueLayouts.RemoveRange(box.VenueLayouts);
+        }
+
+        // Build the seat list for a prop.
+        // - Explicit seats from the client win (re-indexed in order).
+        // - Otherwise auto-generate: total = rows × seatsPerRow (rows defaults to 1),
+        //   with codes like "A1, A2 … B1" (row letter from RowNames or A,B,C…; plain
+        //   number when there's a single row). Index is 0-based = draw/order sequence.
+        private static List<SeatProperties> GenerateSeats(CreateVenueLayoutPropDto p)
+        {
+            if (p.Seats is { Count: > 0 })
+            {
+                return p.Seats
+                    .OrderBy(s => s.Index ?? 0)
+                    .Select((s, i) => new SeatProperties
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = string.IsNullOrWhiteSpace(s.Code) ? $"{i + 1}" : s.Code,
+                        Index = i,
+                        Color = s.Color ?? p.Color,
+                        Status = s.Status,
+                        IsDisabled = s.IsDisabled,
+                        SeatInfo = s.SeatInfo,
+                    })
+                    .ToList();
+            }
+
+            var perRow = p.SeatsQuantity ?? 0;
+            if (perRow <= 0) return new();
+
+            var rows = (p.Row is > 0) ? p.Row.Value : 1;
+            var seats = new List<SeatProperties>(rows * perRow);
+
+            for (var i = 0; i < rows * perRow; i++)
+            {
+                var rowIdx = i / perRow;
+                var colIdx = i % perRow;
+                var rowName = (p.RowNames != null && rowIdx < p.RowNames.Count && !string.IsNullOrWhiteSpace(p.RowNames[rowIdx]))
+                    ? p.RowNames[rowIdx]
+                    : ((char)('A' + rowIdx)).ToString();
+                var code = rows > 1 ? $"{rowName}{colIdx + 1}" : $"{colIdx + 1}";
+
+                seats.Add(new SeatProperties
+                {
+                    Id = Guid.NewGuid(),
+                    Code = code,
+                    Index = i,
+                    Color = p.Color,
+                    Status = "available",
+                });
+            }
+            return seats;
+        }
+    }
+}
