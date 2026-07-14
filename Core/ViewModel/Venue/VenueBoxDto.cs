@@ -11,6 +11,9 @@ namespace Core.ViewModel.Venue
         public Guid? SessionId { get; set; }
         public int? Width { get; set; }
         public int? Height { get; set; }
+        // Used by the frontend's "Set Default Layout" to find whichever box
+        // was created first for this venue, across all its events/sessions.
+        public DateTime CreatedAt { get; set; }
         public List<VenueBlockDto> Blocks { get; set; } = new();
         public List<VenueLayoutDto> VenueElements { get; set; }
     }

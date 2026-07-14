@@ -28,7 +28,7 @@ namespace API.Controllers.v1
         [HasPermission(PermissionCodes.VenueManage)]
         public async Task<IActionResult> CreateVenueBox([FromBody] CreateVenueBoxRequest request, CancellationToken ct = default)
         {
-            var result = await _venueService.CreateVenueBoxAsync(request, request.EventId, ct);
+            var result = await _venueService.CreateVenueBoxAsync(request, request.EventId, _currentUser.UserId, ct);
             return ToResponse(result);
         }
         [HttpGet]

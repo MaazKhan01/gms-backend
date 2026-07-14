@@ -1,9 +1,10 @@
 ﻿using API.Configurations;
-using Scalar.AspNetCore;
-using Serilog;
 using Core.Helpers;
 using Core.Middlewares;
 using Infrastructure.Auth;
+using Microsoft.AspNetCore.ResponseCompression;
+using Scalar.AspNetCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +28,12 @@ builder.Services.AddApiVersioning(options =>
     options.DefaultApiVersion = new Microsoft.AspNetCore.Mvc.ApiVersion(1, 0);
     options.AssumeDefaultVersionWhenUnspecified = true;
     options.ReportApiVersions = true;
+});
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
 });
 
 builder.Services.AddCors(options =>
@@ -54,6 +61,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseRouting();
 app.UseCors("AllowAll");
+app.UseResponseCompression();
 
 // Fix 5: Apply rate limiting middleware
 app.UseRateLimiter();

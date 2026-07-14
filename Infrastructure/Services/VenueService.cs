@@ -23,6 +23,11 @@ namespace Infrastructure.Services
         public async Task<ApiResponse<GetVenueResonse>> GetVenueByIdAsync(Guid venueId, CancellationToken ct)
         {
             try {
+                // AsSplitQuery: Blocks and VenueLayouts are sibling collections under
+                // VenueBoxes — in a single query EF joins both, and their Seats collections
+                // multiply together (rows_A × rows_B) instead of adding, which is what made
+                // this take ~20s on venues with a lot of seats. Splitting into separate
+                // SELECTs per collection makes the cost additive again.
                 var venue = await _unitOfWork.Venues.Query()
      .Include(v => v.VenueBoxes!)
          .ThenInclude(vb => vb.Blocks)
@@ -34,6 +39,7 @@ namespace Infrastructure.Services
              .ThenInclude(l => l.VenueLayoutProps)
                  .ThenInclude(p => p.Seats)
 
+     .AsSplitQuery()
      .FirstOrDefaultAsync(v => v.Id == venueId, ct);
                 if (venue == null)
                 {
@@ -72,47 +78,35 @@ namespace Infrastructure.Services
                 if (id == Guid.Empty)
                     return ApiResponse<bool>.ErrorResponse("Venue id is required.");
 
-                var venue = await _unitOfWork.Venues.Query()
-                    .Include(v => v.VenueBoxes!)
-                        .ThenInclude(b => b.Blocks)
-                            .ThenInclude(bl => bl.Props)
-                                .ThenInclude(p => p.Seats)
-                    .Include(v => v.VenueBoxes!)
-                        .ThenInclude(b => b.VenueLayouts)
-                            .ThenInclude(l => l.VenueLayoutProps)
-                                .ThenInclude(p => p.Seats)
-                    .FirstOrDefaultAsync(v => v.Id == id, ct);
-
-                if (venue is null)
+                // Cheap existence check — no object graph loaded.
+                var venueExists = await _unitOfWork.Venues.Query().AnyAsync(v => v.Id == id, ct);
+                if (!venueExists)
                     return ApiResponse<bool>.NotFoundResponse("Venue not found.");
 
-                var boxes = venue.VenueBoxes?.ToList() ?? new List<VenueBox>();
+                // Refuse to delete a venue whose seats are already assigned to guests —
+                // checked directly in SQL via VenueLayoutProp (the only entity in this
+                // chain with a navigable path back up to VenueBox/Venue; SeatProperties
+                // itself has no upward nav). Nothing is materialized into memory here,
+                // so this stays fast regardless of how many seats the venue has.
+                var venueSeats = _unitOfWork.VenueLayoutProps.Query()
+                    .Where(p => (p.Layout != null && p.Layout.VenueBox.VenueId == id)
+                             || (p.Block != null && p.Block.VenueBox.VenueId == id))
+                    .SelectMany(p => p.Seats);
 
-                var allProps = boxes
-                    .SelectMany(b =>
-                        (b.Blocks?.SelectMany(bl => bl.Props) ?? Enumerable.Empty<VenueLayoutProp>())
-                        .Concat(b.VenueLayouts?.SelectMany(l => l.VenueLayoutProps) ?? Enumerable.Empty<VenueLayoutProp>()))
-                    .ToList();
-                var allSeats = allProps.SelectMany(p => p.Seats ?? new List<SeatProperties>()).ToList();
-
-                // Refuse to delete a venue whose seats are already assigned to guests.
-                var hasAssignedSeat = allSeats.Any(s =>
-                    string.Equals(s.Status?.Trim(), "assigned", StringComparison.OrdinalIgnoreCase));
+                var hasAssignedSeat = await venueSeats
+                    .AnyAsync(s => s.Status != null && s.Status.Trim().ToLower() == "assigned", ct);
                 if (hasAssignedSeat)
                     return ApiResponse<bool>.ConflictResponse(
                         "Cannot delete this venue — one or more seats are already assigned to guests.");
 
                 // Defensive check: a seat can be assigned without its Status text being kept
-                // in sync, so also look for real SeatAssign rows referencing these seats.
-                if (allSeats.Count > 0)
-                {
-                    var seatIds = allSeats.Select(s => s.Id).ToList();
-                    var hasSeatAssign = await _unitOfWork.SeatAssigns.Query()
-                        .AnyAsync(sa => seatIds.Contains(sa.SeatId), ct);
-                    if (hasSeatAssign)
-                        return ApiResponse<bool>.ConflictResponse(
-                            "Cannot delete this venue — one or more seats are already assigned to guests.");
-                }
+                // in sync, so also look for real SeatAssign rows referencing these seats —
+                // as a correlated EXISTS subquery, not a giant in-memory seatIds IN-list.
+                var hasSeatAssign = await _unitOfWork.SeatAssigns.Query()
+                    .AnyAsync(sa => venueSeats.Any(s => s.Id == sa.SeatId), ct);
+                if (hasSeatAssign)
+                    return ApiResponse<bool>.ConflictResponse(
+                        "Cannot delete this venue — one or more seats are already assigned to guests.");
 
                 // A Seating row means this venue was actually used for an event's seating;
                 // refuse rather than silently destroying that record (Seating->Venue is also
@@ -122,15 +116,44 @@ namespace Infrastructure.Services
                     return ApiResponse<bool>.ConflictResponse(
                         "Cannot delete this venue — it already has event seating data.");
 
-                // Safe to delete: bottom-up per box (seats → props → blocks/layouts), then
-                // the boxes themselves, then the venue — all in one SaveChanges call.
-                foreach (var box in boxes)
-                    ClearBoxChildren(box);
-                if (boxes.Count > 0)
-                    _unitOfWork.VenueBoxes.RemoveRange(boxes);
-                _unitOfWork.Venues.Remove(venue);
+                // Safe to delete. Set-based deletes straight in SQL — nothing is loaded
+                // or tracked in memory, so this scales with the DB engine's own row
+                // processing instead of EF materializing/tracking every seat first (the
+                // previous ClearBoxChildren approach, which is what was still timing out
+                // even after the read paths got AsSplitQuery). Order follows the Restrict
+                // FK graph bottom-up (props → layouts → blocks → boxes → venue); Props →
+                // Seats is the one Cascade edge, so deleting a prop auto-deletes its seats.
+                await _unitOfWork.BeginTransactionAsync();
+                try
+                {
+                    await _unitOfWork.VenueLayoutProps.Query()
+                        .Where(p => (p.Layout != null && p.Layout.VenueBox.VenueId == id)
+                                 || (p.Block != null && p.Block.VenueBox.VenueId == id))
+                        .ExecuteDeleteAsync(ct);
 
-                await _unitOfWork.SaveChangesAsync(ct);
+                    await _unitOfWork.VenueLayouts.Query()
+                        .Where(l => l.VenueBox!.VenueId == id)
+                        .ExecuteDeleteAsync(ct);
+
+                    await _unitOfWork.VenueBlocks.Query()
+                        .Where(b => b.VenueBox.VenueId == id)
+                        .ExecuteDeleteAsync(ct);
+
+                    await _unitOfWork.VenueBoxes.Query()
+                        .Where(b => b.VenueId == id)
+                        .ExecuteDeleteAsync(ct);
+
+                    await _unitOfWork.Venues.Query()
+                        .Where(v => v.Id == id)
+                        .ExecuteDeleteAsync(ct);
+
+                    await _unitOfWork.CommitTransactionAsync();
+                }
+                catch
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    throw;
+                }
 
                 return ApiResponse<bool>.SuccessResponse(true, "Venue deleted successfully.");
             }
@@ -160,7 +183,8 @@ namespace Infrastructure.Services
                             .ThenInclude(p => p.Seats)
                     .Include(x => x.VenueLayouts!)
                         .ThenInclude(l => l.VenueLayoutProps)
-                            .ThenInclude(p => p.Seats);
+                            .ThenInclude(p => p.Seats)
+                    .AsSplitQuery();
 
                 if (eventId != Guid.Empty)
                     query = query.Where(x => x.EventId == eventId);
@@ -218,6 +242,11 @@ namespace Infrastructure.Services
                     {
                         Id = Guid.NewGuid(),
                         VenueId = venue.Id,
+                        // Scope to whichever event/session this venue was being configured
+                        // for — without this the box is event-agnostic and never matches
+                        // pickBox's per-event lookup, so it silently never shows in the editor.
+                        EventId = request.EventId == Guid.Empty ? null : request.EventId,
+                        SessionId = request.SessionId,
 
                         // Each block is a stadium unit: type + rotation + a prop holding
                         // the grid, with seats auto-generated (A1, B1 …) from Rows × SeatsPerRow.
@@ -257,6 +286,7 @@ namespace Infrastructure.Services
                             return block;
                         }).ToList(),
                     };
+                    defaultBox.SetCreationAudit(userId);
                     venue.VenueBoxes = new List<VenueBox> { defaultBox };
                 }
 
@@ -277,7 +307,7 @@ namespace Infrastructure.Services
 
         }
 
-        public async Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, CancellationToken ct)
+        public async Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, Guid userId, CancellationToken ct)
         {
             try
             {
@@ -305,6 +335,7 @@ namespace Infrastructure.Services
                     .Include(x => x.VenueLayouts!)
                         .ThenInclude(l => l.VenueLayoutProps)
                             .ThenInclude(p => p.Seats)
+                    .AsSplitQuery()
                     .FirstOrDefaultAsync(x => x.VenueId == request.VenueId
                         && x.EventId == normalizedEventId
                         && x.SessionId == request.SessionId, ct);
@@ -325,6 +356,7 @@ namespace Infrastructure.Services
                     Width = request.Width,
                     Height = request.Height,
                 };
+                box.SetCreationAudit(userId);
 
                 // Blocks (skip blank labels)
                 var blocks = request.VenueBlocks?
@@ -384,10 +416,13 @@ namespace Infrastructure.Services
                 var venue = await _unitOfWork.Venues.Query()
                     .Include(v => v.VenueBoxes!)
                         .ThenInclude(b => b.Blocks)
+                            .ThenInclude(bl => bl.Props)
+                                .ThenInclude(p => p.Seats)
                     .Include(v => v.VenueBoxes!)
                         .ThenInclude(b => b.VenueLayouts)
                             .ThenInclude(l => l.VenueLayoutProps)
                                 .ThenInclude(p => p.Seats)
+                    .AsSplitQuery()
                     .FirstOrDefaultAsync(v => v.Id == request.VenueId, ct);
 
                 return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue),
