@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260715110228_fix_columns_of_meeting")]
+    partial class fix_columns_of_meeting
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -269,6 +272,9 @@ namespace DomainPersistence.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<Guid?>("MeetingId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("NationalityId")
                         .HasColumnType("uniqueidentifier");
 
@@ -294,6 +300,8 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("EventId");
 
                     b.HasIndex("InvitationTemplateId");
+
+                    b.HasIndex("MeetingId");
 
                     b.HasIndex("NationalityId");
 
@@ -572,13 +580,10 @@ namespace DomainPersistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
+                        .HasColumnType("datetime2");
 
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uniqueidentifier");
@@ -595,13 +600,8 @@ namespace DomainPersistence.Migrations
                     b.Property<TimeOnly?>("EndTime")
                         .HasColumnType("time");
 
-                    b.Property<Guid>("EventId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
+                        .HasColumnType("bit");
 
                     b.Property<string>("Location")
                         .HasColumnType("nvarchar(max)");
@@ -610,9 +610,7 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<TimeOnly?>("StartTime")
                         .HasColumnType("time");
@@ -625,7 +623,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Meetings", (string)null);
+                    b.ToTable("Meetings");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Nationality", b =>
@@ -1809,21 +1807,6 @@ namespace DomainPersistence.Migrations
                     b.ToTable("VenueLayoutProps", (string)null);
                 });
 
-            modelBuilder.Entity("GuestMeeting", b =>
-                {
-                    b.Property<Guid>("GuestsId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("MeetingId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("GuestsId", "MeetingId");
-
-                    b.HasIndex("MeetingId");
-
-                    b.ToTable("MeetingGuests", (string)null);
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.Event", b =>
                 {
                     b.HasOne("DomainPersistence.Entities.Venue", "Venue")
@@ -1845,6 +1828,10 @@ namespace DomainPersistence.Migrations
                         .WithMany()
                         .HasForeignKey("InvitationTemplateId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("DomainPersistence.Entities.Meeting", null)
+                        .WithMany("GuestIds")
+                        .HasForeignKey("MeetingId");
 
                     b.HasOne("DomainPersistence.Entities.Nationality", "Nationality")
                         .WithMany("Guests")
@@ -2171,21 +2158,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("Layout");
                 });
 
-            modelBuilder.Entity("GuestMeeting", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.Guest", null)
-                        .WithMany()
-                        .HasForeignKey("GuestsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DomainPersistence.Entities.Meeting", null)
-                        .WithMany()
-                        .HasForeignKey("MeetingId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.Event", b =>
                 {
                     b.Navigation("Sessions");
@@ -2199,6 +2171,11 @@ namespace DomainPersistence.Migrations
             modelBuilder.Entity("DomainPersistence.Entities.LookupCategory", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("DomainPersistence.Entities.Meeting", b =>
+                {
+                    b.Navigation("GuestIds");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Nationality", b =>

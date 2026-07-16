@@ -23,6 +23,13 @@ namespace API.Controllers.v1
             }
             return ToResponse(result);
         }
+        [HttpPost("{id:guid}")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> AddVenueBlock(Guid id, [FromQuery] Guid? sessionId, [FromQuery] Guid venueId, [FromBody] CreateVenueBlockDto request, CancellationToken ct)
+        {
+            var result = await _venueService.AddVenueBlockAsync(id, sessionId, venueId, request, ct);
+            return ToResponse(result);
+        }
 
         [HttpPost("box")]
         [HasPermission(PermissionCodes.VenueManage)]

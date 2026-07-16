@@ -208,6 +208,18 @@ public partial class ApplicationDBContext
                 .HasForeignKey(x => x.TypeId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
+        modelBuilder.Entity<Meeting>(v =>
+        {
+            v.ToTable("Meetings");
+            v.HasKey(x => x.Id);
+            v.Property(x => x.Id).HasDefaultValueSql("(newid())");
+            v.Property(x => x.Name).IsRequired().HasMaxLength(300);
+            v.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            v.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            v.HasMany(x => x.Guests)
+            .WithMany()
+            .UsingEntity(j => j.ToTable("MeetingGuests"));
+        });
 
         modelBuilder.Entity<VenueBox>(b =>
         {

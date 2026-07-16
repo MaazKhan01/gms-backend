@@ -4,18 +4,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DomainPersistence.Entities
+namespace Core.ViewModel.Meeting
 {
-    public class Meeting : Entity
+    public class CreateMeetingRequest
     {
-        public string Name { get; set; }
         public Guid EventId { get; set; }
+        public string Name { get; set; }
         public DateOnly Date { get; set; }
         public string? Location { get; set; }
         public TimeOnly? StartTime { get; set; }
         public TimeOnly? EndTime { get; set; }
         public string? MeetingAgenda { get; set; }
-        public ICollection<Guest> Guests { get; set; } = new List<Guest>();
-
+        public ICollection<Guid> GuestIds { get; set; }
     }
 }
