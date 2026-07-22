@@ -19,7 +19,7 @@ public class EventsController(IEventService _eventService, ICurrentUser _current
 {
 
     [HttpGet]
-    [HasPermission(PermissionCodes.EventsView)]
+    //[HasPermission(PermissionCodes.EventsView)]
     public async Task<IActionResult> GetEvents(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 20,

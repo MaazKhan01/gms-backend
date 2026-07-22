@@ -39,7 +39,7 @@ namespace API.Controllers.v1
             return ToResponse(result);
         }
         [HttpGet]
-        [HasPermission(PermissionCodes.VenueView)]
+        //[HasPermission(PermissionCodes.VenueView)]
         public async Task<IActionResult> GetVenues(CancellationToken ct)
         {
             var result = await _venueService.GetVenuesAsync(ct);
@@ -78,7 +78,7 @@ namespace API.Controllers.v1
             return ToResponse(result);
         }
         [HttpGet("{id:guid}")]
-        [HasPermission(PermissionCodes.VenueView)]
+        //[HasPermission(PermissionCodes.VenueView)]
         public async Task<IActionResult> GetVenueById(Guid id, CancellationToken ct)
         {
             var result = await _venueService.GetVenueByIdAsync(id, ct);

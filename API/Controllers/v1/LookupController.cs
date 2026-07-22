@@ -24,7 +24,7 @@ public class LookupController(ILookupService _lookupService, ICurrentUser _curre
 
     // The core "call by code" endpoint — e.g. GET /api/v1/lookups/AIRPORT/items
     [HttpGet("{categoryCode}/items")]
-    [HasPermission(PermissionCodes.LookupsView)]
+    //[HasPermission(PermissionCodes.LookupsView)]
     public async Task<IActionResult> GetItems(string categoryCode, [FromQuery] bool includeInactive, CancellationToken ct)
     {
         var result = await _lookupService.GetItemsByCategoryCodeAsync(categoryCode, includeInactive, ct);
@@ -32,7 +32,7 @@ public class LookupController(ILookupService _lookupService, ICurrentUser _curre
     }
 
     [HttpGet("items/{id:guid}")]
-    [HasPermission(PermissionCodes.LookupsView)]
+    //[HasPermission(PermissionCodes.LookupsView)]
     public async Task<IActionResult> GetItemById(Guid id, CancellationToken ct)
     {
         var result = await _lookupService.GetItemByIdAsync(id, ct);

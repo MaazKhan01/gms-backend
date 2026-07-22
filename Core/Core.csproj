@@ -7,8 +7,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <Compile Remove="Managers\**" />
+	  <EmbeddedResource Remove="Managers\**" />
+	  <None Remove="Managers\**" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<Folder Include="Constants\NewFolder\" />
-		<Folder Include="Managers\" />
 		<Folder Include="Queries\" />
 		<Folder Include="Validators\" />
 		<Folder Include="Mappings\" />

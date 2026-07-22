@@ -22,4 +22,10 @@ public class MeetingController(IMeetingService _meetingService) : Controllers.Ba
         var result =await _meetingService.GetMeetingAllMeetingsAsync(id, ct);
         return ToResponse(result);
     }
+    [HttpPut]
+    public async Task<IActionResult> EditMeeting([FromBody] EditMeetingRequest request, CancellationToken ct)
+    {
+        var result = await _meetingService.EditMeetingAsync(request, ct);
+        return ToResponse(result);
+    }
  }

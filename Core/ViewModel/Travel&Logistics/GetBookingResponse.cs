@@ -1,16 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-namespace DomainPersistence.Entities
+using System;
+
+namespace Core.ViewModel.Travel_Logistics
 {
-    public class Travel_logistics : Entity
+    public class GetBookingResponse
     {
+        public Guid Id { get; set; }
         public Guid EventId { get; set; }
-        public string BookingType { get; set; }
         public Guid GuestId { get; set; }
-        public virtual Guest Guest { get; set; } = null!;
+        public string GuestName { get; set; }
+        public string BookingType { get; set; }
         public string? FlightNumber { get; set; }
         public DateOnly? FlightDate { get; set; }
         public string? FlightDeparture { get; set; }
@@ -23,7 +21,5 @@ namespace DomainPersistence.Entities
         public string? DriverName { get; set; }
         public Guid? PickupLocationId { get; set; }
         public Guid? DropoffLocationId { get; set; }
-        public virtual Location? PickupLocation { get; set; }
-        public virtual Location? DropoffLocation { get; set; }
     }
 }

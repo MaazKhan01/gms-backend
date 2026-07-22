@@ -47,6 +47,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<SeatAssign> SeatAssigns { get; }
     //Meeting
     IGenericRepository<Meeting> Meetings { get; }
+    // Travel & Logistics
+    IGenericRepository<Travel_logistics> TravelLogistics { get; }
+    IGenericRepository<Location> Locations { get; }
     // Notifications
     IGenericRepository<Notification> Notifications { get; }
 

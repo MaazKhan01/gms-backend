@@ -127,5 +127,91 @@ namespace Infrastructure.Services
                 return ApiResponse<List<GetMeetingResponse>>.ServerErrorResponse("An error occurred while fetching meetings.");
             }
         }
+        public async Task<ApiResponse<GetMeetingResponse>> EditMeetingAsync(EditMeetingRequest request, CancellationToken ct)
+        {
+            try
+            {
+                if (request.MeetId == Guid.Empty)
+                    return ApiResponse<GetMeetingResponse>.ErrorResponse("Meeting id is required.");
+
+                var meeting = await _unitOfWork.Meetings.Query()
+                    .Include(m => m.Guests)
+                    .FirstOrDefaultAsync(m => m.Id == request.MeetId && m.EventId == request.EventId, ct);
+
+                if (meeting == null || meeting.IsDeleted == true)
+                    return ApiResponse<GetMeetingResponse>.NotFoundResponse("Meeting not found.");
+
+                // Every field is optional (partial update) — null means "leave as is".
+                if (request.Name != null)
+                {
+                    if (string.IsNullOrWhiteSpace(request.Name))
+                        return ApiResponse<GetMeetingResponse>.ErrorResponse("Meeting name cannot be empty.");
+                    meeting.Name = request.Name;
+                }
+                if (request.Location != null) meeting.Location = request.Location;
+                if (request.StartTime.HasValue) meeting.StartTime = request.StartTime;
+                if (request.EndTime.HasValue) meeting.EndTime = request.EndTime;
+                if (request.Agenda != null) meeting.MeetingAgenda = request.Agenda;
+
+                // GuestIds omitted (null) leaves attendees untouched; an explicit empty
+                // list clears them — the two are meaningfully different.
+                if (request.GuestIds != null)
+                {
+                    var requestedIds = request.GuestIds.Distinct().ToList();
+
+                    var guests = requestedIds.Count == 0
+                        ? new List<Guest>()
+                        : await _unitOfWork.Guests.Query().Where(g => requestedIds.Contains(g.Id)).ToListAsync(ct);
+
+                    if (guests.Count != requestedIds.Count)
+                        return ApiResponse<GetMeetingResponse>.NotFoundResponse("One or more guests were not found.");
+
+                    if (requestedIds.Count > 0)
+                    {
+                        // Same double-booking check as CreateMeetingAsync, excluding this
+                        // meeting itself so re-saving its own existing guests isn't a "conflict".
+                        var conflictingMeeting = await _unitOfWork.Meetings.Query()
+                            .Where(m => m.Id != meeting.Id && m.IsDeleted != true && m.Date == meeting.Date)
+                            .Where(m => m.Guests.Any(g => requestedIds.Contains(g.Id)))
+                            .Where(m => meeting.StartTime == null || meeting.EndTime == null
+                                     || m.StartTime == null || m.EndTime == null
+                                     || (m.StartTime < meeting.EndTime && meeting.StartTime < m.EndTime))
+                            .FirstOrDefaultAsync(ct);
+
+                        if (conflictingMeeting != null)
+                            return ApiResponse<GetMeetingResponse>.ConflictResponse(
+                                "One or more guests already have a meeting scheduled at this date/time.");
+                    }
+
+                    meeting.Guests.Clear();
+                    foreach (var g in guests) meeting.Guests.Add(g);
+                }
+
+                meeting.SetUpdateAudit(_currentUser.UserId);
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                var response = new GetMeetingResponse
+                {
+                    Id = meeting.Id,
+                    Name = meeting.Name,
+                    Date = meeting.Date,
+                    Location = meeting.Location,
+                    StartTime = meeting.StartTime,
+                    EndTime = meeting.EndTime,
+                    MeetingAgenda = meeting.MeetingAgenda,
+                    EventId = meeting.EventId,
+                    Guests = meeting.Guests
+                        .Select(g => new GuestInfo { Id = g.Id, Name = $"{g.FirstName} {g.LastName}".Trim() })
+                        .ToList(),
+                };
+
+                return ApiResponse<GetMeetingResponse>.SuccessResponse(response, "Meeting updated successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating meeting {MeetingId}", request.MeetId);
+                return ApiResponse<GetMeetingResponse>.ServerErrorResponse("Error updating meeting.");
+            }
+        }
     }
 }

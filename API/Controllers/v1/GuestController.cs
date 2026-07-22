@@ -15,7 +15,7 @@ namespace API.Controllers.v1;
 public class GuestController(IGuestService _guestService, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
     [HttpGet]
-    [HasPermission(PermissionCodes.GuestsView)]
+    //[HasPermission(PermissionCodes.GuestsView)]
     public async Task<IActionResult> GetGuests([FromQuery] Guid eventId, [FromQuery] PagedRequest request, CancellationToken ct)
     {
         var result = await _guestService.GetGuestsAsync(eventId, request, ct);
@@ -23,7 +23,7 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
     }
 
     [HttpGet("{id:guid}")]
-    [HasPermission(PermissionCodes.GuestsView)]
+    //[HasPermission(PermissionCodes.GuestsView)]
     public async Task<IActionResult> GetGuestById(Guid id, CancellationToken ct)
     {
         var result = await _guestService.GetGuestByIdAsync(id, ct);

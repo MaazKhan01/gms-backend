@@ -1,16 +1,20 @@
-﻿using System;
+﻿using Core.Constants;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-namespace DomainPersistence.Entities
+
+namespace Core.ViewModel.Travel_Logistics
 {
-    public class Travel_logistics : Entity
+    public class CreateBookingDto
     {
         public Guid EventId { get; set; }
+        // A plain string carrying one of the Core.Constants.BookingTypes values
+        // (Flight/Hotel/ByRoad) — BookingTypes itself is just a bag of string
+        // constants, not a real type JSON can bind to.
         public string BookingType { get; set; }
         public Guid GuestId { get; set; }
-        public virtual Guest Guest { get; set; } = null!;
         public string? FlightNumber { get; set; }
         public DateOnly? FlightDate { get; set; }
         public string? FlightDeparture { get; set; }
@@ -23,7 +27,6 @@ namespace DomainPersistence.Entities
         public string? DriverName { get; set; }
         public Guid? PickupLocationId { get; set; }
         public Guid? DropoffLocationId { get; set; }
-        public virtual Location? PickupLocation { get; set; }
-        public virtual Location? DropoffLocation { get; set; }
+
     }
 }

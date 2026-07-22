@@ -39,6 +39,8 @@ public class UnitOfWork : IUnitOfWork
         SeatAssigns = new GenericRepository<SeatAssign>(_context);
 
         Meetings = new GenericRepository<Meeting>(_context);
+        TravelLogistics = new GenericRepository<Travel_logistics>(_context);
+        Locations = new GenericRepository<Location>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
@@ -65,6 +67,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Seating> Seatings { get; private set; }
     public IGenericRepository<SeatAssign> SeatAssigns { get; private set; }
     public IGenericRepository<Meeting> Meetings { get; private set; }
+    public IGenericRepository<Travel_logistics> TravelLogistics { get; private set; }
+    public IGenericRepository<Location> Locations { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<LookupCategory> LookupCategories { get; private set; }
