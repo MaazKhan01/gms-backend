@@ -78,6 +78,13 @@ app.MapScalarApiReference("/scalar", options =>
         .AddPreferredSecuritySchemes("Bearer");
 });
 
+// Swagger UI served against the same native OpenAPI doc.
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "GMS API v1");
+    options.RoutePrefix = "swagger";
+});
+
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseAuth(); // UnauthorizedMiddleware + UseAuthentication + UseAuthorization
