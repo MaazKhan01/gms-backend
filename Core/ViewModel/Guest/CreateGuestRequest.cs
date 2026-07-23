@@ -16,6 +16,7 @@ public class CreateGuestRequest
     public string Tier { get; set; }
     public string InvitationStatus { get; set; }
     public DateOnly? ArrivalDate { get; set; }
+    public DateOnly? DepartureDate { get; set; }
     public string FlightNumber { get; set; }
     public Guid? SeatId { get; set; }
     public string Hotel { get; set; }
