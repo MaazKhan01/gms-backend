@@ -57,7 +57,7 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
     {
         var ev = await _unitOfWork.Events.Query()
             .Include(e => e.Sessions)
-            .FirstOrDefaultAsync(e => e.Id == id, ct);
+            .FirstOrDefaultAsync(e => e.PublicId == id, ct);
 
         if (ev == null)
             return ApiResponse<EventResponse>.NotFoundResponse("Event not found");
@@ -65,7 +65,7 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         return ApiResponse<EventResponse>.SuccessResponse(_mapper.Map<EventResponse>(ev));
     }
 
-    public async Task<ApiResponse<EventResponse>> CreateEventAsync(CreateEventRequest request, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<EventResponse>> CreateEventAsync(CreateEventRequest request, int userId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
             return ApiResponse<EventResponse>.ErrorResponse("Title is required");
@@ -75,7 +75,6 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
             return ApiResponse<EventResponse>.ErrorResponse($"Invalid status '{request.Status}'");
 
         var ev = _mapper.Map<Event>(request);
-        ev.Id = Guid.NewGuid();
         ev.Status = status;
         ev.AppKey = await UniqueAppKeyAsync(Slugify(request.Title), ct);
         ev.SetCreationAudit(userId);
@@ -86,9 +85,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         return ApiResponse<EventResponse>.SuccessResponse(_mapper.Map<EventResponse>(ev), "Event created");
     }
 
-    public async Task<ApiResponse<EventResponse>> UpdateEventAsync(Guid id, UpdateEventRequest request, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<EventResponse>> UpdateEventAsync(Guid id, UpdateEventRequest request, int userId, CancellationToken ct = default)
     {
-        var ev = await _unitOfWork.Events.GetByIdAsync(id, ct);
+        var ev = await _unitOfWork.Events.GetByPublicIdAsync(id, ct);
         if (ev == null)
             return ApiResponse<EventResponse>.NotFoundResponse("Event not found");
 
@@ -119,9 +118,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         return ApiResponse<EventResponse>.SuccessResponse(_mapper.Map<EventResponse>(ev), "Event updated");
     }
 
-    public async Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, int userId, CancellationToken ct = default)
     {
-        var ev = await _unitOfWork.Events.GetByIdAsync(id, ct);
+        var ev = await _unitOfWork.Events.GetByPublicIdAsync(id, ct);
         if (ev == null)
             return ApiResponse<EventResponse>.NotFoundResponse("Event not found");
 
@@ -141,9 +140,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         return ApiResponse<EventResponse>.SuccessResponse(_mapper.Map<EventResponse>(ev), "Status updated");
     }
 
-    public async Task<ApiResponse<bool>> DeleteEventAsync(Guid id, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<bool>> DeleteEventAsync(Guid id, int userId, CancellationToken ct = default)
     {
-        var ev = await _unitOfWork.Events.GetByIdAsync(id, ct);
+        var ev = await _unitOfWork.Events.GetByPublicIdAsync(id, ct);
         if (ev == null)
             return ApiResponse<bool>.NotFoundResponse("Event not found");
 
@@ -159,16 +158,17 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
     public async Task<ApiResponse<List<SessionResponse>>> GetSessionsAsync(Guid eventId, CancellationToken ct = default)
     {
         var sessions = await _unitOfWork.Sessions.Query()
-            .Where(s => s.EventId == eventId)
+            .Include(s => s.Event)
+            .Where(s => s.Event.PublicId == eventId)
             .OrderBy(s => s.Date).ThenBy(s => s.Time)
             .ToListAsync(ct);
 
         return ApiResponse<List<SessionResponse>>.SuccessResponse(_mapper.Map<List<SessionResponse>>(sessions));
     }
 
-    public async Task<ApiResponse<SessionResponse>> AddSessionAsync(Guid eventId, CreateSessionRequest request, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<SessionResponse>> AddSessionAsync(Guid eventId, CreateSessionRequest request, int userId, CancellationToken ct = default)
     {
-        var ev = await _unitOfWork.Events.GetByIdAsync(eventId, ct);
+        var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev == null)
             return ApiResponse<SessionResponse>.NotFoundResponse("Event not found");
         if (string.IsNullOrWhiteSpace(request.Title))
@@ -179,8 +179,8 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
             return ApiResponse<SessionResponse>.ErrorResponse(dateError);
 
         var session = _mapper.Map<Session>(request);
-        session.Id = Guid.NewGuid();
-        session.EventId = eventId;
+        session.EventId = ev.Id;
+        session.Event = ev;
         session.SetCreationAudit(userId);
 
         await _unitOfWork.Sessions.AddAsync(session, ct);
@@ -189,13 +189,14 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         return ApiResponse<SessionResponse>.SuccessResponse(_mapper.Map<SessionResponse>(session), "Session added");
     }
 
-    public async Task<ApiResponse<SessionResponse>> UpdateSessionAsync(Guid eventId, Guid sessionId, UpdateSessionRequest request, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<SessionResponse>> UpdateSessionAsync(Guid eventId, Guid sessionId, UpdateSessionRequest request, int userId, CancellationToken ct = default)
     {
-        var session = await _unitOfWork.Sessions.FindFirstOrDefaultAsync(s => s.Id == sessionId && s.EventId == eventId, ct);
+        var session = await _unitOfWork.Sessions.FindFirstOrDefaultAsync(s => s.PublicId == sessionId && s.Event.PublicId == eventId, ct);
         if (session == null)
             return ApiResponse<SessionResponse>.NotFoundResponse("Session not found");
 
-        var ev = await _unitOfWork.Events.GetByIdAsync(eventId, ct);
+        var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
+        session.Event = ev;
         var dateError = ValidateSessionDate(ev, request.Date ?? session.Date);
         if (dateError != null)
             return ApiResponse<SessionResponse>.ErrorResponse(dateError);
@@ -215,9 +216,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         return ApiResponse<SessionResponse>.SuccessResponse(_mapper.Map<SessionResponse>(session), "Session updated");
     }
 
-    public async Task<ApiResponse<bool>> DeleteSessionAsync(Guid eventId, Guid sessionId, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<bool>> DeleteSessionAsync(Guid eventId, Guid sessionId, int userId, CancellationToken ct = default)
     {
-        var session = await _unitOfWork.Sessions.FindFirstOrDefaultAsync(s => s.Id == sessionId && s.EventId == eventId, ct);
+        var session = await _unitOfWork.Sessions.FindFirstOrDefaultAsync(s => s.PublicId == sessionId && s.Event.PublicId == eventId, ct);
         if (session == null)
             return ApiResponse<bool>.NotFoundResponse("Session not found");
 

@@ -5,9 +5,10 @@ namespace Core.Common.Interfaces;
 public interface ICurrentUser
 {
     LoggedInUser UserInfo { get; }
-    Guid UserId { get; }
+    int UserId { get; }
+    Guid UserPublicId { get; }
     string Email { get; }
-    Guid RoleId { get; }
+    int RoleId { get; }
     string RoleName { get; }
     bool IsAuthenticated { get; }
 

@@ -29,6 +29,12 @@ namespace Infrastructure.Services
                 // this take ~20s on venues with a lot of seats. Splitting into separate
                 // SELECTs per collection makes the cost additive again.
                 var venue = await _unitOfWork.Venues.Query()
+     .Include(v => v.Type)
+     .Include(v => v.VenueBoxes!)
+         .ThenInclude(vb => vb.Event)
+     .Include(v => v.VenueBoxes!)
+         .ThenInclude(vb => vb.Session)
+
      .Include(v => v.VenueBoxes!)
          .ThenInclude(vb => vb.Blocks)
              .ThenInclude(b => b.Props)
@@ -40,7 +46,7 @@ namespace Infrastructure.Services
                  .ThenInclude(p => p.Seats)
 
      .AsSplitQuery()
-     .FirstOrDefaultAsync(v => v.Id == venueId, ct);
+     .FirstOrDefaultAsync(v => v.PublicId == venueId, ct);
                 if (venue == null)
                 {
                     return ApiResponse<GetVenueResonse>.NotFoundResponse("Venue doesn't existed");
@@ -60,6 +66,7 @@ namespace Infrastructure.Services
             {
                 // Lightweight list (scalars only) — the editor fetches full boxes via GetById on select.
                 var venues = await _unitOfWork.Venues.Query()
+                    .Include(v => v.Type)
                     .OrderBy(v => v.Name)
                     .ToListAsync(ct);
                 var list = venues.Select(v => _mapper.Map<GetVenueResonse>(v)).ToList();
@@ -78,10 +85,13 @@ namespace Infrastructure.Services
                 if (id == Guid.Empty)
                     return ApiResponse<bool>.ErrorResponse("Venue id is required.");
 
-                // Cheap existence check — no object graph loaded.
-                var venueExists = await _unitOfWork.Venues.Query().AnyAsync(v => v.Id == id, ct);
-                if (!venueExists)
+                // Resolve the public id to the internal int key (used for all FK filters below).
+                var venueEntity = await _unitOfWork.Venues.Query()
+                    .Select(v => new { v.Id, v.PublicId })
+                    .FirstOrDefaultAsync(v => v.PublicId == id, ct);
+                if (venueEntity == null)
                     return ApiResponse<bool>.NotFoundResponse("Venue not found.");
+                var venueId = venueEntity.Id;
 
                 // Refuse to delete a venue whose seats are already assigned to guests —
                 // checked directly in SQL via VenueLayoutProp (the only entity in this
@@ -89,8 +99,8 @@ namespace Infrastructure.Services
                 // itself has no upward nav). Nothing is materialized into memory here,
                 // so this stays fast regardless of how many seats the venue has.
                 var venueSeats = _unitOfWork.VenueLayoutProps.Query()
-                    .Where(p => (p.Layout != null && p.Layout.VenueBox.VenueId == id)
-                             || (p.Block != null && p.Block.VenueBox.VenueId == id))
+                    .Where(p => (p.Layout != null && p.Layout.VenueBox.VenueId == venueId)
+                             || (p.Block != null && p.Block.VenueBox.VenueId == venueId))
                     .SelectMany(p => p.Seats);
 
                 var hasAssignedSeat = await venueSeats
@@ -111,7 +121,7 @@ namespace Infrastructure.Services
                 // A Seating row means this venue was actually used for an event's seating;
                 // refuse rather than silently destroying that record (Seating->Venue is also
                 // a Restrict FK, so leaving this unchecked would otherwise crash on SaveChanges).
-                var hasSeating = await _unitOfWork.Seatings.Query().AnyAsync(s => s.VenueId == id, ct);
+                var hasSeating = await _unitOfWork.Seatings.Query().AnyAsync(s => s.VenueId == venueId, ct);
                 if (hasSeating)
                     return ApiResponse<bool>.ConflictResponse(
                         "Cannot delete this venue — it already has event seating data.");
@@ -127,24 +137,24 @@ namespace Infrastructure.Services
                 try
                 {
                     await _unitOfWork.VenueLayoutProps.Query()
-                        .Where(p => (p.Layout != null && p.Layout.VenueBox.VenueId == id)
-                                 || (p.Block != null && p.Block.VenueBox.VenueId == id))
+                        .Where(p => (p.Layout != null && p.Layout.VenueBox.VenueId == venueId)
+                                 || (p.Block != null && p.Block.VenueBox.VenueId == venueId))
                         .ExecuteDeleteAsync(ct);
 
                     await _unitOfWork.VenueLayouts.Query()
-                        .Where(l => l.VenueBox!.VenueId == id)
+                        .Where(l => l.VenueBox!.VenueId == venueId)
                         .ExecuteDeleteAsync(ct);
 
                     await _unitOfWork.VenueBlocks.Query()
-                        .Where(b => b.VenueBox.VenueId == id)
+                        .Where(b => b.VenueBox.VenueId == venueId)
                         .ExecuteDeleteAsync(ct);
 
                     await _unitOfWork.VenueBoxes.Query()
-                        .Where(b => b.VenueId == id)
+                        .Where(b => b.VenueId == venueId)
                         .ExecuteDeleteAsync(ct);
 
                     await _unitOfWork.Venues.Query()
-                        .Where(v => v.Id == id)
+                        .Where(v => v.Id == venueId)
                         .ExecuteDeleteAsync(ct);
 
                     await _unitOfWork.CommitTransactionAsync();
@@ -176,8 +186,14 @@ namespace Infrastructure.Services
                 if (eventId == Guid.Empty && sessionId == Guid.Empty)
                     return ApiResponse<bool>.ErrorResponse("Either eventId or sessionId must be provided.");
 
+                // Resolve the public ids to internal int keys used by the FK filters.
+                var venue = await _unitOfWork.Venues.Query()
+                    .FirstOrDefaultAsync(v => v.PublicId == venueId, ct);
+                if (venue == null)
+                    return ApiResponse<bool>.NotFoundResponse("Venue box not found.");
+
                 IQueryable<VenueBox> query = _unitOfWork.VenueBoxes.Query()
-                    .Where(x => x.Id == id && x.VenueId == venueId)
+                    .Where(x => x.PublicId == id && x.VenueId == venue.Id)
                     .Include(x => x.Blocks!)
                         .ThenInclude(b => b.Props)
                             .ThenInclude(p => p.Seats)
@@ -187,10 +203,22 @@ namespace Infrastructure.Services
                     .AsSplitQuery();
 
                 if (eventId != Guid.Empty)
-                    query = query.Where(x => x.EventId == eventId);
+                {
+                    var ev = await _unitOfWork.Events.Query()
+                        .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+                    if (ev == null)
+                        return ApiResponse<bool>.NotFoundResponse("Venue box not found.");
+                    query = query.Where(x => x.EventId == ev.Id);
+                }
 
                 if (sessionId != Guid.Empty)
-                    query = query.Where(x => x.SessionId == sessionId);
+                {
+                    var session = await _unitOfWork.Sessions.Query()
+                        .FirstOrDefaultAsync(s => s.PublicId == sessionId, ct);
+                    if (session == null)
+                        return ApiResponse<bool>.NotFoundResponse("Venue box not found.");
+                    query = query.Where(x => x.SessionId == session.Id);
+                }
 
                 var venueBox = await query.SingleOrDefaultAsync(ct);
 
@@ -231,13 +259,30 @@ namespace Infrastructure.Services
                 // (venue, event, session), and different venues can each have their own
                 // box under the very same event/session, so venueId is required too
                 // (without it, this used to just grab whichever box matched first).
-                var normalizedSessionId = sessionId == Guid.Empty ? (Guid?)null : sessionId;
+                // Resolve public ids (venue/event/session) to internal int keys for the box lookup.
+                var venue = await _unitOfWork.Venues.Query()
+                    .FirstOrDefaultAsync(v => v.PublicId == venueId, ct);
 
-                var venueBox = await _unitOfWork.VenueBoxes.Query()
-                    .Include(vb => vb.Blocks)
-                    .FirstOrDefaultAsync(vb => vb.VenueId == venueId
-                        && vb.EventId == eventId
-                        && vb.SessionId == normalizedSessionId, ct);
+                var ev = await _unitOfWork.Events.Query()
+                    .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+
+                int? normalizedSessionId = null;
+                if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+                {
+                    var session = await _unitOfWork.Sessions.Query()
+                        .FirstOrDefaultAsync(s => s.PublicId == sessionId.Value, ct);
+                    normalizedSessionId = session?.Id;
+                }
+
+                VenueBox? venueBox = null;
+                if (venue != null && ev != null)
+                {
+                    venueBox = await _unitOfWork.VenueBoxes.Query()
+                        .Include(vb => vb.Blocks)
+                        .FirstOrDefaultAsync(vb => vb.VenueId == venue.Id
+                            && vb.EventId == ev.Id
+                            && vb.SessionId == normalizedSessionId, ct);
+                }
 
                 if (venueBox == null)
                     return ApiResponse<GetVenueResonse>.NotFoundResponse("No venue box found for this venue/event/session. Create one first.");
@@ -253,7 +298,6 @@ namespace Infrastructure.Services
                 // single prop holding the grid, with seats auto-generated from Rows × SeatsPerRow.
                 var block = new VenueBlock
                 {
-                    Id = Guid.NewGuid(),
                     VenueBoxId = venueBox.Id,
                     Type = "stadium",
                     X = request.X,
@@ -268,8 +312,7 @@ namespace Infrastructure.Services
                 {
                     new()
                     {
-                        Id = Guid.NewGuid(),
-                        VenueBlockId = block.Id,
+                        // VenueBlockId FK is set by EF from the block navigation on save.
                         Code = block.Label,
                         Label = block.Label,
                         Row = request.Rows,
@@ -289,7 +332,12 @@ namespace Infrastructure.Services
 
                 // Reload the venue with the full box graph for the response, same shape
                 // GetVenueByIdAsync/CreateVenueBoxAsync return.
-                var venue = await _unitOfWork.Venues.Query()
+                var venueResult = await _unitOfWork.Venues.Query()
+                    .Include(v => v.Type)
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.Event)
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.Session)
                     .Include(v => v.VenueBoxes!)
                         .ThenInclude(b => b.Blocks)
                             .ThenInclude(bl => bl.Props)
@@ -301,7 +349,7 @@ namespace Infrastructure.Services
                     .AsSplitQuery()
                     .FirstOrDefaultAsync(v => v.Id == venueBox.VenueId, ct);
 
-                return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue), "Block added");
+                return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venueResult), "Block added");
             }
             catch (Exception ex)
             {
@@ -309,17 +357,30 @@ namespace Infrastructure.Services
                 return ApiResponse<GetVenueResonse>.ServerErrorResponse("Error creating block");
             }
         }
-        public async Task<ApiResponse<GetVenueResonse>> CreateVenueAsync(CreateVenueRequest request, Guid userId, CancellationToken ct= default)
+        public async Task<ApiResponse<GetVenueResonse>> CreateVenueAsync(CreateVenueRequest request, int userId, CancellationToken ct= default)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(request.VenueName))
                     return ApiResponse<GetVenueResonse>.ErrorResponse("Venue name is required");
+
+                // userId is the internal user id (0 = unauthenticated).
+                int? creatorId = userId == 0 ? null : userId;
+
+                // VenueType is a LookupItem public id; resolve to its internal int FK.
+                int? typeId = null;
+                if (request.VenueType != Guid.Empty)
+                {
+                    typeId = await _unitOfWork.LookupItems.Query()
+                        .Where(t => t.PublicId == request.VenueType)
+                        .Select(t => (int?)t.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
                 var venue = new Venue
                 {
-                    Id = Guid.NewGuid(),
                     Name = request.VenueName.Trim(),
-                    TypeId = request.VenueType == Guid.Empty ? null : request.VenueType,
+                    TypeId = typeId,
                     // Drop empty/blank category entries (e.g. Swagger's placeholder "")
                     Category = request.Category?
                         .Where(c => !string.IsNullOrWhiteSpace(c))
@@ -327,7 +388,7 @@ namespace Infrastructure.Services
                         .ToList() ?? new(),
                     Color = request.Color,
                 };
-                venue.SetCreationAudit(userId);
+                if (creatorId.HasValue) venue.SetCreationAudit(creatorId.Value);
 
                 // Ignore blank blocks (a block must have a label); only build a box if real blocks remain
                 var blocks = request.Blocks?
@@ -336,16 +397,35 @@ namespace Infrastructure.Services
 
                 if (blocks is { Count: > 0 })
                 {
+                    // Scope to whichever event/session this venue was being configured for.
+                    // EventId/SessionId arrive as public ids; resolve them to internal int FKs.
+                    int? boxEventId = null;
+                    if (request.EventId.HasValue && request.EventId.Value != Guid.Empty)
+                    {
+                        boxEventId = await _unitOfWork.Events.Query()
+                            .Where(e => e.PublicId == request.EventId.Value)
+                            .Select(e => (int?)e.Id)
+                            .FirstOrDefaultAsync(ct);
+                    }
+
+                    int? boxSessionId = null;
+                    if (request.SessionId.HasValue && request.SessionId.Value != Guid.Empty)
+                    {
+                        boxSessionId = await _unitOfWork.Sessions.Query()
+                            .Where(s => s.PublicId == request.SessionId.Value)
+                            .Select(s => (int?)s.Id)
+                            .FirstOrDefaultAsync(ct);
+                    }
+
                     //create a box canvas to store blocks in it
                     var defaultBox = new VenueBox
                     {
-                        Id = Guid.NewGuid(),
-                        VenueId = venue.Id,
+                        // VenueId FK is set by EF from the venue navigation on save.
                         // Scope to whichever event/session this venue was being configured
                         // for — without this the box is event-agnostic and never matches
                         // pickBox's per-event lookup, so it silently never shows in the editor.
-                        EventId = request.EventId == Guid.Empty ? null : request.EventId,
-                        SessionId = request.SessionId,
+                        EventId = boxEventId,
+                        SessionId = boxSessionId,
 
                         // Each block is a stadium unit: type + rotation + a prop holding
                         // the grid, with seats auto-generated (A1, B1 …) from Rows × SeatsPerRow.
@@ -353,7 +433,6 @@ namespace Infrastructure.Services
                         {
                             var block = new VenueBlock
                             {
-                                Id = Guid.NewGuid(),
                                 Type = "stadium",
                                 X = b.X,
                                 Y = b.Y,
@@ -367,8 +446,7 @@ namespace Infrastructure.Services
                             {
                                 new()
                                 {
-                                    Id = Guid.NewGuid(),
-                                    VenueBlockId = block.Id,
+                                    // VenueBlockId FK is set by EF from the block navigation on save.
                                     Code = block.Label,
                                     Label = block.Label,
                                     Row = b.Rows,
@@ -385,7 +463,7 @@ namespace Infrastructure.Services
                             return block;
                         }).ToList(),
                     };
-                    defaultBox.SetCreationAudit(userId);
+                    if (creatorId.HasValue) defaultBox.SetCreationAudit(creatorId.Value);
                     venue.VenueBoxes = new List<VenueBox> { defaultBox };
                 }
 
@@ -406,19 +484,43 @@ namespace Infrastructure.Services
 
         }
 
-        public async Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, Guid userId, CancellationToken ct)
+        public async Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, int userId, CancellationToken ct)
         {
             try
             {
                 if (request.VenueId == Guid.Empty)
                     return ApiResponse<GetVenueResonse>.ErrorResponse("VenueId is required");
 
-                var venueExists = await _unitOfWork.Venues.AnyAsync(v => v.Id == request.VenueId, ct);
-                if (!venueExists)
+                // Resolve the venue public id to its internal int key (used for FKs/filters).
+                var venueEntity = await _unitOfWork.Venues.Query()
+                    .FirstOrDefaultAsync(v => v.PublicId == request.VenueId, ct);
+                if (venueEntity == null)
                     return ApiResponse<GetVenueResonse>.NotFoundResponse("Venue not found");
+                var venueIntId = venueEntity.Id;
 
-                // Empty eventId = venue default arrangement; otherwise event-scoped
-                var normalizedEventId = eventId == Guid.Empty ? (Guid?)null : eventId;
+                // userId is the internal user id (0 = unauthenticated).
+                int? creatorId = userId == 0 ? null : userId;
+
+                // Empty eventId = venue default arrangement; otherwise event-scoped.
+                // eventId arrives as a public id; resolve to the internal int FK.
+                int? normalizedEventId = null;
+                if (eventId != Guid.Empty)
+                {
+                    normalizedEventId = await _unitOfWork.Events.Query()
+                        .Where(e => e.PublicId == eventId)
+                        .Select(e => (int?)e.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
+                // SessionId arrives as a public id; resolve to the internal int FK.
+                int? normalizedSessionId = null;
+                if (request.SessionId.HasValue && request.SessionId.Value != Guid.Empty)
+                {
+                    normalizedSessionId = await _unitOfWork.Sessions.Query()
+                        .Where(s => s.PublicId == request.SessionId.Value)
+                        .Select(s => (int?)s.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
 
                 // Each (venue, event, session) scope has exactly one box. If one already
                 // exists, replace it: delete it outright (bottom-up, same as
@@ -435,9 +537,9 @@ namespace Infrastructure.Services
                         .ThenInclude(l => l.VenueLayoutProps)
                             .ThenInclude(p => p.Seats)
                     .AsSplitQuery()
-                    .FirstOrDefaultAsync(x => x.VenueId == request.VenueId
+                    .FirstOrDefaultAsync(x => x.VenueId == venueIntId
                         && x.EventId == normalizedEventId
-                        && x.SessionId == request.SessionId, ct);
+                        && x.SessionId == normalizedSessionId, ct);
 
                 var isNewBox = existingBox == null;
                 if (existingBox != null)
@@ -452,22 +554,20 @@ namespace Infrastructure.Services
 
                 var box = new VenueBox
                 {
-                    Id = Guid.NewGuid(),
-                    VenueId = request.VenueId,
+                    VenueId = venueIntId,
                     EventId = normalizedEventId,
-                    SessionId = request.SessionId,
+                    SessionId = normalizedSessionId,
                     Width = request.Width,
                     Height = request.Height,
                 };
-                box.SetCreationAudit(userId);
+                if (creatorId.HasValue) box.SetCreationAudit(creatorId.Value);
 
                 // Blocks (skip blank labels)
                 var blocks = request.VenueBlocks?
                     .Where(b => !string.IsNullOrWhiteSpace(b.Label))
                     .Select(b => new VenueBlock
                     {
-                        Id = Guid.NewGuid(),
-                        VenueBoxId = box.Id,
+                        // VenueBoxId FK is set by EF from the box navigation on save.
                         Type = "stadium",
                         X = b.X,
                         Y = b.Y,
@@ -484,8 +584,7 @@ namespace Infrastructure.Services
                     .Where(l => !string.IsNullOrWhiteSpace(l.Type))
                     .Select(l => new VenueLayout
                     {
-                        Id = Guid.NewGuid(),
-                        VenueBoxId = box.Id,
+                        // VenueBoxId FK is set by EF from the box navigation on save.
                         Type = l.Type.Trim(),
                         X = l.X,
                         Y = l.Y,
@@ -496,7 +595,6 @@ namespace Infrastructure.Services
                         OffsetY = l.OffsetY,
                         VenueLayoutProps = (l.Props ?? new()).Select(p => new VenueLayoutProp
                         {
-                            Id = Guid.NewGuid(),
                             Code = p.Code,
                             Label = p.Label,
                             Row = p.Row,
@@ -517,6 +615,11 @@ namespace Infrastructure.Services
 
                 // Reload venue with its boxes → blocks + layouts → props → seats for the response
                 var venue = await _unitOfWork.Venues.Query()
+                    .Include(v => v.Type)
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.Event)
+                    .Include(v => v.VenueBoxes!)
+                        .ThenInclude(b => b.Session)
                     .Include(v => v.VenueBoxes!)
                         .ThenInclude(b => b.Blocks)
                             .ThenInclude(bl => bl.Props)
@@ -526,7 +629,7 @@ namespace Infrastructure.Services
                             .ThenInclude(l => l.VenueLayoutProps)
                                 .ThenInclude(p => p.Seats)
                     .AsSplitQuery()
-                    .FirstOrDefaultAsync(v => v.Id == request.VenueId, ct);
+                    .FirstOrDefaultAsync(v => v.Id == venueIntId, ct);
 
                 return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue),
                     isNewBox ? "Venue box created" : "Venue box updated");
@@ -590,7 +693,6 @@ namespace Infrastructure.Services
                     .OrderBy(s => s.Index ?? 0)
                     .Select((s, i) => new SeatProperties
                     {
-                        Id = Guid.NewGuid(),
                         Code = string.IsNullOrWhiteSpace(s.Code) ? $"{i + 1}" : s.Code,
                         Index = i,
                         Color = s.Color ?? p.Color,
@@ -618,7 +720,6 @@ namespace Infrastructure.Services
 
                 seats.Add(new SeatProperties
                 {
-                    Id = Guid.NewGuid(),
                     Code = code,
                     Index = i,
                     Color = p.Color,

@@ -18,15 +18,8 @@ public class GuestResponse
     public string NationalityCode { get; set; }
     public string NationalityFlag { get; set; }
     public string Tier { get; set; }
-    public string InvitationStatus { get; set; }
     public DateOnly? ArrivalDate { get; set; }
     public DateOnly? DepartureDate { get; set; }
-    public string FlightNumber { get; set; }
-    public Guid? SeatId { get; set; }
-    public string Hotel { get; set; }
-    public string AccreditationStatus { get; set; }
-    public Guid? InvitationTemplateId { get; set; }
-    public string InvitationTemplateName { get; set; }
     public List<Guid> SessionIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
 }

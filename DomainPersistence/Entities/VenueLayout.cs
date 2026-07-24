@@ -8,7 +8,7 @@ namespace DomainPersistence.Entities
 {
     public class VenueLayout : Entity
     {
-        public Guid VenueBoxId { get; set; }
+        public int VenueBoxId { get; set; }
         public string Type { get; set; }
         public double X { get; set; }
         public double Y { get; set; }
@@ -17,7 +17,7 @@ namespace DomainPersistence.Entities
         public double ScaleY { get; set; } = 1;
         public double OffsetX { get; set; } = 0;
         public double OffsetY { get; set; } = 0;
-        public Guid? VenueBlockId { get; set; }
+        public int? VenueBlockId { get; set; }
         public virtual VenueBlock? Block { get; set; }
 
         public virtual ICollection<VenueLayoutProp> VenueLayoutProps { get; set; } = new List<VenueLayoutProp>();

@@ -15,7 +15,7 @@ namespace Infrastructure.Services;
 
 public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _logger) : ISeatingService
 {
-    public async Task<ApiResponse<bool>> AssignSeatToGuestAsync(RequestSeatAssignDto request, Guid userId, CancellationToken ct)
+    public async Task<ApiResponse<bool>> AssignSeatToGuestAsync(RequestSeatAssignDto request, int userId, CancellationToken ct)
     {
         try
         {
@@ -26,21 +26,45 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             if (request.EventId == null || request.EventId == Guid.Empty)
                 return ApiResponse<bool>.ErrorResponse("EventId is required.");
 
-            var guestExists = await _unitOfWork.Guests.Query().AnyAsync(g => g.Id == request.GuestId, ct);
-            if (!guestExists)
+            // userId is the internal acting-user id.
+            if (userId == 0)
+                return ApiResponse<bool>.ErrorResponse("Invalid user.");
+
+            // Resolve the guest's public id to its internal id (used for FK/joins below).
+            var guest = await _unitOfWork.Guests.Query()
+                .FirstOrDefaultAsync(g => g.PublicId == request.GuestId, ct);
+            if (guest == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest not found.");
+
+            // Resolve the event's public id to its internal id.
+            var eventEntity = await _unitOfWork.Events.Query()
+                .FirstOrDefaultAsync(e => e.PublicId == request.EventId.Value, ct);
+            if (eventEntity == null)
+                return ApiResponse<bool>.NotFoundResponse("Event not found.");
+
+            // Optional session — resolve its public id to an internal id when supplied.
+            int? sessionId = null;
+            if (request.SessionId.HasValue && request.SessionId.Value != Guid.Empty)
+            {
+                var session = await _unitOfWork.Sessions.Query()
+                    .FirstOrDefaultAsync(s => s.PublicId == request.SessionId.Value, ct);
+                if (session == null)
+                    return ApiResponse<bool>.NotFoundResponse("Session not found.");
+                sessionId = session.Id;
+            }
 
             // Resolve the seat's venue box in one SQL round-trip — SeatProperties has
             // no navigation of its own back up to Venue, so the query has to originate
             // from VenueLayoutProp (which reaches VenueBox via either Layout or Block).
             var seatInfo = await _unitOfWork.VenueLayoutProps.Query()
                 .SelectMany(p => p.Seats, (p, s) => new { Prop = p, Seat = s })
-                .Where(x => x.Seat.Id == request.SeatId)
+                .Where(x => x.Seat.PublicId == request.SeatId)
                 .Select(x => new
                 {
                     x.Seat.IsDisabled,
+                    SeatId = x.Seat.Id,
                     VenueBoxId = x.Prop.Layout != null ? x.Prop.Layout.VenueBoxId
-                        : (x.Prop.Block != null ? x.Prop.Block.VenueBoxId : (Guid?)null),
+                        : (x.Prop.Block != null ? x.Prop.Block.VenueBoxId : (int?)null),
                 })
                 .FirstOrDefaultAsync(ct);
 
@@ -50,6 +74,7 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
                 return ApiResponse<bool>.ConflictResponse("This seat is disabled and cannot be assigned.");
 
             var venueBoxId = seatInfo.VenueBoxId.Value;
+            var seatId = seatInfo.SeatId;
             var venueId = await _unitOfWork.VenueBoxes.Query()
                 .Where(b => b.Id == venueBoxId)
                 .Select(b => b.VenueId)
@@ -59,18 +84,17 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             // find it, or create it the first time a seat is assigned under this scope.
             var seating = await _unitOfWork.Seatings.Query()
                 .FirstOrDefaultAsync(s => s.VenueBoxId == venueBoxId
-                    && s.EventId == request.EventId
-                    && s.EventSessionId == request.SessionId, ct);
+                    && s.EventId == eventEntity.Id
+                    && s.EventSessionId == sessionId, ct);
 
             if (seating == null)
             {
                 seating = new Seating
                 {
-                    Id = Guid.NewGuid(),
-                    EventId = request.EventId.Value,
+                    EventId = eventEntity.Id,
                     VenueId = venueId,
                     VenueBoxId = venueBoxId,
-                    EventSessionId = request.SessionId,
+                    EventSessionId = sessionId,
                 };
                 seating.SetCreationAudit(userId);
                 await _unitOfWork.Seatings.AddAsync(seating, ct);
@@ -79,25 +103,24 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
 
             // Moving a guest: drop whatever seat they previously held in this seating.
             var existingForGuest = await _unitOfWork.SeatAssigns.Query()
-                .Where(sa => sa.SeatingId == seating.Id && sa.GuestId == request.GuestId)
+                .Where(sa => sa.SeatingId == seating.Id && sa.GuestId == guest.Id)
                 .ToListAsync(ct);
             if (existingForGuest.Count > 0)
                 _unitOfWork.SeatAssigns.RemoveRange(existingForGuest);
 
             // Refuse to silently bump a different guest already in this seat.
             var existingForSeat = await _unitOfWork.SeatAssigns.Query()
-                .FirstOrDefaultAsync(sa => sa.SeatingId == seating.Id && sa.SeatId == request.SeatId, ct);
-            if (existingForSeat != null && existingForSeat.GuestId != request.GuestId)
+                .FirstOrDefaultAsync(sa => sa.SeatingId == seating.Id && sa.SeatId == seatId, ct);
+            if (existingForSeat != null && existingForSeat.GuestId != guest.Id)
                 return ApiResponse<bool>.ConflictResponse("This seat is already assigned to another guest.");
 
             if (existingForSeat == null)
             {
                 var assign = new SeatAssign
                 {
-                    Id = Guid.NewGuid(),
                     SeatingId = seating.Id,
-                    GuestId = request.GuestId,
-                    SeatId = request.SeatId,
+                    GuestId = guest.Id,
+                    SeatId = seatId,
                 };
                 assign.SetCreationAudit(userId);
                 await _unitOfWork.SeatAssigns.AddAsync(assign, ct);
@@ -124,13 +147,34 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             if (eventId == Guid.Empty)
                 return ApiResponse<bool>.ErrorResponse("EventId is required.");
 
+            // Resolve public ids to internal ids. If any scope entity is missing there
+            // can be no matching seating, so the seat is effectively already unassigned.
+            var venueBox = await _unitOfWork.VenueBoxes.Query()
+                .FirstOrDefaultAsync(b => b.PublicId == venueBoxId, ct);
+            var eventEntity = await _unitOfWork.Events.Query()
+                .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+            var seat = await _unitOfWork.SeatProperties.Query()
+                .FirstOrDefaultAsync(sp => sp.PublicId == seatId, ct);
+            if (venueBox == null || eventEntity == null || seat == null)
+                return ApiResponse<bool>.SuccessResponse(true, "Seat was already unassigned.");
+
+            int? sessionIntId = null;
+            if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+            {
+                var session = await _unitOfWork.Sessions.Query()
+                    .FirstOrDefaultAsync(s => s.PublicId == sessionId.Value, ct);
+                if (session == null)
+                    return ApiResponse<bool>.SuccessResponse(true, "Seat was already unassigned.");
+                sessionIntId = session.Id;
+            }
+
             var seating = await _unitOfWork.Seatings.Query()
-                .FirstOrDefaultAsync(s => s.VenueBoxId == venueBoxId && s.EventId == eventId && s.EventSessionId == sessionId, ct);
+                .FirstOrDefaultAsync(s => s.VenueBoxId == venueBox.Id && s.EventId == eventEntity.Id && s.EventSessionId == sessionIntId, ct);
             if (seating == null)
                 return ApiResponse<bool>.SuccessResponse(true, "Seat was already unassigned.");
 
             var assign = await _unitOfWork.SeatAssigns.Query()
-                .FirstOrDefaultAsync(sa => sa.SeatingId == seating.Id && sa.SeatId == seatId, ct);
+                .FirstOrDefaultAsync(sa => sa.SeatingId == seating.Id && sa.SeatId == seat.Id, ct);
             if (assign == null)
                 return ApiResponse<bool>.SuccessResponse(true, "Seat was already unassigned.");
 
@@ -154,14 +198,32 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             if (eventId == Guid.Empty)
                 return ApiResponse<List<SeatAssignmentDto>>.ErrorResponse("EventId is required.");
 
+            var venueBox = await _unitOfWork.VenueBoxes.Query()
+                .FirstOrDefaultAsync(b => b.PublicId == venueBoxId, ct);
+            var eventEntity = await _unitOfWork.Events.Query()
+                .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+            if (venueBox == null || eventEntity == null)
+                return ApiResponse<List<SeatAssignmentDto>>.SuccessResponse(new List<SeatAssignmentDto>());
+
+            int? sessionIntId = null;
+            if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+            {
+                var session = await _unitOfWork.Sessions.Query()
+                    .FirstOrDefaultAsync(s => s.PublicId == sessionId.Value, ct);
+                if (session == null)
+                    return ApiResponse<List<SeatAssignmentDto>>.SuccessResponse(new List<SeatAssignmentDto>());
+                sessionIntId = session.Id;
+            }
+
             var seating = await _unitOfWork.Seatings.Query()
-                .FirstOrDefaultAsync(s => s.VenueBoxId == venueBoxId && s.EventId == eventId && s.EventSessionId == sessionId, ct);
+                .FirstOrDefaultAsync(s => s.VenueBoxId == venueBox.Id && s.EventId == eventEntity.Id && s.EventSessionId == sessionIntId, ct);
             if (seating == null)
                 return ApiResponse<List<SeatAssignmentDto>>.SuccessResponse(new List<SeatAssignmentDto>());
 
+            // Output the related entities' PUBLIC ids (navigations), not the internal FK ints.
             var list = await _unitOfWork.SeatAssigns.Query()
                 .Where(sa => sa.SeatingId == seating.Id)
-                .Select(sa => new SeatAssignmentDto { SeatId = sa.SeatId, GuestId = sa.GuestId })
+                .Select(sa => new SeatAssignmentDto { SeatId = sa.Seat.PublicId, GuestId = sa.Guest.PublicId })
                 .ToListAsync(ct);
 
             return ApiResponse<List<SeatAssignmentDto>>.SuccessResponse(list);

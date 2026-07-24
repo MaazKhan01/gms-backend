@@ -27,7 +27,7 @@ public class RoleService : IRoleService
         _logger = logger;
     }
 
-    public async Task<ApiResponse<RoleResponse>> CreateRoleAsync(CreateRoleRequest request, Guid currentUserId, CancellationToken ct = default)
+    public async Task<ApiResponse<RoleResponse>> CreateRoleAsync(CreateRoleRequest request, int currentUserId, CancellationToken ct = default)
     {
         try
         {
@@ -35,11 +35,12 @@ public class RoleService : IRoleService
             if (exists)
                 return ApiResponse<RoleResponse>.ConflictResponse("A role with this code already exists");
 
+            List<Permission> permissions = new();
             if (request.PermissionIds?.Any() == true)
             {
-                var validCount = await _unitOfWork.Permissions.Query()
-                    .Where(p => request.PermissionIds.Contains(p.Id)).CountAsync(ct);
-                if (validCount != request.PermissionIds.Count)
+                permissions = await _unitOfWork.Permissions.Query()
+                    .Where(p => request.PermissionIds.Contains(p.PublicId)).ToListAsync(ct);
+                if (permissions.Count != request.PermissionIds.Count)
                     return ApiResponse<RoleResponse>.ErrorResponse("One or more permission IDs are invalid");
             }
 
@@ -48,7 +49,6 @@ public class RoleService : IRoleService
             {
                 var role = new Role
                 {
-                    Id = Guid.NewGuid(),
                     Name = request.Name,
                     Code = request.Code,
                     Description = request.Description,
@@ -59,14 +59,13 @@ public class RoleService : IRoleService
                 await _unitOfWork.Roles.AddAsync(role, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
 
-                if (request.PermissionIds?.Any() == true)
+                if (permissions.Count > 0)
                 {
-                    foreach (var permId in request.PermissionIds)
+                    foreach (var permission in permissions)
                         await _unitOfWork.RolePermissions.AddAsync(new RolePermission
                         {
-                            Id = Guid.NewGuid(),
                             RoleId = role.Id,
-                            PermissionId = permId,
+                            PermissionId = permission.Id,
                             CreatedBy = currentUserId,
                             CreatedAt = DateTime.UtcNow
                         }, ct);
@@ -101,12 +100,12 @@ public class RoleService : IRoleService
         {
             var role = await _unitOfWork.Roles.Query()
                 .Include(r => r.RolePermissions).ThenInclude(rp => rp.Permission)
-                .FirstOrDefaultAsync(r => r.Id == id, ct);
+                .FirstOrDefaultAsync(r => r.PublicId == id, ct);
 
             if (role == null)
                 return ApiResponse<RoleResponse>.NotFoundResponse("Role not found");
 
-            var userCount = await _unitOfWork.Users.Query().CountAsync(u => u.RoleId == id && u.IsDeleted != true, ct);
+            var userCount = await _unitOfWork.Users.Query().CountAsync(u => u.RoleId == role.Id && u.IsDeleted != true, ct);
             var response = _mapper.Map<RoleResponse>(role);
             response.UserCount = userCount;
 
@@ -148,22 +147,23 @@ public class RoleService : IRoleService
         }
     }
 
-    public async Task<ApiResponse<RoleResponse>> UpdateRoleAsync(Guid id, UpdateRoleRequest request, Guid currentUserId, CancellationToken ct = default)
+    public async Task<ApiResponse<RoleResponse>> UpdateRoleAsync(Guid id, UpdateRoleRequest request, int currentUserId, CancellationToken ct = default)
     {
         try
         {
             var role = await _unitOfWork.Roles.Query()
                 .Include(r => r.RolePermissions)
-                .FirstOrDefaultAsync(r => r.Id == id, ct);
+                .FirstOrDefaultAsync(r => r.PublicId == id, ct);
 
             if (role == null)
                 return ApiResponse<RoleResponse>.NotFoundResponse("Role not found");
 
+            List<Permission> permissions = new();
             if (request.PermissionIds?.Any() == true)
             {
-                var validCount = await _unitOfWork.Permissions.Query()
-                    .Where(p => request.PermissionIds.Contains(p.Id)).CountAsync(ct);
-                if (validCount != request.PermissionIds.Count)
+                permissions = await _unitOfWork.Permissions.Query()
+                    .Where(p => request.PermissionIds.Contains(p.PublicId)).ToListAsync(ct);
+                if (permissions.Count != request.PermissionIds.Count)
                     return ApiResponse<RoleResponse>.ErrorResponse("One or more permission IDs are invalid");
             }
 
@@ -178,16 +178,15 @@ public class RoleService : IRoleService
                 if (request.PermissionIds != null)
                 {
                     var existing = await _unitOfWork.RolePermissions.Query()
-                        .Where(rp => rp.RoleId == id).ToListAsync(ct);
+                        .Where(rp => rp.RoleId == role.Id).ToListAsync(ct);
                     _unitOfWork.RolePermissions.RemoveRange(existing);
                     await _unitOfWork.SaveChangesAsync(ct);
 
-                    foreach (var permId in request.PermissionIds)
+                    foreach (var permission in permissions)
                         await _unitOfWork.RolePermissions.AddAsync(new RolePermission
                         {
-                            Id = Guid.NewGuid(),
                             RoleId = role.Id,
-                            PermissionId = permId,
+                            PermissionId = permission.Id,
                             CreatedBy = currentUserId,
                             CreatedAt = DateTime.UtcNow
                         }, ct);
@@ -199,9 +198,9 @@ public class RoleService : IRoleService
 
                 var updated = await _unitOfWork.Roles.Query()
                     .Include(r => r.RolePermissions).ThenInclude(rp => rp.Permission)
-                    .FirstOrDefaultAsync(r => r.Id == id, ct);
+                    .FirstOrDefaultAsync(r => r.PublicId == id, ct);
 
-                var userCount = await _unitOfWork.Users.Query().CountAsync(u => u.RoleId == id && u.IsDeleted != true, ct);
+                var userCount = await _unitOfWork.Users.Query().CountAsync(u => u.RoleId == role.Id && u.IsDeleted != true, ct);
                 var response = _mapper.Map<RoleResponse>(updated);
                 response.UserCount = userCount;
 
@@ -224,18 +223,18 @@ public class RoleService : IRoleService
     {
         try
         {
-            var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.Id == id, ct);
+            var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.PublicId == id, ct);
             if (role == null)
                 return ApiResponse<bool>.NotFoundResponse("Role not found");
 
-            var userCount = await _unitOfWork.Users.Query().CountAsync(u => u.RoleId == id && u.IsDeleted != true, ct);
+            var userCount = await _unitOfWork.Users.Query().CountAsync(u => u.RoleId == role.Id && u.IsDeleted != true, ct);
             if (userCount > 0)
                 return ApiResponse<bool>.ConflictResponse($"Cannot delete role — assigned to {userCount} user(s)");
 
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-                var perms = await _unitOfWork.RolePermissions.Query().Where(rp => rp.RoleId == id).ToListAsync(ct);
+                var perms = await _unitOfWork.RolePermissions.Query().Where(rp => rp.RoleId == role.Id).ToListAsync(ct);
                 _unitOfWork.RolePermissions.RemoveRange(perms);
                 await _unitOfWork.SaveChangesAsync(ct);
 

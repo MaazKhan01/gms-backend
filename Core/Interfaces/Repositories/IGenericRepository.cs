@@ -9,8 +9,12 @@ namespace Core.Interfaces.Repositories;
 
 public interface IGenericRepository<T> where T : class
 {
-    Task<T> GetByIdAsync(Guid id, CancellationToken ct = default);
-    Task<T> GetByIdAsync(Guid id, Expression<Func<T, object>> include, CancellationToken ct = default);
+    // Internal integer id (FKs/joins).
+    Task<T> GetByIdAsync(int id, CancellationToken ct = default);
+    Task<T> GetByIdAsync(int id, Expression<Func<T, object>> include, CancellationToken ct = default);
+    // API-facing public Guid.
+    Task<T> GetByPublicIdAsync(Guid publicId, CancellationToken ct = default);
+    Task<T> GetByPublicIdAsync(Guid publicId, Expression<Func<T, object>> include, CancellationToken ct = default);
     Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default);
     Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate, CancellationToken ct = default);
     Task<T> FindFirstOrDefaultAsync(Expression<Func<T, bool>> predicate, CancellationToken ct = default);

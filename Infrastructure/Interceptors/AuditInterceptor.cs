@@ -91,7 +91,7 @@ public class AuditInterceptor : SaveChangesInterceptor
     /// <summary>
     /// Gets the current user ID from the HTTP context claims
     /// </summary>
-    private Guid? GetCurrentUserId()
+    private int? GetCurrentUserId()
     {
         var userIdClaim = _httpContextAccessor.HttpContext?.User
             ?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -109,6 +109,6 @@ public class AuditInterceptor : SaveChangesInterceptor
                 ?.FindFirst("userId")?.Value;
         }
 
-        return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
+        return int.TryParse(userIdClaim, out var userId) ? userId : null;
     }
 }

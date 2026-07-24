@@ -8,7 +8,7 @@ namespace DomainPersistence.Entities
 {
     public class VenueBlock : Entity
     {
-        public Guid VenueBoxId { get; set; }
+        public int VenueBoxId { get; set; }
         public string Type { get; set; } = "stadium";
         public double X { get; set; }
         public double Y { get; set; }

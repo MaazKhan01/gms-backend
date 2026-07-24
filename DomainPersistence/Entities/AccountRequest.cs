@@ -16,13 +16,13 @@ public partial class AccountRequest : Entity
     public string PasswordHash { get; set; }    // chosen at request time (BCrypt)
     public string Note { get; set; }            // optional message from the requester
 
-    public Guid? RequestedRoleId { get; set; }   // role the requester selected
+    public int? RequestedRoleId { get; set; }   // role the requester selected
     public string RequestedRoleName { get; set; } // denormalized for display
 
     public string Status { get; set; } = "pending";   // pending | approved | rejected
 
-    public Guid? ReviewedBy { get; set; }
+    public int? ReviewedBy { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string ReviewNote { get; set; }
-    public Guid? CreatedUserId { get; set; }     // set when approved
+    public int? CreatedUserId { get; set; }     // set when approved
 }

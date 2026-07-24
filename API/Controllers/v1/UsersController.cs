@@ -68,7 +68,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     [HttpPost("{id:guid}/change-password")]
     public async Task<IActionResult> ChangePassword(Guid id, [FromBody] ChangePasswordRequest request, CancellationToken ct)
     {
-        if (id != _currentUser.UserId && !User.HasClaim("permission", PermissionCodes.UsersUpdate))
+        if (id != _currentUser.UserPublicId && !User.HasClaim("permission", PermissionCodes.UsersUpdate))
             return Forbid();
 
         var result = await _userService.ChangePasswordAsync(id, request, ct);

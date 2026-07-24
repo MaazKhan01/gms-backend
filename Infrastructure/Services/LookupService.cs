@@ -23,7 +23,7 @@ public class LookupService(
                 .OrderBy(c => c.Name)
                 .Select(c => new LookupCategoryResponse
                 {
-                    Id = c.Id,
+                    Id = c.PublicId,
                     Code = c.Code,
                     Name = c.Name,
                     NameAr = c.NameAr,
@@ -65,7 +65,7 @@ public class LookupService(
                 .OrderBy(i => i.SortOrder).ThenBy(i => i.Name)
                 .ToListAsync(ct);
 
-            var mapped = items.Select(i => ToResponse(i, category.Code)).ToList();
+            var mapped = items.Select(i => ToResponse(i, category)).ToList();
             return ApiResponse<List<LookupItemResponse>>.SuccessResponse(mapped);
         }
         catch (Exception ex)
@@ -81,12 +81,12 @@ public class LookupService(
         {
             var item = await _unitOfWork.LookupItems.Query()
                 .Include(i => i.Category)
-                .FirstOrDefaultAsync(i => i.Id == id, ct);
+                .FirstOrDefaultAsync(i => i.PublicId == id, ct);
 
             if (item == null)
                 return ApiResponse<LookupItemResponse>.NotFoundResponse("Lookup item not found");
 
-            return ApiResponse<LookupItemResponse>.SuccessResponse(ToResponse(item, item.Category?.Code));
+            return ApiResponse<LookupItemResponse>.SuccessResponse(ToResponse(item, item.Category));
         }
         catch (Exception ex)
         {
@@ -95,7 +95,7 @@ public class LookupService(
         }
     }
 
-    public async Task<ApiResponse<LookupItemResponse>> CreateItemAsync(LookupItemRequest request, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<LookupItemResponse>> CreateItemAsync(LookupItemRequest request, int userId, CancellationToken ct = default)
     {
         try
         {
@@ -118,7 +118,6 @@ public class LookupService(
 
             var item = new LookupItem
             {
-                Id = Guid.NewGuid(),
                 CategoryId = category.Id,
                 Code = request.Code?.Trim(),
                 Name = request.Name.Trim(),
@@ -133,7 +132,7 @@ public class LookupService(
             await _unitOfWork.LookupItems.AddAsync(item, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            return ApiResponse<LookupItemResponse>.SuccessResponse(ToResponse(item, category.Code), "Lookup item created successfully");
+            return ApiResponse<LookupItemResponse>.SuccessResponse(ToResponse(item, category), "Lookup item created successfully");
         }
         catch (Exception ex)
         {
@@ -142,7 +141,7 @@ public class LookupService(
         }
     }
 
-    public async Task<ApiResponse<LookupItemResponse>> UpdateItemAsync(LookupItemRequest request, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<LookupItemResponse>> UpdateItemAsync(LookupItemRequest request, int userId, CancellationToken ct = default)
     {
         try
         {
@@ -154,7 +153,7 @@ public class LookupService(
 
             var item = await _unitOfWork.LookupItems.Query()
                 .Include(i => i.Category)
-                .FirstOrDefaultAsync(i => i.Id == request.Id.Value, ct);
+                .FirstOrDefaultAsync(i => i.PublicId == request.Id.Value, ct);
 
             if (item == null)
                 return ApiResponse<LookupItemResponse>.NotFoundResponse("Lookup item not found");
@@ -180,7 +179,7 @@ public class LookupService(
             _unitOfWork.LookupItems.Update(item);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            return ApiResponse<LookupItemResponse>.SuccessResponse(ToResponse(item, item.Category?.Code), "Lookup item updated successfully");
+            return ApiResponse<LookupItemResponse>.SuccessResponse(ToResponse(item, item.Category), "Lookup item updated successfully");
         }
         catch (Exception ex)
         {
@@ -189,11 +188,11 @@ public class LookupService(
         }
     }
 
-    public async Task<ApiResponse<bool>> DeleteItemAsync(Guid id, Guid userId, CancellationToken ct = default)
+    public async Task<ApiResponse<bool>> DeleteItemAsync(Guid id, int userId, CancellationToken ct = default)
     {
         try
         {
-            var item = await _unitOfWork.LookupItems.FindFirstOrDefaultAsync(i => i.Id == id);
+            var item = await _unitOfWork.LookupItems.FindFirstOrDefaultAsync(i => i.PublicId == id);
             if (item == null)
                 return ApiResponse<bool>.NotFoundResponse("Lookup item not found");
 
@@ -248,11 +247,11 @@ public class LookupService(
         }
     }
 
-    private static LookupItemResponse ToResponse(LookupItem item, string categoryCode) => new()
+    private static LookupItemResponse ToResponse(LookupItem item, LookupCategory category) => new()
     {
-        Id = item.Id,
-        CategoryId = item.CategoryId,
-        CategoryCode = categoryCode,
+        Id = item.PublicId,
+        CategoryId = category?.PublicId ?? Guid.Empty,
+        CategoryCode = category?.Code,
         Code = item.Code,
         Name = item.Name,
         NameAr = item.NameAr,

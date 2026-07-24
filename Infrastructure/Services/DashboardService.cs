@@ -26,23 +26,34 @@ namespace Infrastructure.Services
 
                 var ev = await _unitOfWork.Events.Query()
                     .Include(e => e.Sessions)
-                    .FirstOrDefaultAsync(e => e.Id == eventId, ct);
+                    .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
 
                 if (ev == null)
                     return ApiResponse<GetDashboardResponse>.NotFoundResponse("Event not found.");
 
                 var guests = await _unitOfWork.Guests.Query()
-                    .Where(g => g.EventId == eventId)
+                    .Where(g => g.EventId == ev.Id)
                     .ToListAsync(ct);
 
                 var meetings = await _unitOfWork.Meetings.Query()
-                    .Where(m => m.EventId == eventId && m.IsDeleted != true)
+                    .Where(m => m.EventId == ev.Id && m.IsDeleted != true)
                     .OrderBy(m => m.Date).ThenBy(m => m.StartTime)
                     .ToListAsync(ct);
 
+                // Invitation/accreditation status + travel moved to their own tables.
+                var guestIds = guests.Select(g => g.Id).ToList();
+                var invitations = (await _unitOfWork.Invitations.Query()
+                        .Where(i => guestIds.Contains(i.GuestId)).ToListAsync(ct))
+                    .GroupBy(i => i.GuestId)
+                    .ToDictionary(gr => gr.Key, gr => gr.First());
+                var flightGuestIds = (await _unitOfWork.Flights.Query()
+                    .Where(f => guestIds.Contains(f.GuestId)).Select(f => f.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                var accommodationGuestIds = (await _unitOfWork.Accommodations.Query()
+                    .Where(a => guestIds.Contains(a.GuestId)).Select(a => a.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+
                 var response = new GetDashboardResponse
                 {
-                    Id = ev.Id,
+                    Id = ev.PublicId,
                     Title = ev.Title,
                     Venue = ev.VenueName,
                     StartDate = ev.StartDate,
@@ -52,7 +63,7 @@ namespace Infrastructure.Services
                         .OrderBy(s => s.Date).ThenBy(s => s.Time)
                         .Select(s => new DashboardSessionDto
                         {
-                            Id = s.Id,
+                            Id = s.PublicId,
                             Title = s.Title,
                             Date = s.Date,
                             Time = s.Time,
@@ -63,18 +74,18 @@ namespace Infrastructure.Services
                     FunnelData = new DashboardFunnelDto
                     {
                         TotalGuests = guests.Count,
-                        ConfirmedGuest = guests.Count(g => g.InvitationStatus == GuestInvitationStatus.Accepted),
-                        AwaitingGuest = guests.Count(g => g.InvitationStatus == GuestInvitationStatus.Sent
-                                                        || g.InvitationStatus == GuestInvitationStatus.Opened),
-                        TravelBooked = guests.Count(g => !string.IsNullOrWhiteSpace(g.FlightNumber)
-                                                       || !string.IsNullOrWhiteSpace(g.Hotel)
-                                                       || g.SeatId != null),
-                        AccreditationIssued = guests.Count(g => g.AccreditationStatus == GuestAccreditationStatus.Issued),
+                        ConfirmedGuest = invitations.Values.Count(i => i.InvitationStatus == GuestInvitationStatus.Accepted),
+                        AwaitingGuest = invitations.Values.Count(i => i.InvitationStatus == GuestInvitationStatus.Sent
+                                                        || i.InvitationStatus == GuestInvitationStatus.Opened),
+                        TravelBooked = guests.Count(g => flightGuestIds.Contains(g.Id)
+                                                       || accommodationGuestIds.Contains(g.Id)
+                                                       ),
+                        AccreditationIssued = invitations.Values.Count(i => i.AccreditationStatus == GuestAccreditationStatus.Issued),
                     },
 
                     Meetings = meetings.Select(m => new DashboardMeetingDto
                     {
-                        Id = m.Id,
+                        Id = m.PublicId,
                         Name = m.Name,
                         Date = m.Date,
                         StartTime = m.StartTime,
@@ -87,12 +98,11 @@ namespace Infrastructure.Services
                         .Take(RecentGuestsLimit)
                         .Select(g => new DashboardGuestDto
                         {
-                            Id = g.Id,
+                            Id = g.PublicId,
                             Name = $"{g.FirstName} {g.LastName}".Trim(),
                             Organization = g.Organization,
                             Tier = g.Tier,
-                            InvitationStatus = g.InvitationStatus,
-                            ArrivalDate = g.ArrivalDate,
+                            InvitationStatus = invitations.TryGetValue(g.Id, out var inv) ? inv.InvitationStatus : null,
                         })
                         .ToList(),
                 };

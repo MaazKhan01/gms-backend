@@ -39,8 +39,16 @@ public class UnitOfWork : IUnitOfWork
         SeatAssigns = new GenericRepository<SeatAssign>(_context);
 
         Meetings = new GenericRepository<Meeting>(_context);
-        TravelLogistics = new GenericRepository<Travel_logistics>(_context);
         Locations = new GenericRepository<Location>(_context);
+        Invitations = new GenericRepository<Invitation>(_context);
+        FlightTypes = new GenericRepository<FlightType>(_context);
+        FlightClasses = new GenericRepository<FlightClass>(_context);
+        Flights = new GenericRepository<Flight>(_context);
+        FlightLegs = new GenericRepository<FlightLeg>(_context);
+        AccommodationHotels = new GenericRepository<AccommodationHotel>(_context);
+        AccommodationRoomTypes = new GenericRepository<AccommodationRoomType>(_context);
+        Accommodations = new GenericRepository<Accommodation>(_context);
+        Transports = new GenericRepository<Transport>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
@@ -50,6 +58,11 @@ public class UnitOfWork : IUnitOfWork
         LookupItems = new GenericRepository<LookupItem>(_context);
 
         Notifications = new GenericRepository<Notification>(_context);
+
+        GuestRefreshTokens = new GenericRepository<GuestRefreshToken>(_context);
+        SupportMessages = new GenericRepository<SupportMessage>(_context);
+        GuestDevices = new GenericRepository<GuestDevice>(_context);
+        GuestNotifications = new GenericRepository<GuestNotification>(_context);
 
         UserLoginLogs = new GenericRepository<UserLoginLog>(_context);
         SystemErrorLogs = new GenericRepository<SystemErrorLog>(_context);
@@ -67,8 +80,16 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Seating> Seatings { get; private set; }
     public IGenericRepository<SeatAssign> SeatAssigns { get; private set; }
     public IGenericRepository<Meeting> Meetings { get; private set; }
-    public IGenericRepository<Travel_logistics> TravelLogistics { get; private set; }
     public IGenericRepository<Location> Locations { get; private set; }
+    public IGenericRepository<Invitation> Invitations { get; private set; }
+    public IGenericRepository<FlightType> FlightTypes { get; private set; }
+    public IGenericRepository<FlightClass> FlightClasses { get; private set; }
+    public IGenericRepository<Flight> Flights { get; private set; }
+    public IGenericRepository<FlightLeg> FlightLegs { get; private set; }
+    public IGenericRepository<AccommodationHotel> AccommodationHotels { get; private set; }
+    public IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; private set; }
+    public IGenericRepository<Accommodation> Accommodations { get; private set; }
+    public IGenericRepository<Transport> Transports { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<LookupCategory> LookupCategories { get; private set; }
@@ -83,6 +104,10 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<AccountRequest> AccountRequests { get; private set; }
     public IGenericRepository<UserModuleGrant> UserModuleGrants { get; private set; }
     public IGenericRepository<Notification> Notifications { get; private set; }
+    public IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; private set; }
+    public IGenericRepository<SupportMessage> SupportMessages { get; private set; }
+    public IGenericRepository<GuestDevice> GuestDevices { get; private set; }
+    public IGenericRepository<GuestNotification> GuestNotifications { get; private set; }
     public IGenericRepository<UserLoginLog> UserLoginLogs { get; private set; }
     public IGenericRepository<SystemErrorLog> SystemErrorLogs { get; private set; }
 

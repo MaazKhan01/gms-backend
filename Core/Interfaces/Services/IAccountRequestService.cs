@@ -17,6 +17,6 @@ public interface IAccountRequestService
 
     // Admin — review queue.
     Task<ApiResponse<PaginatedResponse<AccountRequestResponse>>> GetRequestsAsync(PagedRequest request, string status, CancellationToken ct = default);
-    Task<ApiResponse<AccountRequestResponse>> ApproveAsync(Guid id, ApproveAccountRequest decision, Guid reviewerId, CancellationToken ct = default);
-    Task<ApiResponse<AccountRequestResponse>> RejectAsync(Guid id, RejectAccountRequest decision, Guid reviewerId, CancellationToken ct = default);
+    Task<ApiResponse<AccountRequestResponse>> ApproveAsync(Guid id, ApproveAccountRequest decision, int reviewerId, CancellationToken ct = default);
+    Task<ApiResponse<AccountRequestResponse>> RejectAsync(Guid id, RejectAccountRequest decision, int reviewerId, CancellationToken ct = default);
 }

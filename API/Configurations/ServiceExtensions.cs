@@ -43,6 +43,7 @@ public static class ServiceExtensions
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        services.AddScoped<ICurrentGuest, CurrentGuest>();
 
         // Fix 8: BlobServiceClient as singleton — not created per request
         services.AddSingleton(sp =>
@@ -66,7 +67,6 @@ public static class ServiceExtensions
         services.AddScoped<IVenueService, VenueService>();
         services.AddScoped<ISeatingService, SeatingService>();
         services.AddScoped<IMeetingService, MeetingService>();
-        services.AddScoped<ITravelLogistics, TravelLogisticsService>();
         services.AddScoped<ILocationService, LocationService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IInvitationService, InvitationService>();
@@ -77,6 +77,7 @@ public static class ServiceExtensions
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IBlobService, BlobService>();
+        services.AddScoped<IVipAppService, VipAppService>();
 
         // Notification services
         services.AddScoped<INotificationService, NotificationService>();

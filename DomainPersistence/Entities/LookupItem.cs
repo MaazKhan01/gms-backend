@@ -7,7 +7,7 @@ namespace DomainPersistence.Entities;
 /// </summary>
 public class LookupItem : Entity
 {
-    public Guid CategoryId { get; set; }
+    public int CategoryId { get; set; }
     public string Code { get; set; }         // e.g. "DOH", "QR" — optional per category
     public string Name { get; set; }         // e.g. "Hamad International Airport"
     public string NameAr { get; set; }

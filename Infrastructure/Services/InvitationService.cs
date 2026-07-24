@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services
 {
+    // Public (no-login) accept/reject flow. Token + status now live on the
+    // Invitation entity (split out of Guest).
     public class InvitationService(IUnitOfWork _unitOfWork, ILogger<InvitationService> _logger) : IInvitationService
     {
         public async Task<ApiResponse<InvitationDetailResponse>> GetByTokenAsync(Guid token, CancellationToken ct)
@@ -40,24 +42,25 @@ namespace Infrastructure.Services
                 if (token == Guid.Empty)
                     return ApiResponse<InvitationDetailResponse>.NotFoundResponse("Invitation not found.");
 
-                var guest = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.InvitationToken == token, ct);
+                var invitation = await _unitOfWork.Invitations.Query()
+                    .FirstOrDefaultAsync(i => i.InvitationToken == token, ct);
 
-                if (guest == null)
+                if (invitation == null)
                     return ApiResponse<InvitationDetailResponse>.NotFoundResponse("This invitation link is invalid or has expired.");
 
                 // Once a final decision is made it can't be flipped from the public
                 // page — an admin can still change it from the guest editor.
-                var alreadyFinal = guest.InvitationStatus == GuestInvitationStatus.Accepted
-                                || guest.InvitationStatus == GuestInvitationStatus.Declined;
+                var alreadyFinal = invitation.InvitationStatus == GuestInvitationStatus.Accepted
+                                || invitation.InvitationStatus == GuestInvitationStatus.Declined;
                 if (alreadyFinal)
                     return ApiResponse<InvitationDetailResponse>.ConflictResponse(
                         "You have already responded to this invitation.");
 
-                guest.InvitationStatus = request.Accept
+                invitation.InvitationStatus = request.Accept
                     ? GuestInvitationStatus.Accepted
                     : GuestInvitationStatus.Declined;
-                _unitOfWork.Guests.Update(guest);
+                invitation.RespondedAt = DateTime.UtcNow;
+                _unitOfWork.Invitations.Update(invitation);
                 await _unitOfWork.SaveChangesAsync(ct);
 
                 var dto = await BuildDetailAsync(token, ct);
@@ -71,15 +74,15 @@ namespace Infrastructure.Services
             }
         }
 
-        // Guest has no Event navigation property, so the event is fetched separately by EventId.
         private async Task<InvitationDetailResponse> BuildDetailAsync(Guid token, CancellationToken ct)
         {
-            var guest = await _unitOfWork.Guests.Query()
-                .FirstOrDefaultAsync(g => g.InvitationToken == token, ct);
-            if (guest == null) return null;
+            var invitation = await _unitOfWork.Invitations.Query()
+                .Include(i => i.Guest).ThenInclude(g => g.Event)
+                .FirstOrDefaultAsync(i => i.InvitationToken == token, ct);
+            if (invitation?.Guest == null) return null;
 
-            var ev = await _unitOfWork.Events.Query()
-                .FirstOrDefaultAsync(e => e.Id == guest.EventId, ct);
+            var guest = invitation.Guest;
+            var ev = guest.Event;
 
             return new InvitationDetailResponse
             {
@@ -89,9 +92,9 @@ namespace Infrastructure.Services
                 EventVenue = ev?.VenueName,
                 EventStartDate = ev?.StartDate,
                 EventEndDate = ev?.EndDate,
-                InvitationStatus = guest.InvitationStatus,
-                AlreadyResponded = guest.InvitationStatus == GuestInvitationStatus.Accepted
-                                || guest.InvitationStatus == GuestInvitationStatus.Declined,
+                InvitationStatus = invitation.InvitationStatus,
+                AlreadyResponded = invitation.InvitationStatus == GuestInvitationStatus.Accepted
+                                || invitation.InvitationStatus == GuestInvitationStatus.Declined,
             };
         }
     }

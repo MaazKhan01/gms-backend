@@ -1,10 +1,10 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DomainPersistence.Entities;
 
 /// <summary>
-/// GMS domain model — kept in a partial class so the generated/boilerplate
+/// GMS domain model â€” kept in a partial class so the generated/boilerplate
 /// context stays untouched. New modules add their DbSets + configuration here.
 /// </summary>
 public partial class ApplicationDBContext
@@ -18,8 +18,24 @@ public partial class ApplicationDBContext
     public virtual DbSet<Nationality> Nationalities { get; set; }
     public virtual DbSet<InvitationTemplate> InvitationTemplates { get; set; }
     public virtual DbSet<Meeting> Meetings { get; set; }
-    public virtual DbSet<Travel_logistics> Travel_logistics { get; set; }
     public virtual DbSet<Location> Locations { get; set; }
+
+    // Invitation / accreditation
+    public virtual DbSet<Invitation> Invitations { get; set; }
+
+    // Flights
+    public virtual DbSet<FlightType> FlightTypes { get; set; }
+    public virtual DbSet<FlightClass> FlightClasses { get; set; }
+    public virtual DbSet<Flight> Flights { get; set; }
+    public virtual DbSet<FlightLeg> FlightLegs { get; set; }
+
+    // Accommodation
+    public virtual DbSet<AccommodationHotel> AccommodationHotels { get; set; }
+    public virtual DbSet<AccommodationRoomType> AccommodationRoomTypes { get; set; }
+    public virtual DbSet<Accommodation> Accommodations { get; set; }
+
+    // Transport
+    public virtual DbSet<Transport> Transports { get; set; }
     public virtual DbSet<Venue> Venues { get; set; }
     public virtual DbSet<VenueLayout> VenueLayouts { get; set; }
     public virtual DbSet<VenueLayoutProp> VenueLayoutProps { get; set; }
@@ -28,13 +44,19 @@ public partial class ApplicationDBContext
     public virtual DbSet<Seating> Seatings { get; set; }
     public virtual DbSet<SeatAssign> SeatAssigns { get; set; }
     public virtual DbSet<VenueBox> VenueBoxs { get; set; }
+
+    // VIP guest app
+    public virtual DbSet<GuestRefreshToken> GuestRefreshTokens { get; set; }
+    public virtual DbSet<SupportMessage> SupportMessages { get; set; }
+    public virtual DbSet<GuestDevice> GuestDevices { get; set; }
+    public virtual DbSet<GuestNotification> GuestNotifications { get; set; }
+
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AccountRequest>(a =>
         {
             a.ToTable("AccountRequests");
             a.HasKey(x => x.Id);
-            a.Property(x => x.Id).HasDefaultValueSql("(newid())");
             a.Property(x => x.FirstName).HasMaxLength(150);
             a.Property(x => x.LastName).HasMaxLength(150);
             a.Property(x => x.Email).IsRequired().HasMaxLength(255);
@@ -54,7 +76,6 @@ public partial class ApplicationDBContext
         {
             n.ToTable("Nationalities");
             n.HasKey(x => x.Id);
-            n.Property(x => x.Id).HasDefaultValueSql("(newid())");
             n.Property(x => x.Name).IsRequired().HasMaxLength(100);
             n.Property(x => x.NameAr).HasMaxLength(100);
             n.Property(x => x.Code).IsRequired().HasMaxLength(3);
@@ -66,7 +87,6 @@ public partial class ApplicationDBContext
         {
             t.ToTable("InvitationTemplates");
             t.HasKey(x => x.Id);
-            t.Property(x => x.Id).HasDefaultValueSql("(newid())");
             t.Property(x => x.Name).IsRequired().HasMaxLength(200);
             t.Property(x => x.NameAr).HasMaxLength(200);
             t.Property(x => x.Language).IsRequired().HasMaxLength(10);
@@ -89,30 +109,21 @@ public partial class ApplicationDBContext
         {
             g.ToTable("Guests");
             g.HasKey(x => x.Id);
-            g.Property(x => x.Id).HasDefaultValueSql("(newid())");
             g.Property(x => x.FirstName).IsRequired().HasMaxLength(150);
             g.Property(x => x.LastName).IsRequired().HasMaxLength(150);
             g.Property(x => x.Email).HasMaxLength(255);
             g.Property(x => x.GuestType).HasMaxLength(50);
             g.Property(x => x.Organization).HasMaxLength(300);
             g.Property(x => x.Tier).HasMaxLength(50);
-            g.Property(x => x.InvitationStatus).HasMaxLength(30);
-            g.Property(x => x.FlightNumber).HasMaxLength(20);
-            g.Property(x => x.Hotel).HasMaxLength(300);
-            g.Property(x => x.AccreditationStatus).HasMaxLength(30);
             g.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             g.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            g.HasOne<Event>()
+            g.HasOne(x => x.Event)
                 .WithMany()
                 .HasForeignKey(x => x.EventId)
                 .OnDelete(DeleteBehavior.Restrict);
             g.HasOne(x => x.Nationality)
                 .WithMany(x => x.Guests)
                 .HasForeignKey(x => x.NationalityId)
-                .OnDelete(DeleteBehavior.SetNull);
-            g.HasOne(x => x.InvitationTemplate)
-                .WithMany()
-                .HasForeignKey(x => x.InvitationTemplateId)
                 .OnDelete(DeleteBehavior.SetNull);
             g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
@@ -135,7 +146,6 @@ public partial class ApplicationDBContext
         {
             e.ToTable("Events");
             e.HasKey(x => x.Id);
-            e.Property(x => x.Id).HasDefaultValueSql("(newid())");
             e.Property(x => x.Title).IsRequired().HasMaxLength(300);
             e.Property(x => x.Type).HasMaxLength(50);
             e.Property(x => x.Theme).HasMaxLength(300);
@@ -157,7 +167,6 @@ public partial class ApplicationDBContext
         {
             s.ToTable("Sessions");
             s.HasKey(x => x.Id);
-            s.Property(x => x.Id).HasDefaultValueSql("(newid())");
             s.Property(x => x.Title).IsRequired().HasMaxLength(300);
             s.Property(x => x.Time).HasMaxLength(10);
             s.Property(x => x.VenueName).HasMaxLength(300);
@@ -180,7 +189,6 @@ public partial class ApplicationDBContext
         {
             g.ToTable("UserModuleGrants");
             g.HasKey(x => x.Id);
-            g.Property(x => x.Id).HasDefaultValueSql("(newid())");
             g.Property(x => x.Module).IsRequired().HasMaxLength(50);
             g.Property(x => x.GrantedAt).HasDefaultValueSql("(sysutcdatetime())");
             g.HasIndex(x => new { x.UserId, x.Module }).IsUnique();
@@ -190,15 +198,14 @@ public partial class ApplicationDBContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // ── Venue / Seating module ──────────────────────────────────────────
+        // â”€â”€ Venue / Seating module â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Most relationships use Restrict to avoid SQL Server multiple-cascade-path
         // errors; the app relies on soft-delete anyway. Only the two leaf ownership
-        // edges (prop→seats, seating→assignments) cascade.
+        // edges (propâ†’seats, seatingâ†’assignments) cascade.
         modelBuilder.Entity<Venue>(v =>
         {
             v.ToTable("Venues");
             v.HasKey(x => x.Id);
-            v.Property(x => x.Id).HasDefaultValueSql("(newid())");
             v.Property(x => x.Name).IsRequired().HasMaxLength(300);
             v.Property(x => x.Color).HasMaxLength(20);
             v.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
@@ -212,7 +219,6 @@ public partial class ApplicationDBContext
         {
             v.ToTable("Meetings");
             v.HasKey(x => x.Id);
-            v.Property(x => x.Id).HasDefaultValueSql("(newid())");
             v.Property(x => x.Name).IsRequired().HasMaxLength(300);
             v.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             v.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
@@ -225,7 +231,6 @@ public partial class ApplicationDBContext
         {
             b.ToTable("VenueBoxes");
             b.HasKey(x => x.Id);
-            b.Property(x => x.Id).HasDefaultValueSql("(newid())");
             b.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             b.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             b.HasOne(x => x.Venue)
@@ -246,7 +251,6 @@ public partial class ApplicationDBContext
         {
             bl.ToTable("VenueBlocks");
             bl.HasKey(x => x.Id);
-            bl.Property(x => x.Id).HasDefaultValueSql("(newid())");
             bl.Property(x => x.Type).HasMaxLength(50);
             bl.Property(x => x.Label).HasMaxLength(200);
             bl.Property(x => x.Category).HasMaxLength(100);
@@ -262,7 +266,6 @@ public partial class ApplicationDBContext
         {
             l.ToTable("VenueLayouts");
             l.HasKey(x => x.Id);
-            l.Property(x => x.Id).HasDefaultValueSql("(newid())");
             l.Property(x => x.Type).HasMaxLength(50);
             l.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             l.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
@@ -280,7 +283,6 @@ public partial class ApplicationDBContext
         {
             p.ToTable("VenueLayoutProps");
             p.HasKey(x => x.Id);
-            p.Property(x => x.Id).HasDefaultValueSql("(newid())");
             p.Property(x => x.Code).HasMaxLength(100);
             p.Property(x => x.Label).HasMaxLength(300);
             p.Property(x => x.Color).HasMaxLength(20);
@@ -304,7 +306,6 @@ public partial class ApplicationDBContext
         {
             sp.ToTable("SeatProperties");
             sp.HasKey(x => x.Id);
-            sp.Property(x => x.Id).HasDefaultValueSql("(newid())");
             sp.Property(x => x.Code).HasMaxLength(100);
             sp.Property(x => x.Color).HasMaxLength(20);
             sp.Property(x => x.Status).HasMaxLength(30);
@@ -316,7 +317,6 @@ public partial class ApplicationDBContext
         {
             se.ToTable("Seatings");
             se.HasKey(x => x.Id);
-            se.Property(x => x.Id).HasDefaultValueSql("(newid())");
             se.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             se.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             se.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Restrict);
@@ -329,13 +329,168 @@ public partial class ApplicationDBContext
         {
             sa.ToTable("SeatAssigns");
             sa.HasKey(x => x.Id);
-            sa.Property(x => x.Id).HasDefaultValueSql("(newid())");
             sa.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             sa.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             sa.HasOne(x => x.Seating).WithMany(x => x.SeatsDetail).HasForeignKey(x => x.SeatingId).OnDelete(DeleteBehavior.Cascade);
             sa.HasOne(x => x.Seat).WithMany().HasForeignKey(x => x.SeatId).OnDelete(DeleteBehavior.Restrict);
             sa.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Restrict);
             sa.HasIndex(x => new { x.SeatingId, x.SeatId }).IsUnique();
+        });
+
+        // â”€â”€ VIP guest app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        modelBuilder.Entity<GuestRefreshToken>(t =>
+        {
+            t.ToTable("GuestRefreshTokens");
+            t.HasKey(x => x.Id);
+            t.Property(x => x.Jti).IsRequired().HasMaxLength(100);
+            t.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            t.HasIndex(x => x.Jti);
+            t.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SupportMessage>(m =>
+        {
+            m.ToTable("SupportMessages");
+            m.HasKey(x => x.Id);
+            m.Property(x => x.Body).IsRequired().HasColumnType("nvarchar(max)");
+            m.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            m.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            m.HasIndex(x => new { x.GuestId, x.SentAt });
+            m.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            m.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<GuestDevice>(d =>
+        {
+            d.ToTable("GuestDevices");
+            d.HasKey(x => x.Id);
+            d.Property(x => x.Token).IsRequired().HasMaxLength(500);
+            d.Property(x => x.Platform).HasMaxLength(20);
+            d.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            d.HasIndex(x => x.Token).IsUnique();
+            d.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            d.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<GuestNotification>(n =>
+        {
+            n.ToTable("GuestNotifications");
+            n.HasKey(x => x.Id);
+            n.Property(x => x.Title).IsRequired().HasMaxLength(300);
+            n.Property(x => x.Message).HasColumnType("nvarchar(max)");
+            n.Property(x => x.Type).HasMaxLength(50);
+            n.Property(x => x.RedirectUrl).HasMaxLength(500);
+            n.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            n.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            n.HasIndex(x => new { x.GuestId, x.Read });
+            n.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            n.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // ── Invitation / accreditation ──────────────────────────────────────
+        modelBuilder.Entity<Invitation>(i =>
+        {
+            i.ToTable("Invitations");
+            i.HasKey(x => x.Id);
+            i.Property(x => x.InvitationStatus).HasMaxLength(30);
+            i.Property(x => x.AccreditationStatus).HasMaxLength(30);
+            i.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            i.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            i.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            i.HasOne(x => x.InvitationTemplate).WithMany().HasForeignKey(x => x.InvitationTemplateId).OnDelete(DeleteBehavior.SetNull);
+            i.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // ── Flights ─────────────────────────────────────────────────────────
+        modelBuilder.Entity<FlightType>(ft =>
+        {
+            ft.ToTable("FlightTypes");
+            ft.HasKey(x => x.Id);
+            ft.Property(x => x.Name).IsRequired().HasMaxLength(50);
+            ft.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            ft.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            ft.HasData(
+                new { Id = 1, PublicId = new Guid("11111111-1111-1111-1111-111111111111"), Name = "Inbound",  CreatedAt = new DateTime(2026, 1, 1) },
+                new { Id = 2, PublicId = new Guid("22222222-2222-2222-2222-222222222222"), Name = "Outbound", CreatedAt = new DateTime(2026, 1, 1) },
+                new { Id = 3, PublicId = new Guid("33333333-3333-3333-3333-333333333333"), Name = "Return",   CreatedAt = new DateTime(2026, 1, 1) }
+            );
+        });
+
+        modelBuilder.Entity<FlightClass>(fc =>
+        {
+            fc.ToTable("FlightClasses");
+            fc.HasKey(x => x.Id);
+            fc.Property(x => x.Name).IsRequired().HasMaxLength(50);
+            fc.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            fc.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
+        modelBuilder.Entity<Flight>(f =>
+        {
+            f.ToTable("Flights");
+            f.HasKey(x => x.Id);
+            f.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            f.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            f.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            f.HasOne(x => x.FlightType).WithMany().HasForeignKey(x => x.FlightTypeId).OnDelete(DeleteBehavior.Restrict);
+            f.HasOne(x => x.FlightClass).WithMany().HasForeignKey(x => x.FlightClassId).OnDelete(DeleteBehavior.Restrict);
+            f.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<FlightLeg>(fl =>
+        {
+            fl.ToTable("FlightLegs");
+            fl.HasKey(x => x.Id);
+            fl.Property(x => x.FlightNumber).HasMaxLength(20);
+            fl.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            fl.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            fl.HasOne(x => x.Flight).WithMany(x => x.Legs).HasForeignKey(x => x.FlightId).OnDelete(DeleteBehavior.Cascade);
+            fl.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // ── Accommodation ───────────────────────────────────────────────────
+        modelBuilder.Entity<AccommodationHotel>(h =>
+        {
+            h.ToTable("AccommodationHotels");
+            h.HasKey(x => x.Id);
+            h.Property(x => x.Name).IsRequired().HasMaxLength(300);
+            h.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            h.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
+        modelBuilder.Entity<AccommodationRoomType>(rt =>
+        {
+            rt.ToTable("AccommodationRoomTypes");
+            rt.HasKey(x => x.Id);
+            rt.Property(x => x.Name).IsRequired().HasMaxLength(100);
+            rt.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            rt.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
+        modelBuilder.Entity<Accommodation>(a =>
+        {
+            a.ToTable("Accommodations");
+            a.HasKey(x => x.Id);
+            a.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            a.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            a.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            a.HasOne(x => x.Hotel).WithMany().HasForeignKey(x => x.AccommodationHotelId).OnDelete(DeleteBehavior.Restrict);
+            a.HasOne(x => x.RoomType).WithMany().HasForeignKey(x => x.RoomTypeId).OnDelete(DeleteBehavior.Restrict);
+            a.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // ── Transport ───────────────────────────────────────────────────────
+        modelBuilder.Entity<Transport>(t =>
+        {
+            t.ToTable("Transports");
+            t.HasKey(x => x.Id);
+            t.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            t.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            t.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            t.HasOne(x => x.PickupLocation).WithMany().HasForeignKey(x => x.PickupLocationId).OnDelete(DeleteBehavior.Restrict);
+            t.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
+            t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
     }
 }

@@ -51,7 +51,6 @@ public class AuthService(
         // Store refresh token JTI in DB for revocation support
         await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
         {
-            Id = Guid.NewGuid(),
             UserId = user.Id,
             Jti = jti,
             ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
@@ -101,7 +100,6 @@ public class AuthService(
 
             await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
             {
-                Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Jti = newJti,
                 ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
@@ -195,7 +193,7 @@ public class AuthService(
             if (user == null || !user.IsActive)
                 return ApiResponse<bool>.SuccessResponse(true, "If an account with that email exists, a reset link has been sent.");
 
-            var resetToken = await _passwordResetTokenService.GenerateToken(user.Id, user.Email);
+            var resetToken = await _passwordResetTokenService.GenerateToken(user.PublicId, user.Email);
             var frontendUrl = _configuration["FrontendUrl"];
             var resetLink = $"{frontendUrl}/reset-password?token={resetToken}";
 
@@ -214,7 +212,7 @@ public class AuthService(
         try
         {
             var userId = await _passwordResetTokenService.ValidateToken(request.Token);
-            var user = await _unitOfWork.Users.GetByIdAsync(userId, ct);
+            var user = await _unitOfWork.Users.GetByPublicIdAsync(userId, ct);
 
             if (user == null)
                 return ApiResponse<bool>.NotFoundResponse("Invalid token");
@@ -241,7 +239,7 @@ public class AuthService(
         try
         {
             var userId = await _passwordResetTokenService.ValidateToken(token.Token);
-            var user = await _unitOfWork.Users.GetByIdAsync(userId, ct);
+            var user = await _unitOfWork.Users.GetByPublicIdAsync(userId, ct);
 
             if (user == null)
                 return ApiResponse<UserResponse>.NotFoundResponse("Invalid token");
@@ -288,7 +286,6 @@ public class AuthService(
 
             await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
             {
-                Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Jti = jti,
                 ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
@@ -329,7 +326,6 @@ public class AuthService(
             var otpCode = GenerateOtpCode();
             await _unitOfWork.OtpVerifications.AddAsync(new OtpVerification
             {
-                Id = Guid.NewGuid(),
                 Email = request.Email,
                 OtpCode = otpCode,
                 Purpose = "email-verification",
@@ -417,7 +413,7 @@ public class AuthService(
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private string GenerateRefreshToken(Guid userId, string email, string jti)
+    private string GenerateRefreshToken(int userId, string email, string jti)
     {
         var jwtSection = _configuration.GetSection("Authentication:Jwt");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["JwtSecretKey"]));
@@ -467,14 +463,14 @@ public class AuthService(
             RefreshToken = refreshToken,
             User = new UserInfo
             {
-                Id = user.Id,
+                Id = user.PublicId,
                 UserName = user.UserName,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 Email = user.Email,
                 Role = user.Role?.Name,
                 RoleCode = user.Role?.Code,
-                RoleId = user.RoleId,
+                RoleId = user.Role?.PublicId,
                 Permissions = user.Role?.RolePermissions?
                     .Where(rp => rp.Permission != null)
                     .Select(rp => rp.Permission.Code)

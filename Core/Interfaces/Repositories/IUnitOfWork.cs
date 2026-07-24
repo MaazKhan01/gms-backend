@@ -47,11 +47,25 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<SeatAssign> SeatAssigns { get; }
     //Meeting
     IGenericRepository<Meeting> Meetings { get; }
-    // Travel & Logistics
-    IGenericRepository<Travel_logistics> TravelLogistics { get; }
+    // Travel — Flights / Accommodation / Transport
     IGenericRepository<Location> Locations { get; }
+    IGenericRepository<Invitation> Invitations { get; }
+    IGenericRepository<FlightType> FlightTypes { get; }
+    IGenericRepository<FlightClass> FlightClasses { get; }
+    IGenericRepository<Flight> Flights { get; }
+    IGenericRepository<FlightLeg> FlightLegs { get; }
+    IGenericRepository<AccommodationHotel> AccommodationHotels { get; }
+    IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; }
+    IGenericRepository<Accommodation> Accommodations { get; }
+    IGenericRepository<Transport> Transports { get; }
     // Notifications
     IGenericRepository<Notification> Notifications { get; }
+
+    // VIP guest app
+    IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; }
+    IGenericRepository<SupportMessage> SupportMessages { get; }
+    IGenericRepository<GuestDevice> GuestDevices { get; }
+    IGenericRepository<GuestNotification> GuestNotifications { get; }
 
     // Audit
     IGenericRepository<UserLoginLog> UserLoginLogs { get; }

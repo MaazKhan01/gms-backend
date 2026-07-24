@@ -4,8 +4,9 @@ namespace DomainPersistence.Entities;
 
 public partial class UserLoginLog
 {
-    public Guid Id { get; set; }
-    public Guid UserId { get; set; }
+    public int Id { get; set; }
+    public Guid PublicId { get; set; }
+    public int UserId { get; set; }
     public DateTime LoginAt { get; set; }
     public string IpAddress { get; set; }
     public string UserAgent { get; set; }

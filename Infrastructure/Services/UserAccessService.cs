@@ -22,7 +22,7 @@ public class UserAccessService(IUnitOfWork _unitOfWork) : IUserAccessService
                 .ThenInclude(r => r.RolePermissions)
                     .ThenInclude(rp => rp.Permission)
             .Include(u => u.ModuleGrants)
-            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+            .FirstOrDefaultAsync(u => u.PublicId == userId, ct);
 
         if (user == null)
             return ApiResponse<UserModuleAccessResponse>.NotFoundResponse("User not found");
@@ -31,14 +31,14 @@ public class UserAccessService(IUnitOfWork _unitOfWork) : IUserAccessService
     }
 
     public async Task<ApiResponse<UserModuleAccessResponse>> SetUserModuleAccessAsync(
-        Guid userId, SetModuleAccessRequest request, Guid adminId, CancellationToken ct = default)
+        Guid userId, SetModuleAccessRequest request, int adminId, CancellationToken ct = default)
     {
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.Role)
                 .ThenInclude(r => r.RolePermissions)
                     .ThenInclude(rp => rp.Permission)
             .Include(u => u.ModuleGrants)
-            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+            .FirstOrDefaultAsync(u => u.PublicId == userId, ct);
 
         if (user == null)
             return ApiResponse<UserModuleAccessResponse>.NotFoundResponse("User not found");
@@ -59,8 +59,7 @@ public class UserAccessService(IUnitOfWork _unitOfWork) : IUserAccessService
         {
             await _unitOfWork.UserModuleGrants.AddAsync(new UserModuleGrant
             {
-                Id = Guid.NewGuid(),
-                UserId = userId,
+                UserId = user.Id,
                 Module = slug,
                 IsGranted = true,
                 GrantedBy = adminId,
@@ -89,7 +88,7 @@ public class UserAccessService(IUnitOfWork _unitOfWork) : IUserAccessService
                 .ThenInclude(r => r.RolePermissions)
                     .ThenInclude(rp => rp.Permission)
             .Include(u => u.ModuleGrants)
-            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+            .FirstOrDefaultAsync(u => u.PublicId == userId, ct);
 
         return ApiResponse<UserModuleAccessResponse>.SuccessResponse(BuildResponse(fresh), "Access updated");
     }
@@ -118,7 +117,7 @@ public class UserAccessService(IUnitOfWork _unitOfWork) : IUserAccessService
 
         return new UserModuleAccessResponse
         {
-            UserId = user.Id,
+            UserId = user.PublicId,
             FullName = $"{user.FirstName} {user.LastName}".Trim(),
             Email = user.Email,
             RoleName = user.Role?.Name,

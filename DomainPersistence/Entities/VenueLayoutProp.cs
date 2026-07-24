@@ -9,8 +9,8 @@ namespace DomainPersistence.Entities
     public class VenueLayoutProp : Entity
     {
         // A prop belongs to EITHER a layout element or a block (stadium block).
-        public Guid? VenueLayoutId { get; set; }
-        public Guid? VenueBlockId { get; set; }
+        public int? VenueLayoutId { get; set; }
+        public int? VenueBlockId { get; set; }
         public string Code { get; set; }
         public string Label { get; set; }
         public int? Row { get; set; }

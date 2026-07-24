@@ -22,7 +22,6 @@ namespace Infrastructure.Services
 
                 var location = new LocationEntity
                 {
-                    Id = Guid.NewGuid(),
                     Latitude = request.Latitude,
                     Longitude = request.Longitude,
                     Address = request.Address,
@@ -34,7 +33,7 @@ namespace Infrastructure.Services
 
                 var response = new LocationResponse
                 {
-                    Id = location.Id,
+                    Id = location.PublicId,
                     Latitude = location.Latitude,
                     Longitude = location.Longitude,
                     Address = location.Address,

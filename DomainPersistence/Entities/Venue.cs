@@ -9,7 +9,7 @@ namespace DomainPersistence.Entities
     public class Venue : Entity
     {
         public string Name { get; set; }
-        public Guid? TypeId { get; set; }
+        public int? TypeId { get; set; }
         public List<string>? Category {  get; set; } 
         public string? Color { get; set; }
         public virtual LookupItem? Type { get; set; }

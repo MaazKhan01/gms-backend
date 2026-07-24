@@ -2,7 +2,8 @@ namespace DomainPersistence.Entities;
 
 public class Nationality
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
+    public Guid PublicId { get; set; }
     public string Name { get; set; }      // "Saudi Arabia"
     public string NameAr { get; set; }    // "المملكة العربية السعودية"
     public string Code { get; set; }      // "SA" ISO 3166-1 alpha-2

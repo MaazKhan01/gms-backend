@@ -28,13 +28,12 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
             if (existingUser != null)
                 return ApiResponse<UserResponse>.ConflictResponse("Email already exists");
 
-            var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.Id == request.RoleId, ct);
+            var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.PublicId == request.RoleId, ct);
             if (role == null)
                 return ApiResponse<UserResponse>.NotFoundResponse("Role not found");
 
             var user = new User
             {
-                Id = Guid.NewGuid(),
                 FirstName = request.FirstName,
                 LastName = request.LastName,
                 Email = request.Email.ToLower().Trim(),
@@ -72,7 +71,7 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
                 .Include(u => u.Role)
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
-                .FirstOrDefaultAsync(u => u.Id == id && u.IsDeleted != true, ct);
+                .FirstOrDefaultAsync(u => u.PublicId == id && u.IsDeleted != true, ct);
 
             if (user == null)
                 return ApiResponse<UserResponse>.NotFoundResponse("User not found");
@@ -128,19 +127,19 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
         }
     }
 
-    public async Task<ApiResponse<UserResponse>> UpdateUserAsync(Guid id, UpdateUserRequest request, Guid currentUserId, CancellationToken ct = default)
+    public async Task<ApiResponse<UserResponse>> UpdateUserAsync(Guid id, UpdateUserRequest request, int currentUserId, CancellationToken ct = default)
     {
         try
         {
             var user = await _unitOfWork.Users.Query()
-                .FirstOrDefaultAsync(u => u.Id == id && u.IsDeleted != true, ct);
+                .FirstOrDefaultAsync(u => u.PublicId == id && u.IsDeleted != true, ct);
 
             if (user == null)
                 return ApiResponse<UserResponse>.NotFoundResponse("User not found");
 
             if (request.RoleId.HasValue)
             {
-                var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.Id == request.RoleId.Value, ct);
+                var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.PublicId == request.RoleId.Value, ct);
                 if (role == null)
                     return ApiResponse<UserResponse>.NotFoundResponse("Role not found");
                 user.RoleId = role.Id;
@@ -165,18 +164,18 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
         }
     }
 
-    public async Task<ApiResponse<bool>> DeleteUserAsync(Guid id, Guid currentUserId, CancellationToken ct = default)
+    public async Task<ApiResponse<bool>> DeleteUserAsync(Guid id, int currentUserId, CancellationToken ct = default)
     {
         try
         {
-            if (id == currentUserId)
-                return ApiResponse<bool>.ErrorResponse("Cannot delete your own account");
-
             var user = await _unitOfWork.Users.Query()
-                .FirstOrDefaultAsync(u => u.Id == id && u.IsDeleted != true, ct);
+                .FirstOrDefaultAsync(u => u.PublicId == id && u.IsDeleted != true, ct);
 
             if (user == null)
                 return ApiResponse<bool>.NotFoundResponse("User not found");
+
+            if (user.Id == currentUserId)
+                return ApiResponse<bool>.ErrorResponse("Cannot delete your own account");
 
             user.IsDeleted = true;
             user.DeletedBy = currentUserId;
@@ -199,7 +198,7 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
         try
         {
             var user = await _unitOfWork.Users.Query()
-                .FirstOrDefaultAsync(u => u.Id == userId && u.IsDeleted != true, ct);
+                .FirstOrDefaultAsync(u => u.PublicId == userId && u.IsDeleted != true, ct);
 
             if (user == null)
                 return ApiResponse<bool>.NotFoundResponse("User not found");

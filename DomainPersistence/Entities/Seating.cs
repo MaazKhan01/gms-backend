@@ -9,10 +9,10 @@ namespace DomainPersistence.Entities
 {
     public class Seating : Entity
     {
-        public Guid EventId { get; set; } 
-        public Guid VenueId { get; set; }
-        public Guid? EventSessionId { get; set; }
-        public Guid VenueBoxId { get; set; }
+        public int EventId { get; set; }
+        public int VenueId { get; set; }
+        public int? EventSessionId { get; set; }
+        public int VenueBoxId { get; set; }
         public virtual Event Event { get; set; } = null!;
         public virtual Venue Venue { get; set; } = null!;
         public virtual Session? Session { get; set; }

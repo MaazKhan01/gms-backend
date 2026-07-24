@@ -4,8 +4,9 @@ namespace DomainPersistence.Entities;
 
 public class Notification
 {
-    public Guid Id { get; set; }
-    public Guid UserId { get; set; }
+    public int Id { get; set; }
+    public Guid PublicId { get; set; }
+    public int UserId { get; set; }
     public string Title { get; set; }
     public string? Message { get; set; }
     public string? Type { get; set; }

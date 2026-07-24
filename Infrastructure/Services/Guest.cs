@@ -7,33 +7,30 @@ using Core.ViewModel.Guest;
 using CsvHelper;
 using CsvHelper.Configuration;
 using DomainPersistence.Entities;
-using Elasticsearch.Net;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Graph;
 using System.Globalization;
 
 namespace Infrastructure.Services;
 
+// Core guest CRUD. Flight / accommodation / transport / invitation / accreditation
+// are separate modules now (their own tables) — not handled here.
 public class GuestService(
     IUnitOfWork _unitOfWork,
     IMapper _mapper,
-    IEmailService _emailService,
     IConfiguration _configuration,
     ILogger<GuestService> _logger) : IGuestService
 {
-    private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
     public async Task<ApiResponse<GuestResponse>> GetGuestByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
             var guest = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions)
+                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
-                .Include(g => g.InvitationTemplate)
-                .FirstOrDefaultAsync(g => g.Id == id, ct);
+                .Include(g => g.Event)
+                .FirstOrDefaultAsync(g => g.PublicId == id, ct);
 
             if (guest == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
@@ -46,13 +43,18 @@ public class GuestService(
             return ApiResponse<GuestResponse>.ServerErrorResponse("An error occurred while retrieving the guest");
         }
     }
+
     public async Task<ApiResponse<bool>> BulkGuestsDeleteAsync(Guid eventId, DeleteMultipleGuests request, CancellationToken ct = default)
     {
         try
         {
+            var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
+            if (ev == null)
+                return ApiResponse<bool>.NotFoundResponse("Event not found");
+
             var guests = await _unitOfWork.Guests
                 .Query()
-                .Where(g => request.SelectedGuestsToDelete.Contains(g.Id) && g.EventId == eventId)
+                .Where(g => request.SelectedGuestsToDelete.Contains(g.PublicId) && g.EventId == ev.Id)
                 .ToListAsync(ct);
 
             if (!guests.Any())
@@ -68,42 +70,40 @@ public class GuestService(
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting guests");
         }
     }
-    public async Task<ApiResponse<ImportGuestsResult>> ImportGuestCsvAsync(Guid eventId, Stream csvStream, Guid createdBy, CancellationToken ct = default)
+
+    public async Task<ApiResponse<ImportGuestsResult>> ImportGuestCsvAsync(Guid eventId, Stream csvStream, int createdBy, CancellationToken ct)
     {
         var result = new ImportGuestsResult();
-        try {
+        try
+        {
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
             {
-                HeaderValidated  = null,
+                HeaderValidated = null,
                 MissingFieldFound = null,
             };
             using var reader = new StreamReader(csvStream);
             using var csv = new CsvReader(reader, config);
 
             var rows = csv.GetRecords<GuestRow>().ToList();
-            foreach (var row in rows) {
+            foreach (var row in rows)
+            {
                 if (string.IsNullOrEmpty(row.FirstName) || string.IsNullOrEmpty(row.LastName))
                 {
                     result.Skipped++;
                     result.Errors.Add($"Record skipped - Missing First or Last Name: '{row.Email}' ");
                     continue;
                 }
-                try {
+                try
+                {
                     var request = new CreateGuestRequest
                     {
                         FirstName = row.FirstName.Trim(),
                         LastName = row.LastName.Trim(),
                         Email = row.Email?.Trim() ?? null,
                         EventId = eventId,
-                        GuestType  = string.IsNullOrEmpty(row.GuestType) ? "delegate" : row.GuestType.Trim().ToLower(),
+                        GuestType = string.IsNullOrEmpty(row.GuestType) ? "delegate" : row.GuestType.Trim().ToLower(),
                         Organization = row.Organization?.Trim() ?? null,
                         Tier = string.IsNullOrWhiteSpace(row.Tier) ? "Delegate" : row.Tier.Trim(),
-                        InvitationStatus = string.IsNullOrWhiteSpace(row.InvitationStatus) ? "not_sent" : row.InvitationStatus.Trim(),
-                        ArrivalDate = DateOnly.TryParse(row.ArrivalDate, out var d) ? d : null,
-                        FlightNumber = row.FlightNumber?.Trim() ?? null,
-                        Hotel = row.Hotel?.Trim() ?? null,
-                        AccreditationStatus = string.IsNullOrWhiteSpace(row.AccreditationStatus) ? "not_issued" : row.AccreditationStatus.Trim(),
-
                     };
                     var createResult = await CreateGuestAsync(request, ct);
                     if (createResult.Success)
@@ -115,13 +115,13 @@ public class GuestService(
                         continue;
                     }
                 }
-                catch (Exception ex) {
+                catch (Exception ex)
+                {
                     result.Skipped++;
                     result.Errors.Add($"Row failed ({row.FirstName} {row.LastName}): {ex.Message}");
                 }
             }
             return ApiResponse<ImportGuestsResult>.SuccessResponse(result);
-
         }
         catch (Exception ex)
         {
@@ -129,60 +129,20 @@ public class GuestService(
             return ApiResponse<ImportGuestsResult>.ErrorResponse("The uploaded CSV file contains invalid data or has an incorrect format.");
         }
     }
-    // Generates (once) the guest's public invitation token, flips status to
-    // "sent", interpolates the template body, appends a "View invitation" CTA
-    // button linking to the public accept/reject page, and fires the email
-    // (fire-and-forget). Shared by CreateGuestAsync and UpdateGuestAsync.
-    private async Task SendInvitationAsync(Guest guest, Guid templateId, CancellationToken ct)
-    {
-        var template = await _unitOfWork.InvitationTemplates.Query()
-            .FirstOrDefaultAsync(t => t.Id == templateId, ct);
-        if (template == null) return;
-
-        // Token must be persisted before the detached email task reads it.
-        if (guest.InvitationToken == null || guest.InvitationToken == Guid.Empty)
-            guest.InvitationToken = Guid.NewGuid();
-
-        guest.InvitationStatus = GuestInvitationStatus.Sent;
-        _unitOfWork.Guests.Update(guest);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        var guestName = $"{guest.FirstName} {guest.LastName}".Trim();
-        var emailSubject = template.Subject;
-        var emailBody = (template.Body ?? "")
-            .Replace("{{GuestName}}", guestName)
-            .Replace("{{FirstName}}", guest.FirstName)
-            .Replace("{{LastName}}", guest.LastName);
-
-        var link = $"{FrontendUrl}/?screen=invitation&token={guest.InvitationToken}";
-        var cta = $@"
-        <div style='margin:28px 0;text-align:center;'>
-            <a href='{link}' style='display:inline-block;padding:12px 28px;background-color:#1aaec4;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-family:Arial,sans-serif;font-size:15px;'>View Invitation</a>
-            <p style='margin-top:10px;font-size:12px;color:#888;font-family:Arial,sans-serif;'>Open the link above to confirm or decline your attendance.</p>
-        </div>";
-        emailBody += cta;
-
-        var email = guest.Email;
-        _ = Task.Run(async () =>
-        {
-            try { await _emailService.SendGuestInvitationAsync(email, guestName, emailSubject, emailBody); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Could not send invitation email to {Email}", email); }
-        });
-    }
 
     public async Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default)
     {
         try
         {
+            var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
+            if (ev == null)
+                return ApiResponse<PaginatedResponse<GuestResponse>>.NotFoundResponse("Event not found");
+
             var query = _unitOfWork.Guests.Query()
                 .Include(g => g.Nationality)
-                .Include(g => g.GuestSessions)
-                .Where(g => g.EventId == eventId);
-
-            // Downstream pickers (seating/meetings/travel) pass excludeDeclined=true
-            // so a guest who rejected their invitation can't be assigned anywhere.
-            if (request.ExcludeDeclined)
-                query = query.Where(g => g.InvitationStatus != GuestInvitationStatus.Declined);
+                .Include(g => g.Event)
+                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
+                .Where(g => g.EventId == ev.Id);
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
             {
@@ -214,13 +174,14 @@ public class GuestService(
         }
     }
 
-    public async Task<ApiResponse<bool>> DeleteGuestByIdAsync(Guid id, CancellationToken ct = default) {
-        try {
-            var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == id);
+    public async Task<ApiResponse<bool>> DeleteGuestByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.PublicId == id);
             if (guest == null)
-            {
                 return ApiResponse<bool>.NotFoundResponse("Guest Not Found");
-            }
+
             _unitOfWork.Guests.Remove(guest);
             await _unitOfWork.SaveChangesAsync(ct);
 
@@ -232,6 +193,7 @@ public class GuestService(
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting the guest");
         }
     }
+
     public async Task<ApiResponse<GuestResponse>> UpdateGuestAsync(CreateGuestRequest request, CancellationToken ct)
     {
         try
@@ -242,13 +204,13 @@ public class GuestService(
             var guest = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions)
                 .Include(g => g.Nationality)
-                .Include(g => g.InvitationTemplate)
-                .FirstOrDefaultAsync(g => g.Id == request.Id.Value, ct);
+                .Include(g => g.Event)
+                .FirstOrDefaultAsync(g => g.PublicId == request.Id.Value, ct);
 
             if (guest == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            // Check for duplicate email within the same event (excluding this guest)
+            // Duplicate email within the same event (excluding this guest)
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 var normalised = request.Email.ToLower().Trim();
@@ -259,20 +221,15 @@ public class GuestService(
                     return ApiResponse<GuestResponse>.ConflictResponse("A guest with this email already exists for this event");
             }
 
-            guest.FirstName           = request.FirstName?.Trim() ?? guest.FirstName;
-            guest.LastName            = request.LastName?.Trim()  ?? guest.LastName;
-            guest.Email               = request.Email?.ToLower().Trim();
-            guest.GuestType           = request.GuestType         ?? guest.GuestType;
-            guest.Organization        = request.Organization;
-            guest.NationalityId       = request.NationalityId;
-            guest.Tier                = request.Tier              ?? guest.Tier;
-            guest.InvitationStatus    = request.InvitationStatus  ?? guest.InvitationStatus;
-            guest.ArrivalDate         = request.ArrivalDate;
-            guest.DepartureDate       = request.DepartureDate;
-            guest.FlightNumber        = request.FlightNumber;
-            guest.Hotel               = request.Hotel;
-            guest.AccreditationStatus = request.AccreditationStatus ?? guest.AccreditationStatus;
-            guest.InvitationTemplateId = request.InvitationTemplateId;
+            var nationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct);
+
+            guest.FirstName     = request.FirstName?.Trim() ?? guest.FirstName;
+            guest.LastName      = request.LastName?.Trim()  ?? guest.LastName;
+            guest.Email         = request.Email?.ToLower().Trim();
+            guest.GuestType     = request.GuestType ?? guest.GuestType;
+            guest.Organization  = request.Organization;
+            guest.NationalityId = nationalityId;
+            guest.Tier          = request.Tier ?? guest.Tier;
 
             _unitOfWork.Guests.Update(guest);
 
@@ -282,20 +239,16 @@ public class GuestService(
                 if (guest.GuestSessions.Any())
                     _unitOfWork.GuestSessions.RemoveRange(guest.GuestSessions.ToList());
 
-                foreach (var sessionId in request.SessionIds)
+                foreach (var sessionId in await ResolveSessionIdsAsync(request.SessionIds, ct))
                     await _unitOfWork.GuestSessions.AddAsync(new GuestSession { GuestId = guest.Id, SessionId = sessionId }, ct);
             }
-            // Send invitation email if a template was selected
-            if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
-                await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
 
             await _unitOfWork.SaveChangesAsync(ct);
 
-            // Reload for a complete response
             var updated = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions)
+                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
-                .Include(g => g.InvitationTemplate)
+                .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
             return ApiResponse<GuestResponse>.SuccessResponse(_mapper.Map<GuestResponse>(updated), "Guest updated successfully");
@@ -316,12 +269,15 @@ public class GuestService(
                 request.EventId == Guid.Empty)
                 return ApiResponse<GuestResponse>.ErrorResponse("FirstName, LastName, and EventId are required");
 
-            // Prevent duplicate email within the same event (only when email is provided)
+            var ev = await _unitOfWork.Events.GetByPublicIdAsync(request.EventId, ct);
+            if (ev == null)
+                return ApiResponse<GuestResponse>.ErrorResponse("Event not found");
+
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 var normalised = request.Email.ToLower().Trim();
                 var existing = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Email == normalised && g.EventId == request.EventId, ct);
+                    .FirstOrDefaultAsync(g => g.Email == normalised && g.EventId == ev.Id, ct);
 
                 if (existing != null)
                     return ApiResponse<GuestResponse>.ConflictResponse("A guest with this email already exists for this event");
@@ -329,48 +285,33 @@ public class GuestService(
 
             var guest = new Guest
             {
-                Id                   = Guid.NewGuid(),
-                FirstName            = request.FirstName.Trim(),
-                LastName             = request.LastName.Trim(),
-                Email                = request.Email?.ToLower().Trim(),
-                EventId              = request.EventId,
-                GuestType            = request.GuestType ?? GuestTypes.Delegate,
-                Organization         = request.Organization,
-                NationalityId        = request.NationalityId,
-                Tier                 = request.Tier,
-                InvitationStatus     = request.InvitationStatus ?? GuestInvitationStatus.NotSent,
-                ArrivalDate          = request.ArrivalDate,
-                DepartureDate        = request.DepartureDate,
-                FlightNumber         = request.FlightNumber,
-                SeatId               = request.SeatId,
-                Hotel                = request.Hotel,
-                AccreditationStatus  = request.AccreditationStatus ?? GuestAccreditationStatus.NotIssued,
-                InvitationTemplateId = request.InvitationTemplateId,
-                CreatedAt            = DateTime.UtcNow,
-                IsDeleted            = false
+                FirstName     = request.FirstName.Trim(),
+                LastName      = request.LastName.Trim(),
+                Email         = request.Email?.ToLower().Trim(),
+                EventId       = ev.Id,
+                GuestType     = request.GuestType ?? GuestTypes.Delegate,
+                Organization  = request.Organization,
+                NationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct),
+                Tier          = request.Tier,
+                CreatedAt     = DateTime.UtcNow,
+                IsDeleted     = false
             };
 
             await _unitOfWork.Guests.AddAsync(guest, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            // Bind sessions after guest is saved so FK constraint is satisfied
             if (request.SessionIds is { Count: > 0 })
             {
-                foreach (var sessionId in request.SessionIds)
+                foreach (var sessionId in await ResolveSessionIdsAsync(request.SessionIds, ct))
                     await _unitOfWork.GuestSessions.AddAsync(new GuestSession { GuestId = guest.Id, SessionId = sessionId }, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
-            // Send invitation email if a template was selected
-            if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
-                await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
-
-            // Reload with all includes for complete response
             var created = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions)
+                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
-                .Include(g => g.InvitationTemplate)
+                .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
             return ApiResponse<GuestResponse>.SuccessResponse(_mapper.Map<GuestResponse>(created), "Guest created successfully");
@@ -381,9 +322,28 @@ public class GuestService(
             return ApiResponse<GuestResponse>.ServerErrorResponse("An error occurred while creating the guest");
         }
     }
-   }
 
- sealed class GuestRow
+    // Resolve a public nationality Guid to its internal int key.
+    private async Task<int?> ResolveNationalityIdAsync(Guid? publicId, CancellationToken ct)
+    {
+        if (publicId == null || publicId == Guid.Empty) return null;
+        var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(publicId.Value, ct);
+        return nat?.Id;
+    }
+
+    // Resolve public session Guids to internal int keys.
+    private async Task<List<int>> ResolveSessionIdsAsync(IEnumerable<Guid> publicIds, CancellationToken ct)
+    {
+        var ids = publicIds.ToList();
+        if (ids.Count == 0) return new List<int>();
+        return await _unitOfWork.Sessions.Query()
+            .Where(s => ids.Contains(s.PublicId))
+            .Select(s => s.Id)
+            .ToListAsync(ct);
+    }
+}
+
+sealed class GuestRow
 {
     public string FirstName { get; set; }
     public string LastName { get; set; }
@@ -391,9 +351,5 @@ public class GuestService(
     public string GuestType { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
-    public string InvitationStatus { get; set; }
     public string ArrivalDate { get; set; }  // "YYYY-MM-DD" string
-    public string FlightNumber { get; set; }
-    public string Hotel { get; set; }
-    public string AccreditationStatus { get; set; }
 }

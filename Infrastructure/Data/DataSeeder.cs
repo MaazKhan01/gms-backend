@@ -30,6 +30,11 @@ public static class DataSeeder
         await SyncPermissionsAsync(db, ct);
         var adminRole = await EnsureRoleAsync(db, Roles.ADMIN, "Administrator", "Full system access", ct);
         await EnsureRoleAsync(db, Roles.USER, "User", "Standard user", ct);
+
+        // Persist permissions + roles first so the DB assigns their identity int Ids.
+        // Everything below (RolePermissions, users) needs those generated int Ids.
+        await db.SaveChangesAsync(ct);
+
         await GrantAllPermissionsAsync(db, adminRole, ct);
         await SeedDefinedRolesAsync(db, ct);
         await SeedNationalitiesAsync(db, ct);
@@ -61,7 +66,6 @@ public static class DataSeeder
             var action = parts.Length > 1 ? parts[1] : code;
             db.Permissions.Add(new Permission
             {
-                Id = Guid.NewGuid(),
                 Code = code,
                 Module = module,
                 Name = $"{module} · {action}",
@@ -76,7 +80,7 @@ public static class DataSeeder
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Code == code, ct);
         if (role == null)
         {
-            role = new Role { Id = Guid.NewGuid(), Code = code, Name = name, Description = description };
+            role = new Role { Code = code, Name = name, Description = description };
             db.Roles.Add(role);
         }
         return role;
@@ -85,39 +89,28 @@ public static class DataSeeder
     // 4. Make sure the admin role is linked to every permission.
     private static async Task GrantAllPermissionsAsync(ApplicationDBContext db, Role adminRole, CancellationToken ct)
     {
-        var allPermissionIds = await db.Permissions.Select(p => p.Id).ToListAsync(ct);
-
-        // Include freshly-added (not-yet-saved) permissions tracked in the change tracker.
-        var pendingPermissionIds = db.ChangeTracker.Entries<Permission>()
-            .Where(e => e.State == EntityState.Added)
-            .Select(e => e.Entity.Id);
-        var permissionIds = allPermissionIds.Concat(pendingPermissionIds).Distinct().ToList();
+        // Permissions + roles are already persisted (see SeedAsync), so their int Ids are set.
+        var permissionIds = await db.Permissions.Select(p => p.Id).ToListAsync(ct);
 
         var linkedIds = await db.RolePermissions
             .Where(rp => rp.RoleId == adminRole.Id)
             .Select(rp => rp.PermissionId)
             .ToListAsync(ct);
-        var linkedSet = new HashSet<Guid>(linkedIds);
+        var linkedSet = new HashSet<int>(linkedIds);
 
         foreach (var permissionId in permissionIds.Where(id => !linkedSet.Contains(id)))
         {
             db.RolePermissions.Add(new RolePermission
             {
-                Id = Guid.NewGuid(),
                 RoleId = adminRole.Id,
                 PermissionId = permissionId,
             });
         }
     }
 
-    // Build a code -> id map including not-yet-saved (tracked) permissions.
-    private static Dictionary<string, Guid> PermissionMap(ApplicationDBContext db)
-    {
-        var map = db.Permissions.AsNoTracking().ToDictionary(p => p.Code, p => p.Id);
-        foreach (var e in db.ChangeTracker.Entries<Permission>().Where(e => e.State == EntityState.Added))
-            map[e.Entity.Code] = e.Entity.Id;
-        return map;
-    }
+    // Build a code -> int id map from persisted permissions.
+    private static Dictionary<string, int> PermissionMap(ApplicationDBContext db)
+        => db.Permissions.AsNoTracking().ToDictionary(p => p.Code, p => p.Id);
 
     // Sync built-in GMS roles: create missing roles AND replace permissions for
     // existing ones so RoleDefinitions.cs is always the source of truth.
@@ -131,8 +124,10 @@ public static class DataSeeder
             var role = await db.Roles.FirstOrDefaultAsync(r => r.Code == def.Code, ct);
             if (role == null)
             {
-                role = new Role { Id = Guid.NewGuid(), Code = def.Code, Name = def.Name, Description = def.Description };
+                role = new Role { Code = def.Code, Name = def.Name, Description = def.Description };
                 db.Roles.Add(role);
+                // Persist so the DB assigns role.Id before we wire its RolePermissions.
+                await db.SaveChangesAsync(ct);
             }
             else
             {
@@ -155,7 +150,7 @@ public static class DataSeeder
 
             // Add only permissions not already linked.
             foreach (var pid in desiredPermIds.Where(id => !currentPermIds.Contains(id)))
-                db.RolePermissions.Add(new RolePermission { Id = Guid.NewGuid(), RoleId = role.Id, PermissionId = pid });
+                db.RolePermissions.Add(new RolePermission { RoleId = role.Id, PermissionId = pid });
         }
     }
 
@@ -172,7 +167,6 @@ public static class DataSeeder
 
         db.Users.Add(new User
         {
-            Id = Guid.NewGuid(),
             UserName = userName,
             Email = email,
             FirstName = "System",
@@ -256,7 +250,6 @@ public static class DataSeeder
         {
             db.Nationalities.Add(new Nationality
             {
-                Id = Guid.NewGuid(),
                 Name = name,
                 NameAr = nameAr,
                 Code = code,
@@ -287,7 +280,6 @@ public static class DataSeeder
             {
                 cat = new LookupCategory
                 {
-                    Id = Guid.NewGuid(),
                     Code = code,
                     Name = name,
                     NameAr = nameAr,
@@ -299,6 +291,10 @@ public static class DataSeeder
             }
             categoryByCode[code] = cat;
         }
+
+        // Persist categories so the DB assigns their int Ids before seeding items
+        // (LookupItem.CategoryId is an int FK that needs the generated category Id).
+        await db.SaveChangesAsync(ct);
 
         await SeedItemsIfEmptyAsync(db, categoryByCode["AIRLINE"], ct, new (string, string, string, Dictionary<string, string>)[]
         {
@@ -372,7 +368,7 @@ public static class DataSeeder
         (string code, string name, string nameAr, Dictionary<string, string> metadata)[] items)
     {
         // Skip if this category already has items (checks tracked + persisted).
-        var hasPersisted = category.Id != Guid.Empty && await db.LookupItems.AnyAsync(i => i.CategoryId == category.Id, ct);
+        var hasPersisted = category.Id != 0 && await db.LookupItems.AnyAsync(i => i.CategoryId == category.Id, ct);
         var hasTracked = db.ChangeTracker.Entries<LookupItem>().Any(e => e.State == EntityState.Added && e.Entity.CategoryId == category.Id);
         if (hasPersisted || hasTracked) return;
 
@@ -381,7 +377,6 @@ public static class DataSeeder
         {
             db.LookupItems.Add(new LookupItem
             {
-                Id = Guid.NewGuid(),
                 CategoryId = category.Id,
                 Code = code,
                 Name = name,

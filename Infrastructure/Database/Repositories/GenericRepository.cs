@@ -21,11 +21,17 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
         _dbSet = context.Set<T>();
     }
 
-    public async Task<T> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<T> GetByIdAsync(int id, CancellationToken ct = default)
         => await _dbSet.FindAsync(new object[] { id }, ct);
 
-    public async Task<T> GetByIdAsync(Guid id, Expression<Func<T, object>> include, CancellationToken ct = default)
-        => await _dbSet.Include(include).FirstOrDefaultAsync(x => EF.Property<Guid>(x, "Id") == id, ct);
+    public async Task<T> GetByIdAsync(int id, Expression<Func<T, object>> include, CancellationToken ct = default)
+        => await _dbSet.Include(include).FirstOrDefaultAsync(x => EF.Property<int>(x, "Id") == id, ct);
+
+    public async Task<T> GetByPublicIdAsync(Guid publicId, CancellationToken ct = default)
+        => await _dbSet.FirstOrDefaultAsync(x => EF.Property<Guid>(x, "PublicId") == publicId, ct);
+
+    public async Task<T> GetByPublicIdAsync(Guid publicId, Expression<Func<T, object>> include, CancellationToken ct = default)
+        => await _dbSet.Include(include).FirstOrDefaultAsync(x => EF.Property<Guid>(x, "PublicId") == publicId, ct);
 
     public async Task<IEnumerable<T>> GetAllAsync(CancellationToken ct = default)
         => await _dbSet.ToListAsync(ct);

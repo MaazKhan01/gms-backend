@@ -57,7 +57,7 @@ public class NotificationService(
         {
             var userId = _currentUser.UserId;
             var notification = await _unitOfWork.Notifications.Query()
-                .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId, ct);
+                .FirstOrDefaultAsync(n => n.PublicId == id && n.UserId == userId, ct);
 
             if (notification == null)
                 return ApiResponse<NotificationResponse>.NotFoundResponse("Notification not found");
@@ -102,7 +102,7 @@ public class NotificationService(
         {
             var userId = _currentUser.UserId;
             var notification = await _unitOfWork.Notifications.Query()
-                .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId, ct);
+                .FirstOrDefaultAsync(n => n.PublicId == id && n.UserId == userId, ct);
 
             if (notification == null)
                 return ApiResponse<bool>.NotFoundResponse("Notification not found");
@@ -146,7 +146,7 @@ public class NotificationService(
         {
             var userId = _currentUser.UserId;
             var notification = await _unitOfWork.Notifications.Query()
-                .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId, ct);
+                .FirstOrDefaultAsync(n => n.PublicId == id && n.UserId == userId, ct);
 
             if (notification == null)
                 return ApiResponse<bool>.NotFoundResponse("Notification not found");

@@ -27,20 +27,24 @@ public class NotificationManagerService(
 
             if (input.UserId.HasValue)
             {
-                var notification = new Notification
+                // input.UserId is the public Guid; resolve it to the internal int FK.
+                var user = await _unitOfWork.Users.GetByPublicIdAsync(input.UserId.Value).ConfigureAwait(false);
+                if (user != null)
                 {
-                    Id = Guid.NewGuid(),
-                    UserId = input.UserId.Value,
-                    Title = input.Title ?? string.Empty,
-                    Message = input.Message,
-                    Type = input.NotificationTemplateCode,
-                    RedirectUrl = input.Url,
-                    Read = false,
-                    CreatedAt = DateTime.UtcNow
-                };
+                    var notification = new Notification
+                    {
+                        UserId = user.Id,
+                        Title = input.Title ?? string.Empty,
+                        Message = input.Message,
+                        Type = input.NotificationTemplateCode,
+                        RedirectUrl = input.Url,
+                        Read = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
 
-                await _unitOfWork.Notifications.AddAsync(notification).ConfigureAwait(false);
-                await _unitOfWork.SaveChangesAsync().ConfigureAwait(false);
+                    await _unitOfWork.Notifications.AddAsync(notification).ConfigureAwait(false);
+                    await _unitOfWork.SaveChangesAsync().ConfigureAwait(false);
+                }
             }
         }
         catch (Exception ex)

@@ -38,10 +38,11 @@ public class AuthController : Controllers.BaseApiController
 
         if (result.Success)
         {
+            // result.Data.User.Id is the public Guid; resolve to the internal int for the FK.
+            var loggedUser = await _unitOfWork.Users.GetByPublicIdAsync(result.Data.User.Id, ct);
             await _unitOfWork.UserLoginLogs.AddAsync(new UserLoginLog
             {
-                Id = Guid.NewGuid(),
-                UserId = result.Data.User.Id,
+                UserId = loggedUser?.Id ?? 0,
                 LoginAt = DateTime.UtcNow,
                 IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = HttpContext.Request.Headers["User-Agent"].ToString(),

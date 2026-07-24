@@ -8,9 +8,9 @@ namespace DomainPersistence.Entities
 {
     public class SeatAssign : Entity
     {
-        public Guid SeatingId { get; set; }
-        public Guid GuestId { get; set; }
-        public Guid SeatId { get; set; }
+        public int SeatingId { get; set; }
+        public int GuestId { get; set; }
+        public int SeatId { get; set; }
         public virtual Seating? Seating { get; set; }
         public virtual Guest? Guest { get; set; }
         public virtual SeatProperties? Seat { get; set; }

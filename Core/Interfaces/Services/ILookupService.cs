@@ -12,9 +12,9 @@ public interface ILookupService
     Task<ApiResponse<List<LookupItemResponse>>> GetItemsByCategoryCodeAsync(string categoryCode, bool includeInactive = false, CancellationToken ct = default);
 
     Task<ApiResponse<LookupItemResponse>> GetItemByIdAsync(Guid id, CancellationToken ct = default);
-    Task<ApiResponse<LookupItemResponse>> CreateItemAsync(LookupItemRequest request, Guid userId, CancellationToken ct = default);
-    Task<ApiResponse<LookupItemResponse>> UpdateItemAsync(LookupItemRequest request, Guid userId, CancellationToken ct = default);
-    Task<ApiResponse<bool>> DeleteItemAsync(Guid id, Guid userId, CancellationToken ct = default);
+    Task<ApiResponse<LookupItemResponse>> CreateItemAsync(LookupItemRequest request, int userId, CancellationToken ct = default);
+    Task<ApiResponse<LookupItemResponse>> UpdateItemAsync(LookupItemRequest request, int userId, CancellationToken ct = default);
+    Task<ApiResponse<bool>> DeleteItemAsync(Guid id, int userId, CancellationToken ct = default);
 
     /// <summary>Code-defined guest option sets (tier, type, statuses) — no DB access.</summary>
     ApiResponse<Dictionary<string, List<LookupEnumOption>>> GetGuestEnums();

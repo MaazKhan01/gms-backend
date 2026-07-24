@@ -9,7 +9,7 @@ public partial class Event : Entity
     public string Type { get; set; }            // Conference | Forum | Summit | Gala | ...
     public string Theme { get; set; }
     public string VenueName { get; set; }
-    public Guid? VenueId { get; set; }
+    public int? VenueId { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public string Status { get; set; }          // planning | active | completed | cancelled

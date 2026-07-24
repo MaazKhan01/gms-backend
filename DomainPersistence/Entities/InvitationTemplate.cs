@@ -2,7 +2,7 @@ namespace DomainPersistence.Entities;
 
 public class InvitationTemplate : Entity
 {
-    public Guid EventId { get; set; }
+    public int EventId { get; set; }
     public string Name { get; set; }
     public string? NameAr { get; set; }
     public string Language { get; set; }      // "en" | "ar" | "both"

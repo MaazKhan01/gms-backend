@@ -81,7 +81,7 @@ public class PermissionService : IPermissionService
         }
     }
 
-    public async Task<ApiResponse<PermissionResponse>> CreatePermissionAsync(CreatePermissionRequest request, Guid currentUserId, CancellationToken ct = default)
+    public async Task<ApiResponse<PermissionResponse>> CreatePermissionAsync(CreatePermissionRequest request, int currentUserId, CancellationToken ct = default)
     {
         try
         {
@@ -91,7 +91,6 @@ public class PermissionService : IPermissionService
 
             var permission = new Permission
             {
-                Id = Guid.NewGuid(),
                 Name = request.Name,
                 Code = request.Code,
                 Module = request.Module,

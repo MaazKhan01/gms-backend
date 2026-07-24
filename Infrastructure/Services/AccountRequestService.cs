@@ -24,7 +24,7 @@ public class AccountRequestService(
         var roles = await _unitOfWork.Roles.QueryNoTracking()
             .Where(r => r.Code != Roles.ADMIN)
             .OrderBy(r => r.Name)
-            .Select(r => new RequestableRoleResponse { Id = r.Id, Name = r.Name, Description = r.Description })
+            .Select(r => new RequestableRoleResponse { Id = r.PublicId, Name = r.Name, Description = r.Description })
             .ToListAsync(ct);
         return ApiResponse<List<RequestableRoleResponse>>.SuccessResponse(roles);
     }
@@ -40,7 +40,7 @@ public class AccountRequestService(
         Role requestedRole = null;
         if (request.RequestedRoleId is { } rid && rid != Guid.Empty)
         {
-            requestedRole = await _unitOfWork.Roles.FindFirstOrDefaultAsync(r => r.Id == rid, ct);
+            requestedRole = await _unitOfWork.Roles.FindFirstOrDefaultAsync(r => r.PublicId == rid, ct);
             if (requestedRole == null)
                 return ApiResponse<AccountRequestResponse>.ErrorResponse("Selected role does not exist");
             if (requestedRole.Code == Roles.ADMIN)
@@ -57,7 +57,6 @@ public class AccountRequestService(
 
         var entity = new AccountRequest
         {
-            Id = Guid.NewGuid(),
             FirstName = request.FirstName,
             LastName = request.LastName,
             Email = email,
@@ -102,17 +101,27 @@ public class AccountRequestService(
         return ApiResponse<PaginatedResponse<AccountRequestResponse>>.SuccessResponse(paged);
     }
 
-    public async Task<ApiResponse<AccountRequestResponse>> ApproveAsync(Guid id, ApproveAccountRequest decision, Guid reviewerId, CancellationToken ct = default)
+    public async Task<ApiResponse<AccountRequestResponse>> ApproveAsync(Guid id, ApproveAccountRequest decision, int reviewerId, CancellationToken ct = default)
     {
-        var req = await _unitOfWork.AccountRequests.GetByIdAsync(id, ct);
+        var req = await _unitOfWork.AccountRequests.GetByPublicIdAsync(id, ct);
         if (req == null)
             return ApiResponse<AccountRequestResponse>.NotFoundResponse("Request not found");
         if (req.Status != "pending")
             return ApiResponse<AccountRequestResponse>.ErrorResponse($"Request is already {req.Status}");
 
         // Fall back to the role the requester asked for when the admin doesn't override.
-        var roleId = decision.RoleId != Guid.Empty ? decision.RoleId : (req.RequestedRoleId ?? Guid.Empty);
-        if (roleId == Guid.Empty || !await _unitOfWork.Roles.AnyAsync(r => r.Id == roleId, ct))
+        // decision.RoleId is a public Guid; resolve it to the internal int id.
+        int? roleId;
+        if (decision.RoleId != Guid.Empty)
+        {
+            var role = await _unitOfWork.Roles.FindFirstOrDefaultAsync(r => r.PublicId == decision.RoleId, ct);
+            roleId = role?.Id;
+        }
+        else
+        {
+            roleId = req.RequestedRoleId;
+        }
+        if (roleId is null || !await _unitOfWork.Roles.AnyAsync(r => r.Id == roleId.Value, ct))
             return ApiResponse<AccountRequestResponse>.ErrorResponse("A valid roleId is required to approve");
 
         // Guard against a duplicate user created between request and approval.
@@ -121,7 +130,6 @@ public class AccountRequestService(
 
         var user = new User
         {
-            Id = Guid.NewGuid(),
             Email = req.Email,
             UserName = req.Email,
             FirstName = req.FirstName,
@@ -133,6 +141,8 @@ public class AccountRequestService(
         };
         user.SetCreationAudit(reviewerId);
         await _unitOfWork.Users.AddAsync(user, ct);
+        // Persist first so the DB-generated identity (user.Id) is available for the FK below.
+        await _unitOfWork.SaveChangesAsync(ct);
 
         req.Status = "approved";
         req.ReviewedBy = reviewerId;
@@ -155,9 +165,9 @@ public class AccountRequestService(
             _mapper.Map<AccountRequestResponse>(req), "Account approved");
     }
 
-    public async Task<ApiResponse<AccountRequestResponse>> RejectAsync(Guid id, RejectAccountRequest decision, Guid reviewerId, CancellationToken ct = default)
+    public async Task<ApiResponse<AccountRequestResponse>> RejectAsync(Guid id, RejectAccountRequest decision, int reviewerId, CancellationToken ct = default)
     {
-        var req = await _unitOfWork.AccountRequests.GetByIdAsync(id, ct);
+        var req = await _unitOfWork.AccountRequests.GetByPublicIdAsync(id, ct);
         if (req == null)
             return ApiResponse<AccountRequestResponse>.NotFoundResponse("Request not found");
         if (req.Status != "pending")

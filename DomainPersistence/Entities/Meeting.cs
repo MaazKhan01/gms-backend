@@ -9,7 +9,7 @@ namespace DomainPersistence.Entities
     public class Meeting : Entity
     {
         public string Name { get; set; }
-        public Guid EventId { get; set; }
+        public int EventId { get; set; }
         public DateOnly Date { get; set; }
         public string? Location { get; set; }
         public TimeOnly? StartTime { get; set; }

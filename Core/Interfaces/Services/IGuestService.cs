@@ -10,6 +10,6 @@ public interface IGuestService
     Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
     Task<ApiResponse<GuestResponse>> CreateGuestAsync(CreateGuestRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> BulkGuestsDeleteAsync(Guid eventId,DeleteMultipleGuests request, CancellationToken ct = default);
-    Task<ApiResponse<ImportGuestsResult>> ImportGuestCsvAsync(Guid eventId, Stream csvStream, Guid createdBy, CancellationToken ct);
+    Task<ApiResponse<ImportGuestsResult>> ImportGuestCsvAsync(Guid eventId, Stream csvStream, int createdBy, CancellationToken ct);
     Task<ApiResponse<GuestResponse>> UpdateGuestAsync( CreateGuestRequest request, CancellationToken ct);
 }

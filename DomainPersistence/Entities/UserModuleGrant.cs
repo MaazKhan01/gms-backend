@@ -9,14 +9,15 @@ namespace DomainPersistence.Entities;
 /// </summary>
 public class UserModuleGrant
 {
-    public Guid Id { get; set; }
-    public Guid UserId { get; set; }
+    public int Id { get; set; }
+    public Guid PublicId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>Module slug — matches ModuleDefinitions.All keys (e.g. "guests", "seating").</summary>
     public string Module { get; set; }
 
     public bool IsGranted { get; set; } = true;
-    public Guid GrantedBy { get; set; }
+    public int GrantedBy { get; set; }
     public DateTime GrantedAt { get; set; } = DateTime.UtcNow;
 
     public virtual User User { get; set; }

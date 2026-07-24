@@ -34,11 +34,10 @@ public class ExceptionHandlingMiddleware(RequestDelegate _next, ILogger<Exceptio
                 {
                     var userIdStr = context.User?.FindFirst("sub")?.Value
                         ?? context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                    Guid? userId = Guid.TryParse(userIdStr, out var uid) ? uid : null;
+                    int? userId = int.TryParse(userIdStr, out var uid) ? uid : null;
 
                     await unitOfWork.SystemErrorLogs.AddAsync(new SystemErrorLog
                     {
-                        Id = Guid.NewGuid(),
                         ErrorMessage = ex.Message,
                         StackTrace = ex.StackTrace,
                         Source = ex.Source,

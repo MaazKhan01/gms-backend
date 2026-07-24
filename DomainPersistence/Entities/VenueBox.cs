@@ -8,9 +8,9 @@ namespace DomainPersistence.Entities
 {
     public class VenueBox : Entity
     {
-        public Guid? EventId { get; set; }
-        public Guid? SessionId { get; set; }
-        public Guid VenueId { get; set; }
+        public int? EventId { get; set; }
+        public int? SessionId { get; set; }
+        public int VenueId { get; set; }
         public int? Width { get; set; }
         public int? Height { get; set; }
 

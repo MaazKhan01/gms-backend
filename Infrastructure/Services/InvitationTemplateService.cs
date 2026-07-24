@@ -16,7 +16,8 @@ public class InvitationTemplateService(IUnitOfWork _unitOfWork, IMapper _mapper,
         try
         {
             var list = await _unitOfWork.InvitationTemplates.Query()
-                .Where(t => t.EventId == eventId && t.IsActive)
+                .Include(t => t.Event)
+                .Where(t => t.Event.PublicId == eventId && t.IsActive)
                 .OrderBy(t => t.Name)
                 .ToListAsync(ct);
 
@@ -29,14 +30,19 @@ public class InvitationTemplateService(IUnitOfWork _unitOfWork, IMapper _mapper,
         }
     }
 
-    public async Task<ApiResponse<InvitationTemplateResponse>> CreateAsync(CreateInvitationTemplateRequest request, Guid createdBy, CancellationToken ct = default)
+    public async Task<ApiResponse<InvitationTemplateResponse>> CreateAsync(CreateInvitationTemplateRequest request, int createdBy, CancellationToken ct = default)
     {
         try
         {
+            // request.EventId is a public Guid; resolve it to the internal Event.
+            var ev = await _unitOfWork.Events.GetByPublicIdAsync(request.EventId, ct);
+            if (ev == null)
+                return ApiResponse<InvitationTemplateResponse>.NotFoundResponse("Event not found");
+
             var template = new InvitationTemplate
             {
-                Id          = Guid.NewGuid(),
-                EventId     = request.EventId,
+                EventId     = ev.Id,
+                Event       = ev,
                 Name        = request.Name,
                 NameAr      = request.NameAr,
                 Language    = request.Language,
@@ -64,11 +70,11 @@ public class InvitationTemplateService(IUnitOfWork _unitOfWork, IMapper _mapper,
         }
     }
 
-    public async Task<ApiResponse<InvitationTemplateResponse>> UpdateAsync(Guid id, UpdateInvitationTemplateRequest request, Guid updatedBy, CancellationToken ct = default)
+    public async Task<ApiResponse<InvitationTemplateResponse>> UpdateAsync(Guid id, UpdateInvitationTemplateRequest request, int updatedBy, CancellationToken ct = default)
     {
         try
         {
-            var template = await _unitOfWork.InvitationTemplates.GetByIdAsync(id, ct);
+            var template = await _unitOfWork.InvitationTemplates.GetByPublicIdAsync(id, t => t.Event, ct);
             if (template == null)
                 return ApiResponse<InvitationTemplateResponse>.NotFoundResponse("Template not found");
 
@@ -96,11 +102,11 @@ public class InvitationTemplateService(IUnitOfWork _unitOfWork, IMapper _mapper,
         }
     }
 
-    public async Task<ApiResponse<bool>> DeleteAsync(Guid id, Guid deletedBy, CancellationToken ct = default)
+    public async Task<ApiResponse<bool>> DeleteAsync(Guid id, int deletedBy, CancellationToken ct = default)
     {
         try
         {
-            var template = await _unitOfWork.InvitationTemplates.GetByIdAsync(id, ct);
+            var template = await _unitOfWork.InvitationTemplates.GetByPublicIdAsync(id, ct);
             if (template == null)
                 return ApiResponse<bool>.NotFoundResponse("Template not found");
 

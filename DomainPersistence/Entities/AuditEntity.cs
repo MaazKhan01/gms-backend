@@ -7,20 +7,20 @@ namespace DomainPersistence.Entities;
 /// </summary>
 public abstract class AuditEntity
 {
-    public Guid? CreatedBy { get; set; }
+    public int? CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    public Guid? UpdatedBy { get; set; }
+    public int? UpdatedBy { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
     public bool? IsDeleted { get; set; }
-    public Guid? DeletedBy { get; set; }
+    public int? DeletedBy { get; set; }
     public DateTime? DeletedAt { get; set; }
 
     /// <summary>
     /// Marks the entity as deleted (soft delete)
     /// </summary>
-    public void MarkAsDeleted(Guid deletedBy)
+    public void MarkAsDeleted(int deletedBy)
     {
         IsDeleted = true;
         DeletedBy = deletedBy;
@@ -30,7 +30,7 @@ public abstract class AuditEntity
     /// <summary>
     /// Sets creation audit information
     /// </summary>
-    public void SetCreationAudit(Guid createdBy)
+    public void SetCreationAudit(int createdBy)
     {
         CreatedBy = createdBy;
         CreatedAt = DateTime.UtcNow;
@@ -39,7 +39,7 @@ public abstract class AuditEntity
     /// <summary>
     /// Sets update audit information
     /// </summary>
-    public void SetUpdateAudit(Guid updatedBy)
+    public void SetUpdateAudit(int updatedBy)
     {
         UpdatedBy = updatedBy;
         UpdatedAt = DateTime.UtcNow;

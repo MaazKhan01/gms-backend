@@ -37,11 +37,12 @@ public class CurrentUser : ICurrentUser
         }
     }
 
-    public Guid UserId => UserInfo?.Id ?? Guid.Empty;
+    public int UserId => UserInfo?.Id ?? 0;
+    public Guid UserPublicId => UserInfo?.PublicId ?? Guid.Empty;
     public string Email => UserInfo?.Email;
-    public Guid RoleId => UserInfo?.RoleId ?? Guid.Empty;
+    public int RoleId => UserInfo?.RoleId ?? 0;
     public string RoleName => UserInfo?.RoleName;
-    public bool IsAuthenticated => UserInfo != null && UserId != Guid.Empty;
+    public bool IsAuthenticated => UserInfo != null && UserId != 0;
 
     private LoggedInUser InitializeUserInfo()
     {
@@ -54,7 +55,7 @@ public class CurrentUser : ICurrentUser
             var userIdClaim = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
                 ?? httpContext.User.FindFirstValue("sub");
 
-            if (!Guid.TryParse(userIdClaim, out var userId) || userId == Guid.Empty)
+            if (!int.TryParse(userIdClaim, out var userId) || userId == 0)
             {
                 _logger.LogWarning("User ID claim not found or invalid in token");
                 return null;
@@ -75,11 +76,12 @@ public class CurrentUser : ICurrentUser
             return new LoggedInUser
             {
                 Id = userEntity.Id,
+                PublicId = userEntity.PublicId,
                 FirstName = userEntity.FirstName,
                 LastName = userEntity.LastName,
                 Email = userEntity.Email,
                 Phone = userEntity.Phone,
-                RoleId = userEntity.RoleId ?? Guid.Empty,
+                RoleId = userEntity.RoleId ?? 0,
                 RoleName = userEntity.Role?.Name,
             };
         }

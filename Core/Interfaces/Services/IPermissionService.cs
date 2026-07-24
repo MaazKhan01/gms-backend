@@ -12,5 +12,5 @@ public interface IPermissionService
     Task<ApiResponse<List<PermissionResponse>>> GetAllPermissionsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<PermissionResponse>>> GetPermissionsByModuleAsync(string module, CancellationToken ct = default);
     Task<ApiResponse<List<string>>> GetModulesAsync(CancellationToken ct = default);
-    Task<ApiResponse<PermissionResponse>> CreatePermissionAsync(CreatePermissionRequest request, Guid currentUserId, CancellationToken ct = default);
+    Task<ApiResponse<PermissionResponse>> CreatePermissionAsync(CreatePermissionRequest request, int currentUserId, CancellationToken ct = default);
 }
