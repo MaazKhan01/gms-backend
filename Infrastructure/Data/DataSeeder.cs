@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -38,7 +37,7 @@ public static class DataSeeder
         await GrantAllPermissionsAsync(db, adminRole, ct);
         await SeedDefinedRolesAsync(db, ct);
         await SeedNationalitiesAsync(db, ct);
-        await SeedLookupsAsync(db, ct);
+        await SeedVenueRefDataAsync(db, ct);
         await EnsureAdminUserAsync(db, config, adminRole, logger, ct);
 
         await db.SaveChangesAsync(ct);
@@ -258,133 +257,37 @@ public static class DataSeeder
         }
     }
 
-    // Seed the fixed set of lookup categories + a starter set of items.
-    // Categories are ensured every boot; items are only seeded when a category is empty.
-    private static async Task SeedLookupsAsync(ApplicationDBContext db, CancellationToken ct)
+    // Seed venue reference data (dedicated tables). Only seeded when the table is
+    // empty — the venue editor needs its element-type palette to function.
+    private static async Task SeedVenueRefDataAsync(ApplicationDBContext db, CancellationToken ct)
     {
-        var categories = new[]
+        if (!await db.VenueTypes.AnyAsync(ct))
         {
-            ("AIRLINE",      "Airlines (IATA)", "شركات الطيران",  "Airline designators used in flight numbers"),
-            ("AIRPORT",      "Airports",        "المطارات",       "Airports with IATA codes and locations"),
-            ("VEHICLE_TYPE", "Vehicle Types",   "أنواع المركبات", "Ground-transport vehicle categories"),
-            ("HOTEL",        "Hotels",          "الفنادق",        "Accommodation options for guests"),
-            ("VENUE_TYPE",   "Venue Types",     "أنواع القاعات",  "Categories of venues / halls"),
-            ("ELEMENT_TYPE", "Element Types",   "أنواع العناصر",  "Venue layout element/shape types"),
-        };
-
-        var categoryByCode = new Dictionary<string, LookupCategory>();
-        foreach (var (code, name, nameAr, desc) in categories)
-        {
-            var cat = await db.LookupCategories.FirstOrDefaultAsync(c => c.Code == code, ct);
-            if (cat == null)
+            var venueTypes = new (string name, string nameAr)[]
             {
-                cat = new LookupCategory
-                {
-                    Code = code,
-                    Name = name,
-                    NameAr = nameAr,
-                    Description = desc,
-                    IsActive = true,
-                    IsSystem = true,
-                };
-                db.LookupCategories.Add(cat);
-            }
-            categoryByCode[code] = cat;
+                ("Auditorium",      "قاعة محاضرات"),
+                ("Ballroom",        "قاعة احتفالات"),
+                ("Conference Hall", "قاعة مؤتمرات"),
+                ("Meeting Room",    "غرفة اجتماعات"),
+                ("Stadium",         "استاد"),
+                ("Outdoor",         "مساحة خارجية"),
+            };
+            foreach (var (name, nameAr) in venueTypes)
+                db.VenueTypes.Add(new VenueType { Name = name, NameAr = nameAr });
         }
 
-        // Persist categories so the DB assigns their int Ids before seeding items
-        // (LookupItem.CategoryId is an int FK that needs the generated category Id).
-        await db.SaveChangesAsync(ct);
-
-        await SeedItemsIfEmptyAsync(db, categoryByCode["AIRLINE"], ct, new (string, string, string, Dictionary<string, string>)[]
+        if (!await db.ElementTypes.AnyAsync(ct))
         {
-            ("QR", "Qatar Airways",       "الخطوط الجوية القطرية", new() { ["country"] = "Qatar" }),
-            ("EK", "Emirates",            "طيران الإمارات",        new() { ["country"] = "United Arab Emirates" }),
-            ("EY", "Etihad Airways",      "الاتحاد للطيران",       new() { ["country"] = "United Arab Emirates" }),
-            ("SV", "Saudia",              "الخطوط السعودية",      new() { ["country"] = "Saudi Arabia" }),
-            ("GF", "Gulf Air",            "طيران الخليج",          new() { ["country"] = "Bahrain" }),
-            ("BA", "British Airways",     "الخطوط البريطانية",     new() { ["country"] = "United Kingdom" }),
-            ("AF", "Air France",          "الخطوط الفرنسية",       new() { ["country"] = "France" }),
-            ("LH", "Lufthansa",           "لوفتهانزا",             new() { ["country"] = "Germany" }),
-            ("TK", "Turkish Airlines",    "الخطوط التركية",        new() { ["country"] = "Turkey" }),
-        });
-
-        await SeedItemsIfEmptyAsync(db, categoryByCode["AIRPORT"], ct, new (string, string, string, Dictionary<string, string>)[]
-        {
-            ("DOH", "Hamad International Airport", "مطار حمد الدولي",   new() { ["city"] = "Doha",    ["country"] = "Qatar",                ["icao"] = "OTHH" }),
-            ("DXB", "Dubai International Airport",  "مطار دبي الدولي",   new() { ["city"] = "Dubai",   ["country"] = "United Arab Emirates", ["icao"] = "OMDB" }),
-            ("AUH", "Zayed International Airport",  "مطار زايد الدولي",  new() { ["city"] = "Abu Dhabi", ["country"] = "United Arab Emirates", ["icao"] = "OMAA" }),
-            ("RUH", "King Khalid International",    "مطار الملك خالد",   new() { ["city"] = "Riyadh",  ["country"] = "Saudi Arabia",         ["icao"] = "OERK" }),
-            ("JED", "King Abdulaziz International", "مطار الملك عبدالعزيز", new() { ["city"] = "Jeddah", ["country"] = "Saudi Arabia",       ["icao"] = "OEJN" }),
-            ("LHR", "London Heathrow",             "مطار هيثرو",        new() { ["city"] = "London",  ["country"] = "United Kingdom",       ["icao"] = "EGLL" }),
-            ("CDG", "Paris Charles de Gaulle",     "مطار شارل ديغول",   new() { ["city"] = "Paris",   ["country"] = "France",               ["icao"] = "LFPG" }),
-            ("JFK", "John F. Kennedy International","مطار جون كينيدي",   new() { ["city"] = "New York", ["country"] = "United States",       ["icao"] = "KJFK" }),
-            ("IST", "Istanbul Airport",            "مطار إسطنبول",      new() { ["city"] = "Istanbul", ["country"] = "Turkey",              ["icao"] = "LTFM" }),
-        });
-
-        await SeedItemsIfEmptyAsync(db, categoryByCode["VEHICLE_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
-        {
-            ("SEDAN",     "Sedan",          "سيارة سيدان",  new() { ["capacity"] = "3" }),
-            ("SUV",       "SUV",            "دفع رباعي",     new() { ["capacity"] = "5" }),
-            ("VAN",       "Van",            "فان",           new() { ["capacity"] = "7" }),
-            ("MINIBUS",   "Minibus",        "حافلة صغيرة",   new() { ["capacity"] = "15" }),
-            ("BUS",       "Coach Bus",      "حافلة",         new() { ["capacity"] = "45" }),
-            ("LIMOUSINE", "Limousine",      "ليموزين",       new() { ["capacity"] = "3" }),
-        });
-
-        await SeedItemsIfEmptyAsync(db, categoryByCode["HOTEL"], ct, new (string, string, string, Dictionary<string, string>)[]
-        {
-            ("SHER", "Sheraton Grand Doha",       "شيراتون الدوحة الكبرى", new() { ["city"] = "Doha", ["address"] = "Al Corniche Street, West Bay" }),
-            ("RC",   "The Ritz-Carlton Doha",     "ريتز كارلتون الدوحة",   new() { ["city"] = "Doha", ["address"] = "Al Isteqlal Road, West Bay Lagoon" }),
-            ("FS",   "Four Seasons Hotel Doha",   "فور سيزونز الدوحة",     new() { ["city"] = "Doha", ["address"] = "The Corniche" }),
-            ("MO",   "Mandarin Oriental Doha",    "ماندارين أورينتال",     new() { ["city"] = "Doha", ["address"] = "Msheireb Downtown" }),
-            ("STR",  "St. Regis Doha",            "سانت ريجيس الدوحة",     new() { ["city"] = "Doha", ["address"] = "West Bay, Doha Corniche" }),
-        });
-
-        await SeedItemsIfEmptyAsync(db, categoryByCode["VENUE_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
-        {
-            ("AUDITORIUM",      "Auditorium",      "قاعة محاضرات", new()),
-            ("BALLROOM",        "Ballroom",        "قاعة احتفالات", new()),
-            ("CONFERENCE_HALL", "Conference Hall", "قاعة مؤتمرات",  new()),
-            ("MEETING_ROOM",    "Meeting Room",    "غرفة اجتماعات", new()),
-            ("STADIUM",         "Stadium",         "استاد",         new()),
-            ("OUTDOOR",         "Outdoor",         "مساحة خارجية",  new()),
-        });
-
-        await SeedItemsIfEmptyAsync(db, categoryByCode["ELEMENT_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
-        {
-            ("round",   "Round Table",      "طاولة دائرية",  new()),
-            ("rect",    "Rectangular Table","طاولة مستطيلة", new()),
-            ("stadium", "Stadium Block",    "كتلة مدرجات",   new()),
-            ("stage",   "Stage",            "منصة",          new()),
-            ("pitch",   "Pitch Area",       "منطقة ملعب",    new()),
-        });
-    }
-
-    private static async Task SeedItemsIfEmptyAsync(
-        ApplicationDBContext db,
-        LookupCategory category,
-        CancellationToken ct,
-        (string code, string name, string nameAr, Dictionary<string, string> metadata)[] items)
-    {
-        // Skip if this category already has items (checks tracked + persisted).
-        var hasPersisted = category.Id != 0 && await db.LookupItems.AnyAsync(i => i.CategoryId == category.Id, ct);
-        var hasTracked = db.ChangeTracker.Entries<LookupItem>().Any(e => e.State == EntityState.Added && e.Entity.CategoryId == category.Id);
-        if (hasPersisted || hasTracked) return;
-
-        var order = 0;
-        foreach (var (code, name, nameAr, metadata) in items)
-        {
-            db.LookupItems.Add(new LookupItem
+            var elementTypes = new (string code, string name, string nameAr)[]
             {
-                CategoryId = category.Id,
-                Code = code,
-                Name = name,
-                NameAr = nameAr,
-                SortOrder = order++,
-                IsActive = true,
-                Metadata = metadata is { Count: > 0 } ? JsonSerializer.Serialize(metadata) : null,
-            });
+                ("round",   "Round Table",       "طاولة دائرية"),
+                ("rect",    "Rectangular Table", "طاولة مستطيلة"),
+                ("stadium", "Stadium Block",     "كتلة مدرجات"),
+                ("stage",   "Stage",             "منصة"),
+                ("pitch",   "Pitch Area",        "منطقة ملعب"),
+            };
+            foreach (var (code, name, nameAr) in elementTypes)
+                db.ElementTypes.Add(new ElementType { Code = code, Name = name, NameAr = nameAr });
         }
     }
 }

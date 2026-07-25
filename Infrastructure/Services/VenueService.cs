@@ -367,11 +367,11 @@ namespace Infrastructure.Services
                 // userId is the internal user id (0 = unauthenticated).
                 int? creatorId = userId == 0 ? null : userId;
 
-                // VenueType is a LookupItem public id; resolve to its internal int FK.
+                // VenueType is a VenueType public id; resolve to its internal int FK.
                 int? typeId = null;
                 if (request.VenueType != Guid.Empty)
                 {
-                    typeId = await _unitOfWork.LookupItems.Query()
+                    typeId = await _unitOfWork.VenueTypes.Query()
                         .Where(t => t.PublicId == request.VenueType)
                         .Select(t => (int?)t.Id)
                         .FirstOrDefaultAsync(ct);
@@ -727,6 +727,53 @@ namespace Infrastructure.Services
                 });
             }
             return seats;
+        }
+
+        // ── Venue reference data (dedicated tables) ──────────────────────────
+        public async Task<ApiResponse<List<VenueTypeDto>>> GetVenueTypesAsync(CancellationToken ct)
+        {
+            var data = await _unitOfWork.VenueTypes.Query()
+                .OrderBy(x => x.Name)
+                .Select(x => new VenueTypeDto { Id = x.PublicId, Name = x.Name, NameAr = x.NameAr })
+                .ToListAsync(ct);
+            return ApiResponse<List<VenueTypeDto>>.SuccessResponse(data);
+        }
+
+        public async Task<ApiResponse<VenueTypeDto>> CreateVenueTypeAsync(CreateVenueTypeRequest request, int userId, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return ApiResponse<VenueTypeDto>.ErrorResponse("Name is required");
+
+            var entity = new VenueType { Name = request.Name.Trim(), NameAr = request.NameAr?.Trim() };
+            if (userId != 0) entity.SetCreationAudit(userId);
+            await _unitOfWork.VenueTypes.AddAsync(entity, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<VenueTypeDto>.SuccessResponse(
+                new VenueTypeDto { Id = entity.PublicId, Name = entity.Name, NameAr = entity.NameAr }, "Venue type created");
+        }
+
+        public async Task<ApiResponse<List<ElementTypeDto>>> GetElementTypesAsync(CancellationToken ct)
+        {
+            var data = await _unitOfWork.ElementTypes.Query()
+                .OrderBy(x => x.Name)
+                .Select(x => new ElementTypeDto { Id = x.PublicId, Code = x.Code, Name = x.Name, NameAr = x.NameAr })
+                .ToListAsync(ct);
+            return ApiResponse<List<ElementTypeDto>>.SuccessResponse(data);
+        }
+
+        public async Task<ApiResponse<ElementTypeDto>> CreateElementTypeAsync(CreateElementTypeRequest request, int userId, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return ApiResponse<ElementTypeDto>.ErrorResponse("Name is required");
+
+            var entity = new ElementType { Code = request.Code?.Trim(), Name = request.Name.Trim(), NameAr = request.NameAr?.Trim() };
+            if (userId != 0) entity.SetCreationAudit(userId);
+            await _unitOfWork.ElementTypes.AddAsync(entity, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<ElementTypeDto>.SuccessResponse(
+                new ElementTypeDto { Id = entity.PublicId, Code = entity.Code, Name = entity.Name, NameAr = entity.NameAr }, "Element type created");
         }
     }
 }

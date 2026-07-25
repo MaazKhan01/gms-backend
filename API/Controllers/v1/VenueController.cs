@@ -91,5 +91,24 @@ namespace API.Controllers.v1
             var result = await _venueService.DeleteVenueAsync(id, ct);
             return ToResponse(result);
         }
+
+        // ── Venue reference data ─────────────────────────────────────────────
+        [HttpGet("types")]
+        public async Task<IActionResult> GetVenueTypes(CancellationToken ct)
+            => ToResponse(await _venueService.GetVenueTypesAsync(ct));
+
+        [HttpPost("types")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> CreateVenueType([FromBody] CreateVenueTypeRequest request, CancellationToken ct)
+            => ToResponse(await _venueService.CreateVenueTypeAsync(request, _currentUser.UserId, ct));
+
+        [HttpGet("element-types")]
+        public async Task<IActionResult> GetElementTypes(CancellationToken ct)
+            => ToResponse(await _venueService.GetElementTypesAsync(ct));
+
+        [HttpPost("element-types")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> CreateElementType([FromBody] CreateElementTypeRequest request, CancellationToken ct)
+            => ToResponse(await _venueService.CreateElementTypeAsync(request, _currentUser.UserId, ct));
     }
 }

@@ -12,7 +12,7 @@ namespace DomainPersistence.Entities
         public int? TypeId { get; set; }
         public List<string>? Category {  get; set; } 
         public string? Color { get; set; }
-        public virtual LookupItem? Type { get; set; }
+        public virtual VenueType? Type { get; set; }
         public virtual ICollection<VenueBox>? VenueBoxes { get; set; }
     }
 

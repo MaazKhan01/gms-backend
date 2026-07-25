@@ -27,9 +27,9 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Nationality> Nationalities { get; }
     IGenericRepository<InvitationTemplate> InvitationTemplates { get; }
 
-    // GMS — Lookups (generic reference data)
-    IGenericRepository<LookupCategory> LookupCategories { get; }
-    IGenericRepository<LookupItem> LookupItems { get; }
+    // GMS — Venue reference data
+    IGenericRepository<VenueType> VenueTypes { get; }
+    IGenericRepository<ElementType> ElementTypes { get; }
 
     // GMS — Account requests
     IGenericRepository<AccountRequest> AccountRequests { get; }

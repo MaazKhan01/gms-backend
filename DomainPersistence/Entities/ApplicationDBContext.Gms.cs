@@ -202,6 +202,27 @@ public partial class ApplicationDBContext
         // Most relationships use Restrict to avoid SQL Server multiple-cascade-path
         // errors; the app relies on soft-delete anyway. Only the two leaf ownership
         // edges (propâ†’seats, seatingâ†’assignments) cascade.
+        modelBuilder.Entity<VenueType>(vt =>
+        {
+            vt.ToTable("VenueTypes");
+            vt.HasKey(x => x.Id);
+            vt.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            vt.Property(x => x.NameAr).HasMaxLength(150);
+            vt.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            vt.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
+        modelBuilder.Entity<ElementType>(et =>
+        {
+            et.ToTable("ElementTypes");
+            et.HasKey(x => x.Id);
+            et.Property(x => x.Code).HasMaxLength(50);
+            et.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            et.Property(x => x.NameAr).HasMaxLength(150);
+            et.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            et.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
         modelBuilder.Entity<Venue>(v =>
         {
             v.ToTable("Venues");
@@ -410,11 +431,6 @@ public partial class ApplicationDBContext
             ft.Property(x => x.Name).IsRequired().HasMaxLength(50);
             ft.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             ft.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            ft.HasData(
-                new { Id = 1, PublicId = new Guid("11111111-1111-1111-1111-111111111111"), Name = "Inbound",  CreatedAt = new DateTime(2026, 1, 1) },
-                new { Id = 2, PublicId = new Guid("22222222-2222-2222-2222-222222222222"), Name = "Outbound", CreatedAt = new DateTime(2026, 1, 1) },
-                new { Id = 3, PublicId = new Guid("33333333-3333-3333-3333-333333333333"), Name = "Return",   CreatedAt = new DateTime(2026, 1, 1) }
-            );
         });
 
         modelBuilder.Entity<FlightClass>(fc =>

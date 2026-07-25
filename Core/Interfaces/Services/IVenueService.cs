@@ -12,5 +12,11 @@ namespace Core.Interfaces.Services
         Task<ApiResponse<List<GetVenueResonse>>> GetVenuesAsync(CancellationToken ct);
         Task<ApiResponse<bool>> DeleteVenueAsync(Guid id, CancellationToken ct);
         Task<ApiResponse<bool>> DeleteVenueBoxAsync(Guid id, Guid venueId, Guid eventId,Guid sessionId, CancellationToken ct);
+
+        // Venue reference data (dedicated tables).
+        Task<ApiResponse<List<VenueTypeDto>>> GetVenueTypesAsync(CancellationToken ct);
+        Task<ApiResponse<VenueTypeDto>> CreateVenueTypeAsync(CreateVenueTypeRequest request, int userId, CancellationToken ct);
+        Task<ApiResponse<List<ElementTypeDto>>> GetElementTypesAsync(CancellationToken ct);
+        Task<ApiResponse<ElementTypeDto>> CreateElementTypeAsync(CreateElementTypeRequest request, int userId, CancellationToken ct);
     }
 }

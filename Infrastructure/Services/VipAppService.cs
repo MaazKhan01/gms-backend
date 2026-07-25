@@ -339,19 +339,16 @@ public class VipAppService(
         var events = (await GetEventsAsync(guestId, ct)).Data ?? new();
         var sessionCount = await _unitOfWork.GuestSessions.CountAsync(gs => gs.GuestId == guestId, ct);
 
-        // ponytail: travel reads stubbed — rewire to Flight/Accommodation/Transport
-        // tables once they carry the VIP display fields. Agenda has no travel cards
-        // for now; counts report sessions only.
         var data = new HomeResponse
         {
             Events = events,
-            Agenda = new List<AgendaCardResponse>(),
+            Agenda = new List<AgendaCardResponse>(),   // detail lives in the travel/session endpoints
             Counts = new ItineraryCountsResponse
             {
-                Flights = 0,
+                Flights = await _unitOfWork.Flights.CountAsync(f => f.GuestId == guestId, ct),
                 Sessions = sessionCount,
-                HasTransport = false,
-                HasAccommodation = false
+                HasTransport = await _unitOfWork.Transports.AnyAsync(t => t.GuestId == guestId, ct),
+                HasAccommodation = await _unitOfWork.Accommodations.AnyAsync(a => a.GuestId == guestId, ct)
             }
         };
         return ApiResponse<HomeResponse>.SuccessResponse(data);
@@ -359,9 +356,32 @@ public class VipAppService(
 
     public async Task<ApiResponse<List<ItineraryItemResponse>>> GetItineraryAsync(int guestId, CancellationToken ct)
     {
-        // ponytail: travel reads stubbed — rewire to Flight/Accommodation/Transport
-        // tables once they carry the VIP display fields. Only session items for now.
         var items = new List<ItineraryItemResponse>();
+
+        var legs = await _unitOfWork.FlightLegs.Query()
+            .Where(l => l.Flight.GuestId == guestId).ToListAsync(ct);
+        items.AddRange(legs.Select(l => new ItineraryItemResponse
+        {
+            When = l.StartTime ?? DateTime.MinValue, Kind = "flight", RefId = l.PublicId,
+            Title = "Flight", Subtitle = $"{l.DepartureCode} → {l.ArrivalCode} · {l.FlightNumber}"
+        }));
+
+        var accs = await _unitOfWork.Accommodations.Query()
+            .Include(a => a.Hotel).Where(a => a.GuestId == guestId).ToListAsync(ct);
+        items.AddRange(accs.Select(a => new ItineraryItemResponse
+        {
+            When = ToDt(a.CheckIn) ?? DateTime.MinValue, Kind = "hotel", RefId = a.PublicId,
+            Title = "Hotel Check-In", Subtitle = a.Hotel?.Name
+        }));
+
+        var trips = await _unitOfWork.Transports.Query()
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Where(t => t.GuestId == guestId).ToListAsync(ct);
+        items.AddRange(trips.Select(t => new ItineraryItemResponse
+        {
+            When = t.PickupTime ?? DateTime.MinValue, Kind = "transport", RefId = t.PublicId,
+            Title = "Transport", Subtitle = $"{t.PickupLocation?.Address} → {t.DropoffLocation?.Address}"
+        }));
 
         var sessionIds = await _unitOfWork.GuestSessions.QueryNoTracking()
             .Where(gs => gs.GuestId == guestId).Select(gs => gs.SessionId).ToListAsync(ct);
@@ -379,22 +399,78 @@ public class VipAppService(
     // ============================================================
     // Travel
     // ============================================================
-    public Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct)
     {
-        // ponytail: travel reads stubbed — rewire to Flight/Accommodation/Transport tables once they carry the VIP display fields.
-        return Task.FromResult(ApiResponse<List<FlightLegResponse>>.SuccessResponse(new List<FlightLegResponse>()));
+        var flights = await _unitOfWork.Flights.Query()
+            .Include(f => f.FlightClass).Include(f => f.Legs)
+            .Where(f => f.GuestId == guestId).ToListAsync(ct);
+
+        var data = flights.SelectMany(f => f.Legs.Select(l => new FlightLegResponse
+        {
+            Id = l.PublicId,
+            DepartureCode = l.DepartureCode, DepartureCity = l.DepartureCity,
+            ArrivalCode = l.ArrivalCode, ArrivalCity = l.ArrivalCity,
+            DateTime = l.StartTime, FlightNumber = l.FlightNumber,
+            Class = f.FlightClass?.Name, Status = f.Status, Seat = f.Seat
+        })).OrderBy(x => x.DateTime).ToList();
+
+        return ApiResponse<List<FlightLegResponse>>.SuccessResponse(data);
     }
 
-    public Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, CancellationToken ct)
     {
-        // ponytail: travel reads stubbed — rewire to Flight/Accommodation/Transport tables once they carry the VIP display fields.
-        return Task.FromResult(ApiResponse<AccommodationResponse>.NotFoundResponse("No accommodation found"));
+        var acc = await _unitOfWork.Accommodations.Query()
+            .Include(a => a.Hotel).Include(a => a.RoomType)
+            .OrderBy(a => a.CheckIn)
+            .FirstOrDefaultAsync(a => a.GuestId == guestId, ct);
+        if (acc is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("No accommodation found");
+
+        var data = new AccommodationResponse
+        {
+            Id = acc.PublicId,
+            HotelName = acc.Hotel?.Name,
+            Address = acc.Hotel?.Address,
+            CheckIn = ToDt(acc.CheckIn),
+            CheckOut = ToDt(acc.CheckOut),
+            RoomType = acc.RoomType?.Name,
+            View = acc.RoomView,
+            Guests = acc.GuestCount ?? 0,
+            Concierge = string.IsNullOrWhiteSpace(acc.ConciergeName) ? null
+                : new ContactResponse { Name = acc.ConciergeName, Role = "Hotel Concierge", Phone = acc.ConciergePhone }
+        };
+        return ApiResponse<AccommodationResponse>.SuccessResponse(data);
     }
 
-    public Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct)
     {
-        // ponytail: travel reads stubbed — rewire to Flight/Accommodation/Transport tables once they carry the VIP display fields.
-        return Task.FromResult(ApiResponse<TransportationResponse>.NotFoundResponse("No transportation found"));
+        var trips = await _unitOfWork.Transports.Query()
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Where(t => t.GuestId == guestId).ToListAsync(ct);
+
+        var primary = trips.FirstOrDefault();
+        if (primary is null) return ApiResponse<TransportationResponse>.NotFoundResponse("No transportation found");
+
+        var data = new TransportationResponse
+        {
+            Id = primary.PublicId,
+            FromAddress = primary.PickupLocation?.Address,
+            ToAddress = primary.DropoffLocation?.Address,
+            PickupTime = primary.PickupTime,
+            EstimatedArrival = primary.EstimatedArrival,
+            VehicleType = primary.VehicleType,
+            Plate = primary.Plate,
+            TripStatus = primary.TripStatus,
+            Driver = string.IsNullOrWhiteSpace(primary.DriverName) ? null : new DriverResponse
+            {
+                Name = primary.DriverName, Role = "Chauffeur",
+                Rating = primary.DriverRating, Phone = primary.DriverPhone
+            },
+            OtherJourneys = trips.Skip(1).Select(t => new JourneyResponse
+            {
+                Id = t.PublicId, Label = $"{t.PickupLocation?.Address} → {t.DropoffLocation?.Address}"
+            }).ToList()
+        };
+        return ApiResponse<TransportationResponse>.SuccessResponse(data);
     }
 
     // ============================================================
