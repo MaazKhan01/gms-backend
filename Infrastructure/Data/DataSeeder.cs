@@ -277,6 +277,9 @@ public static class DataSeeder
             ("HOTEL",        "Hotels",          "الفنادق",        "Accommodation options for guests"),
             ("VENUE_TYPE",   "Venue Types",     "أنواع القاعات",  "Categories of venues / halls"),
             ("ELEMENT_TYPE", "Element Types",   "أنواع العناصر",  "Venue layout element/shape types"),
+            ("FLIGHT_TYPE",  "Flight Types",    "أنواع الرحلات",  "Flight type options for guest travel"),
+            ("FLIGHT_CLASS", "Flight Classes",  "درجات الرحلة",   "Cabin class options for guest travel"),
+            ("ROOM_TYPE",    "Room Types",      "أنواع الغرف",    "Hotel room type options for guest travel"),
         };
 
         var categoryByCode = new Dictionary<string, LookupCategory>();
@@ -362,6 +365,29 @@ public static class DataSeeder
             ("stadium", "Stadium Block",    "كتلة مدرجات",   new()),
             ("stage",   "Stage",            "منصة",          new()),
             ("pitch",   "Pitch Area",       "منطقة ملعب",    new()),
+        });
+
+        await SeedItemsIfEmptyAsync(db, categoryByCode["FLIGHT_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
+        {
+            ("DOMESTIC",      "Domestic",      "داخلي", new()),
+            ("INTERNATIONAL", "International", "دولي",  new()),
+        });
+
+        await SeedItemsIfEmptyAsync(db, categoryByCode["FLIGHT_CLASS"], ct, new (string, string, string, Dictionary<string, string>)[]
+        {
+            ("ECONOMY",         "Economy",         "اقتصادية",       new()),
+            ("PREMIUM_ECONOMY", "Premium Economy", "اقتصادية ممتازة", new()),
+            ("BUSINESS",        "Business",        "رجال الأعمال",   new()),
+            ("FIRST",           "First",           "الأولى",         new()),
+        });
+
+        await SeedItemsIfEmptyAsync(db, categoryByCode["ROOM_TYPE"], ct, new (string, string, string, Dictionary<string, string>)[]
+        {
+            ("SINGLE", "Single Room", "غرفة مفردة",  new()),
+            ("DOUBLE", "Double Room", "غرفة مزدوجة",  new()),
+            ("TWIN",   "Twin Room",   "غرفة توأم",    new()),
+            ("SUITE",  "Suite",       "جناح",         new()),
+            ("DELUXE", "Deluxe Room", "غرفة ديلوكس",  new()),
         });
     }
 

@@ -3,6 +3,7 @@ using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
+using Core.ViewModel.Lookup;
 using Core.ViewModel.Venue;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,8 +13,54 @@ namespace API.Controllers.v1
     [Route("api/v1/[controller]")]
     [Authorize]
     [ApiVersion("1.0")]
-    public class VenueController(IVenueService _venueService, ICurrentUser _currentUser) : Controllers.BaseApiController
+    public class VenueController(IVenueService _venueService, ILookupService _lookupService, ICurrentUser _currentUser) : Controllers.BaseApiController
     {
+        // ── Venue reference data (dedicated routes, backed by the existing,
+        // already-seeded VENUE_TYPE/ELEMENT_TYPE lookup categories) ───────────
+        [HttpGet("types")]
+        public async Task<IActionResult> GetVenueTypes(CancellationToken ct)
+        {
+            var result = await _lookupService.GetItemsByCategoryCodeAsync("VENUE_TYPE", false, ct);
+            return ToResponse(result);
+        }
+
+        [HttpPost("types")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> CreateVenueType([FromBody] CreateVenueTypeDto request, CancellationToken ct)
+        {
+            var result = await _lookupService.CreateItemAsync(new LookupItemRequest
+            {
+                CategoryCode = "VENUE_TYPE",
+                Code = Slugify(request.Name),
+                Name = request.Name,
+                NameAr = request.NameAr,
+            }, _currentUser.UserId, ct);
+            return ToResponse(result);
+        }
+
+        [HttpGet("element-types")]
+        public async Task<IActionResult> GetElementTypes(CancellationToken ct)
+        {
+            var result = await _lookupService.GetItemsByCategoryCodeAsync("ELEMENT_TYPE", false, ct);
+            return ToResponse(result);
+        }
+
+        [HttpPost("element-types")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> CreateElementType([FromBody] CreateElementTypeDto request, CancellationToken ct)
+        {
+            var result = await _lookupService.CreateItemAsync(new LookupItemRequest
+            {
+                CategoryCode = "ELEMENT_TYPE",
+                Code = request.Code,
+                Name = request.Name,
+                NameAr = request.NameAr,
+            }, _currentUser.UserId, ct);
+            return ToResponse(result);
+        }
+
+        private static string Slugify(string s) => (s ?? "").Trim().ToUpperInvariant().Replace(" ", "_");
+
         [HttpPost]
         [HasPermission(PermissionCodes.VenueManage)]
         public async Task<IActionResult> CreateVenue([FromBody] CreateVenueRequest request, CancellationToken ct = default) {
