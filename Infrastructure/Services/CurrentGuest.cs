@@ -9,7 +9,7 @@ namespace Infrastructure.Services;
 // guest token carries a "guestId" claim (see VipAppService token generation).
 public class CurrentGuest(IHttpContextAccessor _http) : ICurrentGuest
 {
-    public const string GuestIdClaim = "guestId";
+    public const string GuestIdClaim = "Id";
 
     private ClaimsPrincipal User => _http.HttpContext?.User;
 

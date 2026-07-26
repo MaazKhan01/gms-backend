@@ -82,13 +82,13 @@ namespace DomainPersistence.Migrations
                         column: x => x.AssignedAdminUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_SupportConversations_Users_ClosedByUserId",
                         column: x => x.ClosedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateIndex(
@@ -134,7 +134,7 @@ namespace DomainPersistence.Migrations
                 column: "ConversationId",
                 principalTable: "SupportConversations",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                onDelete: ReferentialAction.Restrict);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_SupportMessages_Users_SenderUserId",
@@ -142,7 +142,7 @@ namespace DomainPersistence.Migrations
                 column: "SenderUserId",
                 principalTable: "Users",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                onDelete: ReferentialAction.Restrict);
 
             // Backfill: one SupportConversation per guest who already has messages,
             // summarized from their existing SupportMessages, then point those

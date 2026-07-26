@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
-using Core.ViewModel.SupportChat;
 using Core.ViewModel.VipApp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,7 +21,7 @@ namespace API.Controllers.v1;
 [Route("api/v1/vip-app")]
 [Authorize]
 [ApiVersion("1.0")]
-public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest, ISupportChatService _supportChat) : Controllers.BaseApiController
+public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) : Controllers.BaseApiController
 {
     private int GuestId => _currentGuest.GuestId;
 
@@ -108,23 +107,6 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest, 
     [HttpPut("settings")]
     public async Task<IActionResult> UpdateSettings([FromBody] UpdateSettingsRequest request, CancellationToken ct)
         => ToResponse(await _vip.UpdateSettingsAsync(GuestId, request, ct));
-
-    // ---------------- Support ----------------
-    [HttpGet("support/conversations")]
-    public async Task<IActionResult> GetSupportConversations(CancellationToken ct)
-        => ToResponse(await _supportChat.GetMyConversationsAsync(GuestId, ct));
-
-    [HttpGet("support/messages")]
-    public async Task<IActionResult> GetSupportMessages([FromQuery] PagedRequest request, CancellationToken ct)
-        => ToResponse(await _vip.GetSupportMessagesAsync(GuestId, request, ct));
-
-    [HttpPost("support/messages"), EnableRateLimiting("chat")]
-    public async Task<IActionResult> SendSupportMessage([FromBody] SendSupportMessageRequest request, CancellationToken ct)
-        => ToResponse(await _vip.SendSupportMessageAsync(GuestId, request, ct));
-
-    [HttpPost("support/messages/read")]
-    public async Task<IActionResult> MarkSupportMessagesRead(CancellationToken ct)
-        => ToResponse(await _supportChat.MarkReadByGuestAsync(GuestId, ct));
 
     // ---------------- Notifications / devices ----------------
     [HttpGet("notifications")]

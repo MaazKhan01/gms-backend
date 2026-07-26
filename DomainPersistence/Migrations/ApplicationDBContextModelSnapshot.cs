@@ -1290,7 +1290,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Locations");
+                    b.ToTable("Locations", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Meeting", b =>
@@ -1453,7 +1453,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Notifications");
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.OtpVerification", b =>
@@ -1521,7 +1521,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("OtpVerifications");
+                    b.ToTable("OtpVerifications", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Permission", b =>
@@ -1586,7 +1586,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Permissions");
+                    b.ToTable("Permissions", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Role", b =>
@@ -1644,7 +1644,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Roles");
+                    b.ToTable("Roles", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.RolePermission", b =>
@@ -1699,7 +1699,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RolePermissions");
+                    b.ToTable("RolePermissions", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.SeatAssign", b =>
@@ -2221,7 +2221,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("SystemErrorLogs");
+                    b.ToTable("SystemErrorLogs", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Transport", b =>
@@ -2446,7 +2446,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserLoginLogs");
+                    b.ToTable("UserLoginLogs", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.UserModuleGrant", b =>
@@ -2536,7 +2536,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserRefreshTokens");
+                    b.ToTable("UserRefreshTokens", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.VehicleType", b =>
@@ -3356,12 +3356,12 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.User", "AssignedAdmin")
                         .WithMany()
                         .HasForeignKey("AssignedAdminUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DomainPersistence.Entities.User", "ClosedByUser")
                         .WithMany()
                         .HasForeignKey("ClosedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany()
@@ -3381,7 +3381,7 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.SupportConversation", "Conversation")
                         .WithMany()
                         .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany()
@@ -3392,7 +3392,7 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.User", "SenderUser")
                         .WithMany()
                         .HasForeignKey("SenderUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Conversation");
 

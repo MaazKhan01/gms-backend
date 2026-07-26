@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    [Migration("20260726165239_AddSupportChatConversations")]
+    [Migration("20260726183619_AddSupportChatConversations")]
     partial class AddSupportChatConversations
     {
         /// <inheritdoc />
@@ -3359,12 +3359,12 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.User", "AssignedAdmin")
                         .WithMany()
                         .HasForeignKey("AssignedAdminUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DomainPersistence.Entities.User", "ClosedByUser")
                         .WithMany()
                         .HasForeignKey("ClosedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany()
@@ -3384,7 +3384,7 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.SupportConversation", "Conversation")
                         .WithMany()
                         .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany()
@@ -3395,7 +3395,7 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.User", "SenderUser")
                         .WithMany()
                         .HasForeignKey("SenderUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Conversation");
 

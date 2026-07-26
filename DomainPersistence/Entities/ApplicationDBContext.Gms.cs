@@ -384,8 +384,18 @@ public partial class ApplicationDBContext
             m.HasIndex(x => new { x.GuestId, x.SentAt });
             m.HasIndex(x => new { x.ConversationId, x.SentAt });
             m.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            m.HasOne(x => x.Conversation).WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.SetNull);
-            m.HasOne(x => x.SenderUser).WithMany().HasForeignKey(x => x.SenderUserId).OnDelete(DeleteBehavior.SetNull);
+            // Restrict, not SetNull/Cascade: Guests -> SupportConversations (Cascade) ->
+            // SupportMessages.ConversationId would otherwise be a second cascade path
+            // alongside the direct Guests -> SupportMessages.GuestId cascade above — the
+            // same multiple-cascade-path problem as the Users FKs below. The direct
+            // GuestId cascade already cleans up a guest's messages on delete regardless.
+            m.HasOne(x => x.Conversation).WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            // Restrict, not SetNull: Users -> SupportMessages.SenderUserId would otherwise
+            // be a second cascade path alongside Users -> SupportConversations.*UserId ->
+            // SupportMessages.ConversationId, which SQL Server rejects as a multiple
+            // cascade path. Same convention as the Venue/Seating module above — the app
+            // relies on soft-delete anyway, so Users are never hard-deleted in practice.
+            m.HasOne(x => x.SenderUser).WithMany().HasForeignKey(x => x.SenderUserId).OnDelete(DeleteBehavior.Restrict);
             m.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -402,8 +412,10 @@ public partial class ApplicationDBContext
             c.HasIndex(x => x.GuestId).IsUnique();
             c.HasIndex(x => new { x.Status, x.UnreadByAdminCount, x.LastMessageAt });
             c.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            c.HasOne(x => x.AssignedAdmin).WithMany().HasForeignKey(x => x.AssignedAdminUserId).OnDelete(DeleteBehavior.SetNull);
-            c.HasOne(x => x.ClosedByUser).WithMany().HasForeignKey(x => x.ClosedByUserId).OnDelete(DeleteBehavior.SetNull);
+            // Restrict — see SupportMessage.SenderUserId comment above; these two paths
+            // into Users are what SQL Server flagged as a multiple cascade path.
+            c.HasOne(x => x.AssignedAdmin).WithMany().HasForeignKey(x => x.AssignedAdminUserId).OnDelete(DeleteBehavior.Restrict);
+            c.HasOne(x => x.ClosedByUser).WithMany().HasForeignKey(x => x.ClosedByUserId).OnDelete(DeleteBehavior.Restrict);
             c.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 

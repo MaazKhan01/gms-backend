@@ -33,7 +33,6 @@ public class VipAppService(
     IUnitOfWork _unitOfWork,
     IConfiguration _configuration,
     IEmailService _emailService,
-    ISupportChatService _supportChat,
     ILogger<VipAppService> _logger) : IVipAppService
 {
     private const string OtpPurpose = "guest-login";
@@ -601,15 +600,7 @@ public class VipAppService(
         Organization = g.Organization, Tier = g.Tier
     };
 
-    // ============================================================
-    // Support chat — delegates to ISupportChatService, which owns the shared
-    // guest/admin conversation logic. See SupportChatService.
-    // ============================================================
-    public Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, PagedRequest request, CancellationToken ct)
-        => _supportChat.GetGuestMessagesAsync(guestId, request, ct);
-
-    public Task<ApiResponse<SupportMessageResponse>> SendSupportMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct)
-        => _supportChat.SendGuestMessageAsync(guestId, request, ct);
+    // Support chat lives entirely on SupportChatService / SupportChatController now.
 
     // ============================================================
     // Notifications / devices
