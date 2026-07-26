@@ -50,6 +50,7 @@ public partial class ApplicationDBContext
     // VIP guest app
     public virtual DbSet<GuestRefreshToken> GuestRefreshTokens { get; set; }
     public virtual DbSet<SupportMessage> SupportMessages { get; set; }
+    public virtual DbSet<SupportConversation> SupportConversations { get; set; }
     public virtual DbSet<GuestDevice> GuestDevices { get; set; }
     public virtual DbSet<GuestNotification> GuestNotifications { get; set; }
 
@@ -376,11 +377,34 @@ public partial class ApplicationDBContext
             m.ToTable("SupportMessages");
             m.HasKey(x => x.Id);
             m.Property(x => x.Body).IsRequired().HasColumnType("nvarchar(max)");
+            m.Property(x => x.AttachmentUrl).HasMaxLength(500);
+            m.Property(x => x.AttachmentType).HasMaxLength(100);
             m.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             m.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             m.HasIndex(x => new { x.GuestId, x.SentAt });
+            m.HasIndex(x => new { x.ConversationId, x.SentAt });
             m.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            m.HasOne(x => x.Conversation).WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.SetNull);
+            m.HasOne(x => x.SenderUser).WithMany().HasForeignKey(x => x.SenderUserId).OnDelete(DeleteBehavior.SetNull);
             m.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<SupportConversation>(c =>
+        {
+            c.ToTable("SupportConversations");
+            c.HasKey(x => x.Id);
+            // "Open" mirrors Core.Constants.SupportChatStatuses.Open — DomainPersistence
+            // doesn't reference Core, so the literal is duplicated here on purpose.
+            c.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue("Open");
+            c.Property(x => x.LastMessagePreview).HasMaxLength(300);
+            c.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            c.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            c.HasIndex(x => x.GuestId).IsUnique();
+            c.HasIndex(x => new { x.Status, x.UnreadByAdminCount, x.LastMessageAt });
+            c.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            c.HasOne(x => x.AssignedAdmin).WithMany().HasForeignKey(x => x.AssignedAdminUserId).OnDelete(DeleteBehavior.SetNull);
+            c.HasOne(x => x.ClosedByUser).WithMany().HasForeignKey(x => x.ClosedByUserId).OnDelete(DeleteBehavior.SetNull);
+            c.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<GuestDevice>(d =>

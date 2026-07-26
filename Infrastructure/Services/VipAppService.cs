@@ -33,6 +33,7 @@ public class VipAppService(
     IUnitOfWork _unitOfWork,
     IConfiguration _configuration,
     IEmailService _emailService,
+    ISupportChatService _supportChat,
     ILogger<VipAppService> _logger) : IVipAppService
 {
     private const string OtpPurpose = "guest-login";
@@ -601,42 +602,14 @@ public class VipAppService(
     };
 
     // ============================================================
-    // Support chat
+    // Support chat — delegates to ISupportChatService, which owns the shared
+    // guest/admin conversation logic. See SupportChatService.
     // ============================================================
-    public async Task<ApiResponse<List<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, CancellationToken ct)
-    {
-        var msgs = await _unitOfWork.SupportMessages.QueryNoTracking()
-            .Where(m => m.GuestId == guestId)
-            .OrderBy(m => m.SentAt).ToListAsync(ct);
+    public Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, PagedRequest request, CancellationToken ct)
+        => _supportChat.GetGuestMessagesAsync(guestId, request, ct);
 
-        var data = msgs.Select(m => new SupportMessageResponse
-        {
-            Id = m.PublicId, Body = m.Body, FromGuest = m.FromGuest, SentAt = m.SentAt
-        }).ToList();
-        return ApiResponse<List<SupportMessageResponse>>.SuccessResponse(data);
-    }
-
-    public async Task<ApiResponse<SupportMessageResponse>> SendSupportMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.Body))
-            return ApiResponse<SupportMessageResponse>.ErrorResponse("Message body is required");
-
-        var msg = new SupportMessage
-        {
-            GuestId = guestId,
-            Body = request.Body.Trim(),
-            FromGuest = true,
-            SentAt = DateTime.UtcNow,
-            IsRead = false
-        };
-        await _unitOfWork.SupportMessages.AddAsync(msg, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        return ApiResponse<SupportMessageResponse>.SuccessResponse(new SupportMessageResponse
-        {
-            Id = msg.PublicId, Body = msg.Body, FromGuest = true, SentAt = msg.SentAt
-        }, "Message sent");
-    }
+    public Task<ApiResponse<SupportMessageResponse>> SendSupportMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct)
+        => _supportChat.SendGuestMessageAsync(guestId, request, ct);
 
     // ============================================================
     // Notifications / devices

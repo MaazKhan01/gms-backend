@@ -46,7 +46,10 @@ public interface IVipAppService
     Task<ApiResponse<bool>> UpdateSettingsAsync(int guestId, UpdateSettingsRequest request, CancellationToken ct);
 
     // ---- Support ----
-    Task<ApiResponse<List<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, CancellationToken ct);
+    // Thin delegations to ISupportChatService — the guest side of the
+    // guest/admin support chat, kept here so VipAppController's existing call
+    // sites and contract stay unchanged. See SupportChatService for the actual logic.
+    Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, PagedRequest request, CancellationToken ct);
     Task<ApiResponse<SupportMessageResponse>> SendSupportMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct);
 
     // ---- Notifications / devices ----

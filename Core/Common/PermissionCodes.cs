@@ -90,4 +90,8 @@ public static class PermissionCodes
 
     // Dashboards
     public const string DashboardView = "Dashboard.View";
+
+    // Support chat (guest ↔ admin)
+    public const string SupportChatView = "SupportChat.View";
+    public const string SupportChatManage = "SupportChat.Manage";
 }

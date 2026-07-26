@@ -66,6 +66,7 @@ public interface IUnitOfWork : IDisposable
     // VIP guest app
     IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; }
     IGenericRepository<SupportMessage> SupportMessages { get; }
+    IGenericRepository<SupportConversation> SupportConversations { get; }
     IGenericRepository<GuestDevice> GuestDevices { get; }
     IGenericRepository<GuestNotification> GuestNotifications { get; }
 
