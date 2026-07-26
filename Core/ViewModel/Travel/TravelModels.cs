@@ -52,7 +52,7 @@ public class TransportInput
 {
     public Guid? PickupLocationId { get; set; }
     public Guid? DropoffLocationId { get; set; }
-    public string VehicleType { get; set; }
+    public Guid? VehicleTypeId { get; set; }
     public string Plate { get; set; }
     public string TripStatus { get; set; }
     public string DriverName { get; set; }

@@ -155,27 +155,68 @@ public static class DataSeeder
 
     // 5. Create the default admin user if no account with that email exists.
     private static async Task EnsureAdminUserAsync(
-        ApplicationDBContext db, IConfiguration config, Role adminRole, ILogger logger, CancellationToken ct)
+        ApplicationDBContext db,
+        IConfiguration config,
+        Role adminRole,
+        ILogger logger,
+        CancellationToken ct)
     {
-        var email = config["Seed:AdminEmail"] ?? "admin@gms.local";
-        var password = config["Seed:AdminPassword"] ?? "Admin@123!";
-        var userName = config["Seed:AdminUserName"] ?? "admin";
-
-        var exists = await db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email, ct);
-        if (exists) return;
-
-        db.Users.Add(new User
+        var users = new List<User>
+    {
+        new User
         {
-            UserName = userName,
-            Email = email,
+            UserName = config["Seed:AdminUserName"] ?? "admin",
+            Email = config["Seed:AdminEmail"] ?? "admin@gms.local",
             FirstName = "System",
             LastName = "Administrator",
             IsActive = true,
             RoleId = adminRole.Id,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
-        });
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(
+                config["Seed:AdminPassword"] ?? "Admin@123!"
+            )
+        },
+        new User
+        {
+            UserName = "guest1",
+            Email = "guest1@yopmail.com",
+            FirstName = "John",
+            LastName = "Guest",
+            IsActive = true,
+            RoleId = 2,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Guest@123!")
+        },
+        new User
+        {
+            UserName = "guest2",
+            Email = "guest2@yopmail.com",
+            FirstName = "Jane",
+            LastName = "Guest",
+            IsActive = true,
+            RoleId = 2,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Guest@123!")
+        }
+    };
 
-        logger?.LogWarning("Seeded admin user '{Email}'. Change the seeded password after first login.", email);
+        foreach (var user in users)
+        {
+            var exists = await db.Users
+                .IgnoreQueryFilters()
+                .AnyAsync(
+                    u => u.Email == user.Email || u.UserName == user.UserName,
+                    ct);
+
+            if (!exists)
+            {
+                db.Users.Add(user);
+                logger?.LogInformation("Seeded user '{Email}'.", user.Email);
+            }
+            else
+            {
+                logger?.LogInformation("User '{Email}' already exists. Skipping.", user.Email);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task SeedNationalitiesAsync(ApplicationDBContext db, CancellationToken ct)

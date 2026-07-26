@@ -202,6 +202,11 @@ public class SupportMessageResponse
     public string Body { get; set; }
     public bool FromGuest { get; set; }
     public DateTime SentAt { get; set; }
+    public bool IsRead { get; set; }
+    public DateTime? ReadAt { get; set; }
+    public string AttachmentUrl { get; set; }
+    public string AttachmentType { get; set; }
+    public string SenderName { get; set; } // populated for admin-sent messages
 }
 public record SendSupportMessageRequest(string Body);
 

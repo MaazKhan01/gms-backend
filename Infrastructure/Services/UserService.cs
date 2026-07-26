@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -14,9 +16,15 @@ using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;
 
-public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserService> _logger) : IUserService
+public class UserService(
+    IUnitOfWork _unitOfWork,
+    IMapper _mapper,
+    IEmailService _emailService,
+    IConfiguration _configuration,
+    ILogger<UserService> _logger) : IUserService
 {
-  
+    private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
+
 
     public async Task<ApiResponse<UserResponse>> CreateUserAsync(CreateUserRequest request, CancellationToken ct = default)
     {
@@ -221,5 +229,231 @@ public class UserService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<UserS
             _logger.LogError(ex, "Error changing password for user {UserId}", userId);
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while changing the password");
         }
+    }
+
+    public async Task<ApiResponse<UserResponse>> InviteUserAsync(InviteUserRequest request, int inviterId, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+                return ApiResponse<UserResponse>.ErrorResponse("Email is required");
+
+            var email = request.Email.Trim().ToLowerInvariant();
+
+            if (await _unitOfWork.Users.Query().IgnoreQueryFilters().AnyAsync(u => u.Email == email, ct))
+                return ApiResponse<UserResponse>.ConflictResponse("An account with this email already exists");
+
+            var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.PublicId == request.RoleId, ct);
+            if (role == null)
+                return ApiResponse<UserResponse>.NotFoundResponse("Role not found");
+
+            var user = new User
+            {
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                Email = email,
+                Phone = request.Phone,
+                RoleId = role.Id,
+                PasswordHash = null,
+                IsActive = false,
+                InviteToken = Guid.NewGuid(),
+                InviteSentAt = DateTime.UtcNow,
+            };
+            user.SetCreationAudit(inviterId);
+            await _unitOfWork.Users.AddAsync(user, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            if (role.Code == Roles.DRIVER && request.DriverProfile != null)
+            {
+                var d = request.DriverProfile;
+                var vehicleTypeId = d.VehicleTypeId.HasValue
+                    ? (await _unitOfWork.VehicleTypes.GetByPublicIdAsync(d.VehicleTypeId.Value, ct))?.Id
+                    : null;
+                var nationalityId = d.NationalityId.HasValue
+                    ? (await _unitOfWork.Nationalities.GetByPublicIdAsync(d.NationalityId.Value, ct))?.Id
+                    : null;
+
+                var profile = new DriverProfile
+                {
+                    UserId = user.Id,
+                    Age = d.Age,
+                    LicenseNumber = d.LicenseNumber,
+                    LicenseExpiry = d.LicenseExpiry,
+                    VehicleTypeId = vehicleTypeId,
+                    VehiclePlate = d.VehiclePlate,
+                    NationalityId = nationalityId,
+                    PhotoUrl = d.PhotoUrl,
+                };
+                profile.SetCreationAudit(inviterId);
+                await _unitOfWork.DriverProfiles.AddAsync(profile, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+
+            SendInviteEmail(user, role.Name);
+
+            var created = await _unitOfWork.Users.Query()
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.Id == user.Id, ct);
+
+            return ApiResponse<UserResponse>.SuccessResponse(_mapper.Map<UserResponse>(created), "Invite sent");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error inviting user");
+            return ApiResponse<UserResponse>.ServerErrorResponse("An error occurred while inviting the user");
+        }
+    }
+
+    public async Task<ApiResponse<PaginatedResponse<PendingUserResponse>>> GetPendingUsersAsync(PagedRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var query = _unitOfWork.Users.Query()
+                .Where(u => u.IsDeleted != true && !u.IsActive && u.InviteToken != null);
+
+            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+            {
+                var term = request.SearchTerm.ToLower();
+                query = query.Where(u =>
+                    u.FirstName.ToLower().Contains(term) ||
+                    u.LastName.ToLower().Contains(term) ||
+                    u.Email.ToLower().Contains(term));
+            }
+
+            var total = await query.CountAsync(ct);
+            var users = await query
+                .OrderByDescending(u => u.InviteSentAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .Include(u => u.Role)
+                .ToListAsync(ct);
+
+            var mapped = users.Select(u => new PendingUserResponse
+            {
+                Id = u.PublicId,
+                FirstName = u.FirstName,
+                LastName = u.LastName,
+                Email = u.Email,
+                RoleName = u.Role?.Name,
+                InviteSentAt = u.InviteSentAt,
+            }).ToList();
+
+            var paged = new PaginatedResponse<PendingUserResponse>(mapped, total, request.PageNumber, request.PageSize);
+            return ApiResponse<PaginatedResponse<PendingUserResponse>>.SuccessResponse(paged);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving pending users");
+            return ApiResponse<PaginatedResponse<PendingUserResponse>>.ServerErrorResponse("An error occurred while retrieving pending users");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> ResendInviteAsync(Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var user = await _unitOfWork.Users.Query()
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.PublicId == id && u.IsDeleted != true && !u.IsActive, ct);
+            if (user == null)
+                return ApiResponse<bool>.NotFoundResponse("Pending invite not found");
+
+            user.InviteToken = Guid.NewGuid();
+            user.InviteSentAt = DateTime.UtcNow;
+            _unitOfWork.Users.Update(user);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            SendInviteEmail(user, user.Role?.Name);
+
+            return ApiResponse<bool>.SuccessResponse(true, "Invite resent");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error resending invite {UserId}", id);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while resending the invite");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> AdminSetPasswordAsync(Guid id, AdminSetPasswordRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword != request.ConfirmPassword)
+                return ApiResponse<bool>.ErrorResponse("New password and confirm password do not match");
+
+            var user = await _unitOfWork.Users.Query()
+                .FirstOrDefaultAsync(u => u.PublicId == id && u.IsDeleted != true, ct);
+            if (user == null)
+                return ApiResponse<bool>.NotFoundResponse("User not found");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            user.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Users.Update(user);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<bool>.SuccessResponse(true, "Password updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting password for user {UserId}", id);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while setting the password");
+        }
+    }
+
+    public async Task<ApiResponse<InviteDetailsResponse>> GetInviteByTokenAsync(Guid token, CancellationToken ct = default)
+    {
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.InviteToken == token && u.IsDeleted != true && !u.IsActive, ct);
+        if (user == null)
+            return ApiResponse<InviteDetailsResponse>.NotFoundResponse("Invite not found or already accepted");
+
+        return ApiResponse<InviteDetailsResponse>.SuccessResponse(new InviteDetailsResponse
+        {
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Email = user.Email,
+            RoleName = user.Role?.Name,
+        });
+    }
+
+    public async Task<ApiResponse<bool>> AcceptInviteAsync(Guid token, AcceptInviteRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Password) || request.Password != request.ConfirmPassword)
+                return ApiResponse<bool>.ErrorResponse("Password and confirm password do not match");
+
+            var user = await _unitOfWork.Users.Query()
+                .FirstOrDefaultAsync(u => u.InviteToken == token && u.IsDeleted != true && !u.IsActive, ct);
+            if (user == null)
+                return ApiResponse<bool>.NotFoundResponse("Invite not found or already accepted");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+            user.IsActive = true;
+            user.InviteToken = null;
+            user.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Users.Update(user);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<bool>.SuccessResponse(true, "Account activated — you can now log in");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error accepting invite");
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while accepting the invite");
+        }
+    }
+
+    private void SendInviteEmail(User user, string roleName)
+    {
+        var acceptUrl = $"{FrontendUrl}/?screen=userInvite&token={user.InviteToken}";
+        var email = user.Email;
+        var firstName = user.FirstName;
+        _ = Task.Run(async () =>
+        {
+            try { await _emailService.SendUserInviteAsync(email, firstName, roleName, acceptUrl); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not send invite email to {Email}", email); }
+        });
     }
 }

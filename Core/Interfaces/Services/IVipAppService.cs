@@ -45,9 +45,7 @@ public interface IVipAppService
     Task<ApiResponse<GuestProfileResponse>> UpdateProfileAsync(int guestId, UpdateProfileRequest request, CancellationToken ct);
     Task<ApiResponse<bool>> UpdateSettingsAsync(int guestId, UpdateSettingsRequest request, CancellationToken ct);
 
-    // ---- Support ----
-    Task<ApiResponse<List<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, CancellationToken ct);
-    Task<ApiResponse<SupportMessageResponse>> SendSupportMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct);
+    // Support chat lives entirely on ISupportChatService / SupportChatController now.
 
     // ---- Notifications / devices ----
     Task<ApiResponse<List<GuestNotificationResponse>>> GetNotificationsAsync(int guestId, PagedRequest request, CancellationToken ct);

@@ -73,5 +73,9 @@ public static class RoleDefinitions
             PermissionCodes.ReportsView, PermissionCodes.ReportsGenerate, PermissionCodes.DashboardView,
         }),
         new("viewer", "Viewer", "Read-only access across all modules", AllViews),
+        new("driver", "Driver", "Ground-transport driver with vehicle and license details on file", new[]
+        {
+            PermissionCodes.DashboardView,
+        }),
     };
 }

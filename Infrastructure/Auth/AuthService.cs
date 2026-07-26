@@ -19,6 +19,7 @@ using Core.ViewModel.Auth;
 using Core.ViewModel.Common;
 using Core.ViewModel.User;
 using DomainPersistence.Entities;
+using Infrastructure.Services;
 
 namespace Infrastructure.Auth;
 
@@ -379,6 +380,7 @@ public class AuthService(
             // Short-named claims so the frontend can decode everything it needs
             // straight from the access token (no separate /me call or localStorage).
             new("uid", user.Id.ToString()),
+            new(CurrentGuest.GuestIdClaim, user.Id.ToString()),
             new("email", user.Email ?? string.Empty),
             new("userName", user.UserName ?? string.Empty),
             new("firstName", user.FirstName ?? string.Empty),
@@ -387,6 +389,11 @@ public class AuthService(
             new("roleCode", user.Role?.Code ?? string.Empty),
             new("roleId", user.RoleId?.ToString() ?? string.Empty),
         };
+
+        //if (isGuest)
+        //{
+        //    claims.Add(new(,)})
+        //}
 
         // Role-based permissions — gate both server [HasPermission] and frontend nav.
         var addedPerms = new HashSet<string>();

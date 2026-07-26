@@ -79,12 +79,18 @@ public static class ServiceExtensions
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IVipAppService, VipAppService>();
+        services.AddScoped<ISupportChatService, SupportChatService>();
 
         // Notification services
         services.AddScoped<INotificationService, NotificationService>();
         services.AddSignalR();
         services.AddScoped<IRealTimeAlertService, RealTimeAlertService>();
         services.AddScoped<INotificationManagerService, NotificationManagerService>();
+
+        // Push notification provider — swap to FirebaseNotificationProvider here
+        // once Firebase is wired up; no other code changes needed (see
+        // FirebaseNotificationProvider's remarks for the integration steps).
+        services.AddScoped<IPushNotificationProvider, ManualNotificationProvider>();
 
         services.AddAutoMapper(typeof(MappingProfile));
 
@@ -100,6 +106,15 @@ public static class ServiceExtensions
             options.AddSlidingWindowLimiter("auth", opt =>
             {
                 opt.PermitLimit = 10;
+                opt.Window = TimeSpan.FromMinutes(1);
+                opt.SegmentsPerWindow = 4;
+                opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                opt.QueueLimit = 0;
+            });
+            // Support chat send/reply — cheap abuse guard against message flooding.
+            options.AddSlidingWindowLimiter("chat", opt =>
+            {
+                opt.PermitLimit = 20;
                 opt.Window = TimeSpan.FromMinutes(1);
                 opt.SegmentsPerWindow = 4;
                 opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;

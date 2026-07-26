@@ -4,6 +4,7 @@ using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Guest;
+using Core.ViewModel.Invitation;
 using CsvHelper;
 using CsvHelper.Configuration;
 using DomainPersistence.Entities;
@@ -14,14 +15,74 @@ using System.Globalization;
 
 namespace Infrastructure.Services;
 
-// Core guest CRUD. Flight / accommodation / transport / invitation / accreditation
-// are separate modules now (their own tables) — not handled here.
+// Core guest CRUD, plus sending/resending the guest-invitation email — the
+// Invitation entity itself (token/status/accreditation) lives in its own
+// table (see InvitationService for the public accept/respond side).
 public class GuestService(
     IUnitOfWork _unitOfWork,
     IMapper _mapper,
+    IEmailService _emailService,
     IConfiguration _configuration,
     ILogger<GuestService> _logger) : IGuestService
 {
+    private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
+
+    // Upserts the guest's Invitation row (one per guest) with a fresh token
+    // and fires the branded email. Called from Create/UpdateGuestAsync when
+    // an InvitationTemplateId is supplied — including to resend.
+    private async Task SendInvitationAsync(Guest guest, Guid templateId, CancellationToken ct)
+    {
+        var template = await _unitOfWork.InvitationTemplates.Query()
+            .FirstOrDefaultAsync(t => t.PublicId == templateId, ct);
+        if (template == null) return;
+
+        var invitation = await _unitOfWork.Invitations.Query()
+            .FirstOrDefaultAsync(i => i.GuestId == guest.Id, ct);
+
+        if (invitation == null)
+        {
+            invitation = new Invitation { GuestId = guest.Id, AccreditationStatus = GuestAccreditationStatus.NotIssued };
+            await _unitOfWork.Invitations.AddAsync(invitation, ct);
+        }
+
+        if (invitation.InvitationToken == null || invitation.InvitationToken == Guid.Empty)
+            invitation.InvitationToken = Guid.NewGuid();
+
+        invitation.InvitationTemplateId = template.Id;
+        invitation.InvitationStatus = GuestInvitationStatus.Sent;
+        invitation.SentAt = DateTime.UtcNow;
+        _unitOfWork.Invitations.Update(invitation);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var ev = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.Id == guest.EventId, ct);
+        var guestName = $"{guest.FirstName} {guest.LastName}".Trim();
+        var emailBody = (template.Body ?? "")
+            .Replace("{{GuestName}}", guestName)
+            .Replace("{{FirstName}}", guest.FirstName)
+            .Replace("{{LastName}}", guest.LastName);
+
+        var link = $"{FrontendUrl}/?screen=invitation&token={invitation.InvitationToken}";
+        var emailModel = new GuestInvitationEmailModel
+        {
+            GuestName = guestName,
+            Subject = template.Subject,
+            BodyHtml = emailBody,
+            CtaUrl = link,
+            EventTitle = ev?.Title,
+            EventVenue = ev?.VenueName,
+            EventStartDate = ev?.StartDate,
+            EventEndDate = ev?.EndDate,
+            Tier = guest.Tier,
+            Reference = invitation.InvitationToken?.ToString("N")[..8].ToUpperInvariant(),
+        };
+
+        var email = guest.Email;
+        _ = Task.Run(async () =>
+        {
+            try { await _emailService.SendGuestInvitationAsync(email, emailModel); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not send invitation email to {Email}", email); }
+        });
+    }
     public async Task<ApiResponse<GuestResponse>> GetGuestByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
@@ -35,12 +96,47 @@ public class GuestService(
             if (guest == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            return ApiResponse<GuestResponse>.SuccessResponse(_mapper.Map<GuestResponse>(guest));
+            var response = _mapper.Map<GuestResponse>(guest);
+            await MergeInvitationAsync(response, guest.Id, ct);
+            return ApiResponse<GuestResponse>.SuccessResponse(response);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving guest {GuestId}", id);
             return ApiResponse<GuestResponse>.ServerErrorResponse("An error occurred while retrieving the guest");
+        }
+    }
+
+    // Merges the guest's Invitation row (status/accreditation/template) into an
+    // already-mapped GuestResponse — Invitation isn't part of the Guest entity
+    // graph, so AutoMapper can't reach it on its own.
+    private async Task MergeInvitationAsync(GuestResponse response, int guestId, CancellationToken ct)
+    {
+        var invitation = await _unitOfWork.Invitations.Query()
+            .Include(i => i.InvitationTemplate)
+            .FirstOrDefaultAsync(i => i.GuestId == guestId, ct);
+
+        response.InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent;
+        response.AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued;
+        response.InvitationTemplateId = invitation?.InvitationTemplate?.PublicId;
+    }
+
+    private async Task MergeInvitationsAsync(List<GuestResponse> responses, List<int> guestIds, CancellationToken ct)
+    {
+        if (guestIds.Count == 0) return;
+
+        var invitations = await _unitOfWork.Invitations.Query()
+            .Include(i => i.InvitationTemplate)
+            .Where(i => guestIds.Contains(i.GuestId))
+            .ToListAsync(ct);
+        var byGuestId = invitations.ToDictionary(i => i.GuestId, i => i);
+
+        for (var idx = 0; idx < responses.Count && idx < guestIds.Count; idx++)
+        {
+            byGuestId.TryGetValue(guestIds[idx], out var invitation);
+            responses[idx].InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent;
+            responses[idx].AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued;
+            responses[idx].InvitationTemplateId = invitation?.InvitationTemplate?.PublicId;
         }
     }
 
@@ -154,6 +250,14 @@ public class GuestService(
                     (g.Organization != null && g.Organization.ToLower().Contains(term)));
             }
 
+            // Downstream pickers (seating/meetings/travel) pass excludeDeclined=true
+            // so a guest who rejected their invitation can't be assigned anywhere.
+            if (request.ExcludeDeclined)
+            {
+                query = query.Where(g => !_unitOfWork.Invitations.Query()
+                    .Any(i => i.GuestId == g.Id && i.InvitationStatus == GuestInvitationStatus.Declined));
+            }
+
             var total = await query.CountAsync(ct);
 
             var guests = await query
@@ -162,8 +266,11 @@ public class GuestService(
                 .Take(request.PageSize)
                 .ToListAsync(ct);
 
+            var mapped = _mapper.Map<List<GuestResponse>>(guests);
+            await MergeInvitationsAsync(mapped, guests.Select(g => g.Id).ToList(), ct);
+
             var paged = new PaginatedResponse<GuestResponse>(
-                _mapper.Map<List<GuestResponse>>(guests), total, request.PageNumber, request.PageSize);
+                mapped, total, request.PageNumber, request.PageSize);
 
             return ApiResponse<PaginatedResponse<GuestResponse>>.SuccessResponse(paged);
         }
@@ -230,6 +337,8 @@ public class GuestService(
             guest.Organization  = request.Organization;
             guest.NationalityId = nationalityId;
             guest.Tier          = request.Tier ?? guest.Tier;
+            guest.ArrivalDate   = request.ArrivalDate;
+            guest.DepartureDate = request.DepartureDate;
 
             _unitOfWork.Guests.Update(guest);
 
@@ -245,13 +354,18 @@ public class GuestService(
 
             await _unitOfWork.SaveChangesAsync(ct);
 
+            if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
+                await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
+
             var updated = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
-            return ApiResponse<GuestResponse>.SuccessResponse(_mapper.Map<GuestResponse>(updated), "Guest updated successfully");
+            var response = _mapper.Map<GuestResponse>(updated);
+            await MergeInvitationAsync(response, guest.Id, ct);
+            return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest updated successfully");
         }
         catch (Exception ex)
         {
@@ -293,6 +407,8 @@ public class GuestService(
                 Organization  = request.Organization,
                 NationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct),
                 Tier          = request.Tier,
+                ArrivalDate   = request.ArrivalDate,
+                DepartureDate = request.DepartureDate,
                 CreatedAt     = DateTime.UtcNow,
                 IsDeleted     = false
             };
@@ -308,13 +424,18 @@ public class GuestService(
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
+            if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
+                await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
+
             var created = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
-            return ApiResponse<GuestResponse>.SuccessResponse(_mapper.Map<GuestResponse>(created), "Guest created successfully");
+            var response = _mapper.Map<GuestResponse>(created);
+            await MergeInvitationAsync(response, guest.Id, ct);
+            return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest created successfully");
         }
         catch (Exception ex)
         {

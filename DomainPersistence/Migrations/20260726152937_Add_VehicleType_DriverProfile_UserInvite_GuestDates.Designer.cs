@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260726152937_Add_VehicleType_DriverProfile_UserInvite_GuestDates")]
+    partial class Add_VehicleType_DriverProfile_UserInvite_GuestDates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1290,7 +1293,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Locations", (string)null);
+                    b.ToTable("Locations");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Meeting", b =>
@@ -1453,7 +1456,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Notifications", (string)null);
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.OtpVerification", b =>
@@ -1521,7 +1524,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("OtpVerifications", (string)null);
+                    b.ToTable("OtpVerifications");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Permission", b =>
@@ -1586,7 +1589,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Permissions", (string)null);
+                    b.ToTable("Permissions");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Role", b =>
@@ -1644,7 +1647,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.RolePermission", b =>
@@ -1699,7 +1702,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RolePermissions", (string)null);
+                    b.ToTable("RolePermissions");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.SeatAssign", b =>
@@ -1991,96 +1994,6 @@ namespace DomainPersistence.Migrations
                     b.ToTable("Sessions", (string)null);
                 });
 
-            modelBuilder.Entity("DomainPersistence.Entities.SupportConversation", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AssignedAdminUserId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("ClosedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("ClosedByUserId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<int>("GuestId")
-                        .HasColumnType("int");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<DateTime?>("LastMessageAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("LastMessageFromGuest")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("LastMessagePreview")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasDefaultValue("Open");
-
-                    b.Property<int>("UnreadByAdminCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("UnreadByGuestCount")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedAdminUserId");
-
-                    b.HasIndex("ClosedByUserId");
-
-                    b.HasIndex("GuestId")
-                        .IsUnique();
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.HasIndex("Status", "UnreadByAdminCount", "LastMessageAt");
-
-                    b.ToTable("SupportConversations", (string)null);
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.SupportMessage", b =>
                 {
                     b.Property<int>("Id")
@@ -2089,20 +2002,9 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AttachmentType")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("AttachmentUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<string>("Body")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("ConversationId")
-                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -2137,12 +2039,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
 
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("SenderUserId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime>("SentAt")
                         .HasColumnType("datetime2");
 
@@ -2156,10 +2052,6 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
-
-                    b.HasIndex("SenderUserId");
-
-                    b.HasIndex("ConversationId", "SentAt");
 
                     b.HasIndex("GuestId", "SentAt");
 
@@ -2221,7 +2113,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("SystemErrorLogs", (string)null);
+                    b.ToTable("SystemErrorLogs");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Transport", b =>
@@ -2446,7 +2338,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserLoginLogs", (string)null);
+                    b.ToTable("UserLoginLogs");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.UserModuleGrant", b =>
@@ -2536,7 +2428,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserRefreshTokens", (string)null);
+                    b.ToTable("UserRefreshTokens");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.VehicleType", b =>
@@ -3351,54 +3243,15 @@ namespace DomainPersistence.Migrations
                     b.Navigation("Venue");
                 });
 
-            modelBuilder.Entity("DomainPersistence.Entities.SupportConversation", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.User", "AssignedAdmin")
-                        .WithMany()
-                        .HasForeignKey("AssignedAdminUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("DomainPersistence.Entities.User", "ClosedByUser")
-                        .WithMany()
-                        .HasForeignKey("ClosedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("DomainPersistence.Entities.Guest", "Guest")
-                        .WithMany()
-                        .HasForeignKey("GuestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AssignedAdmin");
-
-                    b.Navigation("ClosedByUser");
-
-                    b.Navigation("Guest");
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.SupportMessage", b =>
                 {
-                    b.HasOne("DomainPersistence.Entities.SupportConversation", "Conversation")
-                        .WithMany()
-                        .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany()
                         .HasForeignKey("GuestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("DomainPersistence.Entities.User", "SenderUser")
-                        .WithMany()
-                        .HasForeignKey("SenderUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Conversation");
-
                     b.Navigation("Guest");
-
-                    b.Navigation("SenderUser");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.SystemErrorLog", b =>

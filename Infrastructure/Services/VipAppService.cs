@@ -444,7 +444,7 @@ public class VipAppService(
     public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct)
     {
         var trips = await _unitOfWork.Transports.Query()
-            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
             .Where(t => t.GuestId == guestId).ToListAsync(ct);
 
         var primary = trips.FirstOrDefault();
@@ -457,7 +457,7 @@ public class VipAppService(
             ToAddress = primary.DropoffLocation?.Address,
             PickupTime = primary.PickupTime,
             EstimatedArrival = primary.EstimatedArrival,
-            VehicleType = primary.VehicleType,
+            VehicleType = primary.VehicleType?.Name,
             Plate = primary.Plate,
             TripStatus = primary.TripStatus,
             Driver = string.IsNullOrWhiteSpace(primary.DriverName) ? null : new DriverResponse
@@ -600,43 +600,7 @@ public class VipAppService(
         Organization = g.Organization, Tier = g.Tier
     };
 
-    // ============================================================
-    // Support chat
-    // ============================================================
-    public async Task<ApiResponse<List<SupportMessageResponse>>> GetSupportMessagesAsync(int guestId, CancellationToken ct)
-    {
-        var msgs = await _unitOfWork.SupportMessages.QueryNoTracking()
-            .Where(m => m.GuestId == guestId)
-            .OrderBy(m => m.SentAt).ToListAsync(ct);
-
-        var data = msgs.Select(m => new SupportMessageResponse
-        {
-            Id = m.PublicId, Body = m.Body, FromGuest = m.FromGuest, SentAt = m.SentAt
-        }).ToList();
-        return ApiResponse<List<SupportMessageResponse>>.SuccessResponse(data);
-    }
-
-    public async Task<ApiResponse<SupportMessageResponse>> SendSupportMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.Body))
-            return ApiResponse<SupportMessageResponse>.ErrorResponse("Message body is required");
-
-        var msg = new SupportMessage
-        {
-            GuestId = guestId,
-            Body = request.Body.Trim(),
-            FromGuest = true,
-            SentAt = DateTime.UtcNow,
-            IsRead = false
-        };
-        await _unitOfWork.SupportMessages.AddAsync(msg, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        return ApiResponse<SupportMessageResponse>.SuccessResponse(new SupportMessageResponse
-        {
-            Id = msg.PublicId, Body = msg.Body, FromGuest = true, SentAt = msg.SentAt
-        }, "Message sent");
-    }
+    // Support chat lives entirely on SupportChatService / SupportChatController now.
 
     // ============================================================
     // Notifications / devices

@@ -22,4 +22,10 @@ public class GuestResponse
     public DateOnly? DepartureDate { get; set; }
     public List<Guid> SessionIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
+
+    // Merged in from the guest's Invitation row (if any) — not an AutoMapper
+    // field, GuestService sets these after mapping.
+    public string InvitationStatus { get; set; }
+    public string AccreditationStatus { get; set; }
+    public Guid? InvitationTemplateId { get; set; }
 }

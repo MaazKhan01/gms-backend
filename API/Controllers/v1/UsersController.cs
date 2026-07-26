@@ -74,4 +74,42 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
         var result = await _userService.ChangePasswordAsync(id, request, ct);
         return ToResponse(result);
     }
+
+    // ── Admin-initiated invites ──────────────────────────────────────────────
+    [HttpPost("invite")]
+    [HasPermission(PermissionCodes.UsersCreate)]
+    public async Task<IActionResult> InviteUser([FromBody] InviteUserRequest request, CancellationToken ct)
+    {
+        var result = await _userService.InviteUserAsync(request, _currentUser.UserId, ct);
+        return ToResponse(result);
+    }
+
+    [HttpGet("pending")]
+    [HasPermission(PermissionCodes.UsersView)]
+    public async Task<IActionResult> GetPendingUsers(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string search = null,
+        CancellationToken ct = default)
+    {
+        var result = await _userService.GetPendingUsersAsync(
+            new PagedRequest { PageNumber = pageNumber, PageSize = pageSize, SearchTerm = search }, ct);
+        return ToResponse(result);
+    }
+
+    [HttpPost("{id:guid}/resend-invite")]
+    [HasPermission(PermissionCodes.UsersCreate)]
+    public async Task<IActionResult> ResendInvite(Guid id, CancellationToken ct)
+    {
+        var result = await _userService.ResendInviteAsync(id, ct);
+        return ToResponse(result);
+    }
+
+    [HttpPost("{id:guid}/admin-set-password")]
+    [HasPermission(PermissionCodes.UsersUpdate)]
+    public async Task<IActionResult> AdminSetPassword(Guid id, [FromBody] AdminSetPasswordRequest request, CancellationToken ct)
+    {
+        var result = await _userService.AdminSetPasswordAsync(id, request, ct);
+        return ToResponse(result);
+    }
 }

@@ -54,27 +54,9 @@ public class AuthController : Controllers.BaseApiController
         return ToResponse(result);
     }
 
-    [HttpGet("roles")]
-    [AllowAnonymous]
-    public async Task<IActionResult> RequestableRoles(
-        [FromServices] IAccountRequestService accountRequests,
-        CancellationToken ct)
-    {
-        var result = await accountRequests.GetRequestableRolesAsync(ct);
-        return ToResponse(result);
-    }
-
-    [HttpPost("register")]
-    [AllowAnonymous]
-    [EnableRateLimiting("auth")]
-    public async Task<IActionResult> Register(
-        [FromBody] RegisterAccountRequest request,
-        [FromServices] IAccountRequestService accountRequests,
-        CancellationToken ct)
-    {
-        var result = await accountRequests.SubmitAsync(request, ct);
-        return ToResponse(result);
-    }
+    // Public self-registration is disabled — only an admin can add a user
+    // (see UsersController.InviteUser). Kept the AccountRequest infrastructure
+    // in place since it's still used for the approve/reject audit trail.
 
     [HttpPost("refresh")]
     [AllowAnonymous]

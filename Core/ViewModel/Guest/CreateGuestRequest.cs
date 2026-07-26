@@ -16,4 +16,8 @@ public class CreateGuestRequest
     public Guid? NationalityId { get; set; }
     public string Tier { get; set; }
     public List<Guid>? SessionIds { get; set; }
+    public DateOnly? ArrivalDate { get; set; }
+    public DateOnly? DepartureDate { get; set; }
+    // Selecting a template sends (or resends) the invitation email.
+    public Guid? InvitationTemplateId { get; set; }
 }

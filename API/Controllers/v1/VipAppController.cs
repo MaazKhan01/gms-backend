@@ -108,15 +108,6 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     public async Task<IActionResult> UpdateSettings([FromBody] UpdateSettingsRequest request, CancellationToken ct)
         => ToResponse(await _vip.UpdateSettingsAsync(GuestId, request, ct));
 
-    // ---------------- Support ----------------
-    [HttpGet("support/messages")]
-    public async Task<IActionResult> GetSupportMessages(CancellationToken ct)
-        => ToResponse(await _vip.GetSupportMessagesAsync(GuestId, ct));
-
-    [HttpPost("support/messages")]
-    public async Task<IActionResult> SendSupportMessage([FromBody] SendSupportMessageRequest request, CancellationToken ct)
-        => ToResponse(await _vip.SendSupportMessageAsync(GuestId, request, ct));
-
     // ---------------- Notifications / devices ----------------
     [HttpGet("notifications")]
     public async Task<IActionResult> GetNotifications([FromQuery] PagedRequest request, CancellationToken ct)

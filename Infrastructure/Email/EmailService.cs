@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
@@ -6,6 +7,7 @@ using Azure.Communication.Email;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Core.Interfaces.Services;
+using Core.ViewModel.Invitation;
 
 namespace Infrastructure.Email;
 
@@ -24,7 +26,7 @@ public class EmailService : IEmailService
 
         var connectionString = configuration.GetValue<string>("AzureCommunicationServiceConfig:COMMUNICATION_SERVICES_CONNECTION_STRING");
         _senderEmail = configuration.GetValue<string>("AzureCommunicationServiceConfig:EmailSenderInfo");
-        _appName = configuration.GetValue<string>("AppName") ?? "Application";
+        _appName = configuration.GetValue<string>("AppName") ?? "GMS";
 
         if (string.IsNullOrEmpty(connectionString))
             throw new InvalidOperationException("AzureCommunicationServiceConfig:COMMUNICATION_SERVICES_CONNECTION_STRING is not configured.");
@@ -38,22 +40,16 @@ public class EmailService : IEmailService
     public async Task SendOtpEmailAsync(string email, string otpCode, CancellationToken ct = default)
     {
         var subject = $"Your Verification Code – {_appName}";
-        var body = $@"
-        <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-            <h2>Email Verification</h2>
-            <p>Thank you for registering with <strong>{_appName}</strong>.</p>
-            <p>Use the following verification code to complete your registration:</p>
-            <div style='margin: 24px 0; text-align: center;'>
-                <span style='font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4CAF50;
-                             background: #f5f5f5; padding: 12px 24px; border-radius: 8px; display: inline-block;'>
-                    {otpCode}
-                </span>
+        var inner = $@"
+            <p style='{P}'>Thank you for registering with <strong style='color:{Ink};'>{_appName}</strong>.</p>
+            <p style='{P}'>Use the following verification code to complete your registration:</p>
+            <div style='margin:24px 0;text-align:center;'>
+                <span style='font-size:32px;font-weight:700;letter-spacing:8px;color:{AccentSoft};background:rgba(26,174,196,0.1);border:1px solid rgba(26,174,196,0.3);padding:14px 26px;border-radius:10px;display:inline-block;font-family:{Mono};'>{otpCode}</span>
             </div>
-            <p><strong>This code expires in 10 minutes.</strong></p>
-            <p>If you did not request this, please ignore this email.</p>
-            <p>Regards,<br/>{_appName} Team</p>
-        </div>";
+            <p style='{Small}'><strong style='color:{InkDim};'>This code expires in 10 minutes.</strong></p>
+            <p style='{Small}'>If you did not request this, please ignore this email.</p>";
 
+        var body = Shell("Verify your email", "Confirm your<br>email address", inner);
         await SendEmailAsync(email, subject, body, ct);
         _logger.LogInformation("OTP email sent to {Email}", email);
     }
@@ -61,25 +57,12 @@ public class EmailService : IEmailService
     public async Task SendResetPasswordLinkAsync(string email, string resetLink, CancellationToken ct = default)
     {
         var subject = $"Reset Your Password – {_appName}";
-        var body = $@"
-        <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-            <h2>Password Reset Request</h2>
-            <p>We received a request to reset the password for your <strong>{_appName}</strong> account.</p>
-            <p>Click the button below to reset your password:</p>
-            <p>
-                <a href='{resetLink}'
-                   style='background-color:#4CAF50;color:#ffffff;padding:12px 24px;text-decoration:none;
-                          border-radius:5px;display:inline-block;font-weight:bold;'>
-                    Reset Password
-                </a>
-            </p>
-            <p>If the button does not work, copy and paste this link into your browser:</p>
-            <p style='word-break: break-all;'>{resetLink}</p>
-            <p><strong>This link expires in 1 hour.</strong></p>
-            <p>If you did not request a password reset, please ignore this email.</p>
-            <p>Regards,<br/>{_appName} Team</p>
-        </div>";
+        var inner = $@"
+            <p style='{P}'>We received a request to reset the password for your <strong style='color:{Ink};'>{_appName}</strong> account.</p>
+            {Cta(resetLink, "Reset Password")}
+            <p style='{Small}'><strong style='color:{InkDim};'>This link expires in 1 hour.</strong> If you did not request a password reset, please ignore this email.</p>";
 
+        var body = Shell("Password reset", "Reset your<br>password", inner);
         await SendEmailAsync(email, subject, body, ct);
         _logger.LogInformation("Password reset email sent to {Email}", email);
     }
@@ -88,24 +71,13 @@ public class EmailService : IEmailService
     {
         var name = string.IsNullOrWhiteSpace(firstName) ? "there" : firstName;
         var subject = $"Your {_appName} account has been approved";
-        var body = $@"
-        <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-            <h2 style='color: #1aaec4;'>Welcome to {_appName}!</h2>
-            <p>Hi {name},</p>
-            <p>Your account request has been <strong>approved</strong>. You can now sign in using the email address you registered with.</p>
-            <p style='margin: 24px 0;'>
-                <a href='{loginUrl}'
-                   style='background-color:#1aaec4;color:#ffffff;padding:12px 28px;text-decoration:none;
-                          border-radius:6px;display:inline-block;font-weight:bold;letter-spacing:0.03em;'>
-                    Sign In Now
-                </a>
-            </p>
-            <p style='font-size:12px;color:#888;'>If the button doesn't work, copy and paste this link:<br/>
-               <span style='word-break:break-all;'>{loginUrl}</span></p>
-            <p>If you did not request this account, please ignore this email.</p>
-            <p>Regards,<br/>{_appName} Team</p>
-        </div>";
+        var inner = $@"
+            <p style='{P}'>Hi {name},</p>
+            <p style='{P}'>Your account request has been <strong style='color:{Ink};'>approved</strong>. You can now sign in using the email address you registered with.</p>
+            {Cta(loginUrl, "Sign In Now")}
+            <p style='{Small}'>If you did not request this account, please ignore this email.</p>";
 
+        var body = Shell("Account approved", $"Welcome to<br><em style='font-style:italic;color:{AccentSoft};'>{_appName}</em>", inner);
         await SendEmailAsync(email, subject, body, ct);
         _logger.LogInformation("Account-approved email sent to {Email}", email);
     }
@@ -116,36 +88,144 @@ public class EmailService : IEmailService
         var subject = $"Your {_appName} account request was not approved";
         var noteSection = string.IsNullOrWhiteSpace(reviewNote)
             ? string.Empty
-            : $"<p><strong>Reason:</strong> {reviewNote}</p>";
+            : $"<p style='{P}'><strong style='color:{Ink};'>Reason:</strong> {reviewNote}</p>";
 
-        var body = $@"
-        <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-            <h2>Account Request Update</h2>
-            <p>Hi {name},</p>
-            <p>Unfortunately, your account request for <strong>{_appName}</strong> was not approved at this time.</p>
+        var inner = $@"
+            <p style='{P}'>Hi {name},</p>
+            <p style='{P}'>Unfortunately, your account request for <strong style='color:{Ink};'>{_appName}</strong> was not approved at this time.</p>
             {noteSection}
-            <p>If you believe this is an error, please contact your system administrator.</p>
-            <p>Regards,<br/>{_appName} Team</p>
-        </div>";
+            <p style='{Small}'>If you believe this is an error, please contact your system administrator.</p>";
 
+        var body = Shell("Account request update", "Request<br>update", inner);
         await SendEmailAsync(email, subject, body, ct);
         _logger.LogInformation("Account-rejected email sent to {Email}", email);
     }
 
-    public async Task SendGuestInvitationAsync(string toEmail, string guestName, string subject, string htmlBody, CancellationToken ct = default)
+    public async Task SendUserInviteAsync(string email, string firstName, string roleName, string acceptUrl, CancellationToken ct = default)
+    {
+        var name = string.IsNullOrWhiteSpace(firstName) ? "there" : firstName;
+        var subject = $"You've been invited to {_appName}";
+        var roleSection = string.IsNullOrWhiteSpace(roleName)
+            ? string.Empty
+            : $"<p style='{P}'>You've been added as a <strong style='color:{Ink};'>{roleName}</strong>.</p>";
+
+        var inner = $@"
+            <p style='{P}'>Hi {name},</p>
+            <p style='{P}'>An administrator has created an account for you on <strong style='color:{Ink};'>{_appName}</strong>.</p>
+            {roleSection}
+            <p style='{P}'>Click the button below to set your password and activate your account:</p>
+            {Cta(acceptUrl, "Set Up My Account")}
+            <p style='{Small}'>If you weren't expecting this, please ignore this email.</p>";
+
+        var body = Shell("Official invitation", $"Welcome to<br><em style='font-style:italic;color:{AccentSoft};'>{_appName}</em>", inner);
+        await SendEmailAsync(email, subject, body, ct);
+        _logger.LogInformation("User invite email sent to {Email}", email);
+    }
+
+    public async Task SendGuestInvitationAsync(string toEmail, GuestInvitationEmailModel model, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(toEmail)) return;
 
-        // Wrap template body in a minimal branded container if it isn't already HTML
-        var body = htmlBody.TrimStart().StartsWith("<") ? htmlBody : $@"
-        <div style='font-family: Arial, sans-serif; line-height: 1.7; color: #333; max-width: 600px; margin: 0 auto;'>
-            {htmlBody}
-            <hr style='border:none;border-top:1px solid #eee;margin:24px 0;'/>
-            <p style='font-size:12px;color:#999;'>{_appName} · This invitation was sent on your behalf.</p>
-        </div>";
+        var dateRange = model.EventStartDate is { } s
+            ? (model.EventEndDate is { } e && e != s ? $"{s:d MMM} – {e:d MMM yyyy}" : $"{s:d MMM yyyy}")
+            : null;
 
-        await SendEmailAsync(toEmail, subject, body, ct);
+        var pills = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(dateRange)) pills.Append(Pill(dateRange));
+        if (!string.IsNullOrWhiteSpace(model.EventVenue)) pills.Append(Pill(model.EventVenue));
+
+        var detailRows = new StringBuilder();
+        detailRows.Append(DetailRow("Guest name", model.GuestName));
+        if (!string.IsNullOrWhiteSpace(model.EventTitle)) detailRows.Append(DetailRow("Event", model.EventTitle));
+
+        var dateVenueParts = new System.Collections.Generic.List<string>();
+        if (!string.IsNullOrWhiteSpace(dateRange)) dateVenueParts.Add(dateRange);
+        if (!string.IsNullOrWhiteSpace(model.EventVenue)) dateVenueParts.Add(model.EventVenue);
+        if (dateVenueParts.Count > 0) detailRows.Append(DetailRow("Date & venue", string.Join(" · ", dateVenueParts)));
+
+        if (!string.IsNullOrWhiteSpace(model.Tier)) detailRows.Append(DetailRow("Guest tier", model.Tier));
+        if (!string.IsNullOrWhiteSpace(model.Reference)) detailRows.Append(DetailRow("Reference", model.Reference, mono: true));
+
+        var detailCard = $@"
+            <div style='margin:24px 0;background:rgba(26,174,196,0.06);border:1px solid rgba(26,174,196,0.2);border-radius:14px;overflow:hidden;'>
+                <div style='padding:11px 18px;background:rgba(26,174,196,0.1);border-bottom:1px solid rgba(26,174,196,0.15);font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:{AccentSoft};font-weight:600;'>Invitation Details</div>
+                <div>{detailRows}</div>
+            </div>";
+
+        var inner = $@"
+            {model.BodyHtml}
+            {detailCard}
+            {(string.IsNullOrWhiteSpace(model.CtaUrl) ? "" : Cta(model.CtaUrl, "View Invitation &amp; Respond"))}
+            <p style='{Small}'>Open the button above to confirm or decline your attendance.</p>";
+
+        var headline = string.IsNullOrWhiteSpace(model.EventTitle)
+            ? "You're invited"
+            : $"You're invited to<br><em style='font-style:italic;color:{AccentSoft};'>{model.EventTitle}</em>";
+
+        var body = Shell("Official invitation", headline, inner, pills.ToString());
+        await SendEmailAsync(toEmail, model.Subject, body, ct);
         _logger.LogInformation("Guest invitation email sent to {Email}", toEmail);
+    }
+
+    // ── Shared branded shell ─────────────────────────────────────────────────
+    // Dark navy/teal theme — inline-styled, table-free-enough to render
+    // reasonably in modern mail clients (Gmail, Apple Mail, Outlook web).
+    private const string Bg = "#04141a";
+    private const string CardBg = "#06202a";
+    private const string Ink = "#eaf6f9";
+    private const string InkDim = "rgba(234,246,249,0.75)";
+    private const string InkMute = "rgba(234,246,249,0.5)";
+    private const string InkFaint = "rgba(234,246,249,0.32)";
+    private const string Accent = "#1aaec4";
+    private const string AccentSoft = "#5fd1e0";
+    private const string Serif = "Georgia,'Times New Roman',serif";
+    private const string Mono = "ui-monospace,Consolas,monospace";
+    private const string P = "margin:0 0 14px;font-size:14px;line-height:1.7;color:rgba(234,246,249,0.75);";
+    private const string Small = "margin:0;font-size:11.5px;line-height:1.6;color:rgba(234,246,249,0.4);";
+
+    private string Shell(string eyebrow, string headlineHtml, string innerHtml, string pillsHtml = null)
+    {
+        var pillsBlock = string.IsNullOrWhiteSpace(pillsHtml) ? "" : $"<div style='margin-top:18px;'>{pillsHtml}</div>";
+        return $@"
+        <div style='margin:0;padding:32px 12px;background:{Bg};font-family:Arial,Helvetica,sans-serif;'>
+          <div style='max-width:600px;margin:0 auto;background:{CardBg};border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);'>
+            <div style='background:linear-gradient(135deg,#041820 0%,#0a3947 60%,#051e28 100%);padding:40px 40px 32px;'>
+              <table role='presentation' cellpadding='0' cellspacing='0' style='margin-bottom:24px;'><tr>
+                <td style='width:32px;height:32px;border-radius:8px;background:rgba(26,174,196,0.15);border:1px solid rgba(26,174,196,0.35);text-align:center;vertical-align:middle;font-weight:700;font-size:13px;color:{AccentSoft};font-family:Arial,sans-serif;'>G</td>
+                <td style='padding-left:10px;font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:{InkMute};'>{_appName}</td>
+              </tr></table>
+              <div style='font-size:10.5px;letter-spacing:0.18em;text-transform:uppercase;color:{AccentSoft};margin-bottom:12px;font-weight:600;'>{eyebrow}</div>
+              <div style='font-family:{Serif};font-size:26px;font-weight:400;line-height:1.25;color:{Ink};'>{headlineHtml}</div>
+              {pillsBlock}
+            </div>
+            <div style='padding:32px 40px;'>
+              {innerHtml}
+            </div>
+            <div style='padding:18px 40px 24px;border-top:1px solid rgba(255,255,255,0.06);background:rgba(0,0,0,0.15);font-size:11px;color:{InkFaint};text-align:center;line-height:1.7;'>
+              {_appName} · Guest Management System
+            </div>
+          </div>
+        </div>";
+    }
+
+    private static string Cta(string url, string label) => $@"
+            <div style='margin:28px 0 20px;text-align:center;'>
+                <a href='{url}' style='display:inline-block;padding:13px 30px;background:{Accent};color:#04141a;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;font-family:Arial,sans-serif;'>{label}</a>
+            </div>";
+
+    private static string Pill(string text) => $@"
+            <span style='display:inline-block;margin:0 8px 8px 0;padding:6px 13px;border-radius:999px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);font-size:11.5px;color:{InkDim};'>{text}</span>";
+
+    private static string DetailRow(string label, string value, bool mono = false)
+    {
+        var valueStyle = mono
+            ? $"font-family:{Mono};font-size:12px;color:{AccentSoft};"
+            : $"font-size:13px;font-weight:500;color:{Ink};";
+        return $@"
+            <div style='display:flex;justify-content:space-between;gap:12px;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;'>
+                <span style='color:{InkMute};'>{label}</span>
+                <span style='{valueStyle}'>{value}</span>
+            </div>";
     }
 
     private async Task SendEmailAsync(string toEmail, string subject, string body, CancellationToken ct)

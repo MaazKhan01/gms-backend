@@ -48,6 +48,15 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         return ApiResponse<List<HotelDto>>.SuccessResponse(data);
     }
 
+    public async Task<ApiResponse<List<IdNameDto>>> GetVehicleTypesAsync(CancellationToken ct = default)
+    {
+        var data = await _unitOfWork.VehicleTypes.Query()
+            .OrderBy(x => x.Name)
+            .Select(x => new IdNameDto { Id = x.PublicId, Name = x.Name })
+            .ToListAsync(ct);
+        return ApiResponse<List<IdNameDto>>.SuccessResponse(data);
+    }
+
     public async Task<ApiResponse<List<LocationDto>>> GetLocationsAsync(CancellationToken ct = default)
     {
         var data = await _unitOfWork.Locations.Query()
@@ -103,14 +112,14 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             };
 
         var tr = await _unitOfWork.Transports.Query()
-            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
             .FirstOrDefaultAsync(t => t.GuestId == guest.Id, ct);
         if (tr != null)
             data.Transport = new TransportInput
             {
                 PickupLocationId = tr.PickupLocation?.PublicId,
                 DropoffLocationId = tr.DropoffLocation?.PublicId,
-                VehicleType = tr.VehicleType,
+                VehicleTypeId = tr.VehicleType?.PublicId,
                 Plate = tr.Plate,
                 TripStatus = tr.TripStatus,
                 DriverName = tr.DriverName,
@@ -185,7 +194,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
                 Organization = t.Guest.Organization,
                 Tier = t.Guest.Tier,
-                VehicleType = t.VehicleType,
+                VehicleType = t.VehicleType.Name,
                 DriverName = t.DriverName,
                 Pickup = t.PickupLocation.Address,
                 Dropoff = t.DropoffLocation.Address,
@@ -263,6 +272,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             {
                 var pickupId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.PickupLocationId, ct);
                 var dropoffId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.DropoffLocationId, ct);
+                var vehicleTypeId = await ResolveNullableId(_unitOfWork.VehicleTypes, request.Transport.VehicleTypeId, ct);
 
                 var existing = await _unitOfWork.Transports.FindAsync(t => t.GuestId == guest.Id, ct);
                 _unitOfWork.Transports.RemoveRange(existing);
@@ -272,7 +282,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                     GuestId = guest.Id,
                     PickupLocationId = pickupId,
                     DropoffLocationId = dropoffId,
-                    VehicleType = request.Transport.VehicleType,
+                    VehicleTypeId = vehicleTypeId,
                     Plate = request.Transport.Plate,
                     TripStatus = request.Transport.TripStatus,
                     DriverName = request.Transport.DriverName,
@@ -308,6 +318,9 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
     public Task<ApiResponse<IdNameDto>> CreateRoomTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default)
         => CreateNamedAsync(_unitOfWork.AccommodationRoomTypes, request.Name, userId, n => new AccommodationRoomType { Name = n }, ct);
+
+    public Task<ApiResponse<IdNameDto>> CreateVehicleTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default)
+        => CreateNamedAsync(_unitOfWork.VehicleTypes, request.Name, userId, n => new VehicleType { Name = n }, ct);
 
     public async Task<ApiResponse<HotelDto>> CreateHotelAsync(CreateHotelRequest request, int userId, CancellationToken ct = default)
     {

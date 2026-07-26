@@ -31,6 +31,16 @@ namespace Core.Helpers
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, userId);
                 }
+
+                // Guest tokens carry a "guestId" claim (see CurrentGuest.GuestIdClaim) and
+                // also set NameIdentifier to the guest's own internal id — which can numerically
+                // collide with a User's internal id above. Give guests a distinctly-named group
+                // so guest-targeted sends (Groups, not Clients.User) can't cross-deliver to a User.
+                var guestId = Context.User.FindFirst("guestId")?.Value;
+                if (!string.IsNullOrEmpty(guestId))
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, $"guest:{guestId}");
+                }
             }
 
             // Join group based on custom connectionId from query string (if provided by client)
