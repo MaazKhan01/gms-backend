@@ -49,6 +49,8 @@ public class UnitOfWork : IUnitOfWork
         AccommodationRoomTypes = new GenericRepository<AccommodationRoomType>(_context);
         Accommodations = new GenericRepository<Accommodation>(_context);
         Transports = new GenericRepository<Transport>(_context);
+        VehicleTypes = new GenericRepository<VehicleType>(_context);
+        DriverProfiles = new GenericRepository<DriverProfile>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
@@ -90,6 +92,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; private set; }
     public IGenericRepository<Accommodation> Accommodations { get; private set; }
     public IGenericRepository<Transport> Transports { get; private set; }
+    public IGenericRepository<VehicleType> VehicleTypes { get; private set; }
+    public IGenericRepository<DriverProfile> DriverProfiles { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<VenueType> VenueTypes { get; private set; }

@@ -444,7 +444,7 @@ public class VipAppService(
     public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct)
     {
         var trips = await _unitOfWork.Transports.Query()
-            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
             .Where(t => t.GuestId == guestId).ToListAsync(ct);
 
         var primary = trips.FirstOrDefault();
@@ -457,7 +457,7 @@ public class VipAppService(
             ToAddress = primary.DropoffLocation?.Address,
             PickupTime = primary.PickupTime,
             EstimatedArrival = primary.EstimatedArrival,
-            VehicleType = primary.VehicleType,
+            VehicleType = primary.VehicleType?.Name,
             Plate = primary.Plate,
             TripStatus = primary.TripStatus,
             Driver = string.IsNullOrWhiteSpace(primary.DriverName) ? null : new DriverResponse

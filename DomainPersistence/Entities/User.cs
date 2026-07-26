@@ -14,7 +14,13 @@ public partial class User : Entity
     public bool IsActive { get; set; }
     public string? PasswordHash { get; set; }
 
+    // Set when an admin invites this user (no password yet, IsActive false).
+    // Cleared once they accept the invite and set their own password.
+    public Guid? InviteToken { get; set; }
+    public DateTime? InviteSentAt { get; set; }
+
     public virtual Role? Role { get; set; }
+    public virtual DriverProfile? DriverProfile { get; set; }
     public virtual ICollection<UserModuleGrant> ModuleGrants { get; set; } = new List<UserModuleGrant>();
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
     public virtual ICollection<UserLoginLog> UserLoginLogs { get; set; } = new List<UserLoginLog>();

@@ -58,6 +58,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; }
     IGenericRepository<Accommodation> Accommodations { get; }
     IGenericRepository<Transport> Transports { get; }
+    IGenericRepository<VehicleType> VehicleTypes { get; }
+    IGenericRepository<DriverProfile> DriverProfiles { get; }
     // Notifications
     IGenericRepository<Notification> Notifications { get; }
 

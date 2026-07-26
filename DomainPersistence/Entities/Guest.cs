@@ -1,3 +1,4 @@
+using System;
 
 namespace DomainPersistence.Entities
 {
@@ -14,6 +15,8 @@ namespace DomainPersistence.Entities
         public string PreferencesJson { get; set; }
         public bool NotificationsEnabled { get; set; } = true;
         public string Language { get; set; }
+        public DateOnly? ArrivalDate { get; set; }
+        public DateOnly? DepartureDate { get; set; }
 
         public virtual ICollection<GuestSession> GuestSessions { get; set; } = new List<GuestSession>();
         public virtual Nationality Nationality { get; set; }

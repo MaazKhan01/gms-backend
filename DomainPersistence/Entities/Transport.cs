@@ -6,7 +6,7 @@ public class Transport : Entity
     public int GuestId { get; set; }
     public int? PickupLocationId { get; set; }
     public int? DropoffLocationId { get; set; }
-    public string VehicleType { get; set; }
+    public int? VehicleTypeId { get; set; }
     public string Plate { get; set; }
     public string TripStatus { get; set; }    // On Time / Delayed
     public string DriverName { get; set; }
@@ -18,4 +18,5 @@ public class Transport : Entity
     public virtual Guest Guest { get; set; }
     public virtual Location PickupLocation { get; set; }
     public virtual Location DropoffLocation { get; set; }
+    public virtual VehicleType VehicleType { get; set; }
 }
