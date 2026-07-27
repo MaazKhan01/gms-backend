@@ -34,6 +34,11 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
     [HasPermission(PermissionCodes.GuestsCreate)]
     public async Task<IActionResult> CreateGuest([FromBody] CreateGuestRequest request, CancellationToken ct)
     {
+        // Email is required for manually-created guests only — CSV import
+        // (ImportGuestCsvAsync) calls the service directly and stays permissive.
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return ToResponse(ApiResponse<GuestResponse>.ErrorResponse("Email is required"));
+
         var result = await _guestService.CreateGuestAsync(request, ct);
         if (result.Success)
             return CreatedAtAction(nameof(GetGuestById), new { id = result.Data.Id }, result);

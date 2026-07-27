@@ -152,6 +152,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             .OrderBy(f => f.Guest.FirstName).ThenBy(f => f.Guest.LastName)
             .Select(f => new EventFlightRow
             {
+                Id = f.PublicId,
                 GuestId = f.Guest.PublicId,
                 GuestName = (f.Guest.FirstName + " " + f.Guest.LastName).Trim(),
                 Organization = f.Guest.Organization,

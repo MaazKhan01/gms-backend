@@ -20,6 +20,11 @@ public class GuestTravelRequest
     public FlightInput Flight { get; set; }
     public AccommodationInput Accommodation { get; set; }
     public TransportInput Transport { get; set; }
+    // false (default) = replace the guest's existing section(s) — used by the
+    // guest wizard's edit-in-place flow. true = add alongside whatever the
+    // guest already has — used by Services' "New Booking" (a guest can hold
+    // more than one flight/hotel/transport booking).
+    public bool Append { get; set; }
 }
 
 public class FlightInput
@@ -74,6 +79,7 @@ public class GuestTravelResponse
 // Only fields that actually live in the tables — nulls where a guest has none.
 public class EventFlightRow
 {
+    public Guid Id { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string Organization { get; set; }
@@ -87,6 +93,7 @@ public class EventFlightRow
 
 public class EventAccommodationRow
 {
+    public Guid Id { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string Organization { get; set; }
@@ -99,6 +106,7 @@ public class EventAccommodationRow
 
 public class EventTransportRow
 {
+    public Guid Id { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string Organization { get; set; }
