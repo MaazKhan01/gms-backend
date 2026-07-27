@@ -7,12 +7,14 @@ namespace Core.ViewModel.Travel;
 public class IdNameDto { public Guid Id { get; set; } public string Name { get; set; } }
 public class AirportDto { public Guid Id { get; set; } public string Code { get; set; } public string City { get; set; } public string Country { get; set; } public string Continent { get; set; } public Guid? LocationId { get; set; } }
 public class HotelDto { public Guid Id { get; set; } public string Name { get; set; } public string Address { get; set; } public Guid? LocationId { get; set; } }
-public class LocationDto { public Guid Id { get; set; } public string Address { get; set; } public string Type { get; set; } }
+public class LocationDto { public Guid Id { get; set; } public string Address { get; set; } public string Type { get; set; } public string Longitude { get; set; } public string Latitude { get; set; } }
 
 // ---- Create wizard-dropdown lookup records (admin-managed) ----
 public class CreateNamedLookupRequest { public string Name { get; set; } }
 public class CreateHotelRequest { public string Name { get; set; } public string Address { get; set; } public Guid? LocationId { get; set; } }
 public class CreateAirportRequest { public string Code { get; set; } public string City { get; set; } public string Country { get; set; } public string Continent { get; set; } public Guid? LocationId { get; set; } }
+// Same shape for create and edit.
+public class LocationRequest { public string Address { get; set; } public string Type { get; set; } public string Longitude { get; set; } public string Latitude { get; set; } }
 
 // ---- Per-guest travel: any subset of the three may be present ----
 // A guest can hold more than one flight/hotel/transport booking. Each Input's
@@ -87,11 +89,36 @@ public class EventFlightRow
     public string GuestName { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
+    public string Status { get; set; }
+    public string FlightType { get; set; }
+    public string FlightClass { get; set; }
+    public string Seat { get; set; }
+
+    // Itinerary summary — first/last leg, for the collapsed table row.
     public string FlightNumber { get; set; }
     public string DepartureCode { get; set; }
+    public string DepartureCity { get; set; }
     public string ArrivalCode { get; set; }
+    public string ArrivalCity { get; set; }
     public DateTime? Date { get; set; }
-    public string Status { get; set; }
+    public DateTime? ArrivalTime { get; set; }
+    public int LegCount { get; set; }
+
+    public List<FlightLegRow> Legs { get; set; } = [];
+}
+
+public class FlightLegRow
+{
+    public Guid Id { get; set; }
+    public string FlightNumber { get; set; }
+    public string DepartureCode { get; set; }
+    public string DepartureCity { get; set; }
+    public string DepartureCountry { get; set; }
+    public string ArrivalCode { get; set; }
+    public string ArrivalCity { get; set; }
+    public string ArrivalCountry { get; set; }
+    public DateTime? StartTime { get; set; }
+    public DateTime? EndTime { get; set; }
 }
 
 public class EventAccommodationRow
