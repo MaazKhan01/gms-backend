@@ -10,6 +10,7 @@ namespace Core.ViewModel.Venue
         public Guid VenueType { get; set; }
         public List<string>? Category { get; set; }
         public string Color { get; set; }
+        public Guid? LocationId { get; set; }
         public List<VenueBoxDto>? VenueBoxes { get; set; }
     }
 }

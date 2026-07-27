@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260727084627_AddNotificationAuditAndData")]
+    partial class AddNotificationAuditAndData
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -131,9 +134,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValueSql("((0))");
 
-                    b.Property<int?>("LocationId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -151,8 +151,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("LocationId");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -306,70 +304,6 @@ namespace DomainPersistence.Migrations
                         .IsUnique();
 
                     b.ToTable("AccountRequests", (string)null);
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.AirportData", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AirportName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<int?>("LocationId")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.HasIndex("LocationId");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.ToTable("AirportData", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.DriverProfile", b =>
@@ -736,6 +670,12 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ArrivalCity")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ArrivalCode")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -750,6 +690,12 @@ namespace DomainPersistence.Migrations
                     b.Property<int?>("DeletedBy")
                         .HasColumnType("int");
 
+                    b.Property<string>("DepartureCity")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DepartureCode")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("datetime2");
 
@@ -759,9 +705,6 @@ namespace DomainPersistence.Migrations
                     b.Property<string>("FlightNumber")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
-
-                    b.Property<int?>("FromAirportId")
-                        .HasColumnType("int");
 
                     b.Property<bool?>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -776,9 +719,6 @@ namespace DomainPersistence.Migrations
                     b.Property<DateTime?>("StartTime")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("ToAirportId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -789,12 +729,8 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("FlightId");
 
-                    b.HasIndex("FromAirportId");
-
                     b.HasIndex("PublicId")
                         .IsUnique();
-
-                    b.HasIndex("ToAirportId");
 
                     b.ToTable("FlightLegs", (string)null);
                 });
@@ -858,9 +794,6 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<bool>("AccreditationRequired")
-                        .HasColumnType("bit");
-
                     b.Property<DateOnly?>("ArrivalDate")
                         .HasColumnType("date");
 
@@ -919,9 +852,6 @@ namespace DomainPersistence.Migrations
                     b.Property<string>("Organization")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
-
-                    b.Property<string>("PhotoUrl")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PreferencesJson")
                         .HasColumnType("nvarchar(max)");
@@ -1354,10 +1284,6 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
-
-                    b.Property<string>("Type")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -2727,9 +2653,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValueSql("((0))");
 
-                    b.Property<int?>("LocationId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -2750,8 +2673,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("LocationId");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -3172,26 +3093,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("RoomType");
                 });
 
-            modelBuilder.Entity("DomainPersistence.Entities.AccommodationHotel", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.Location", "Location")
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Location");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.AirportData", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.Location", "Location")
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Location");
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.DriverProfile", b =>
                 {
                     b.HasOne("DomainPersistence.Entities.Nationality", "Nationality")
@@ -3260,21 +3161,7 @@ namespace DomainPersistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("DomainPersistence.Entities.AirportData", "FromAirport")
-                        .WithMany()
-                        .HasForeignKey("FromAirportId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("DomainPersistence.Entities.AirportData", "ToAirport")
-                        .WithMany()
-                        .HasForeignKey("ToAirportId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Flight");
-
-                    b.Navigation("FromAirport");
-
-                    b.Navigation("ToAirport");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Guest", b =>
@@ -3630,17 +3517,10 @@ namespace DomainPersistence.Migrations
 
             modelBuilder.Entity("DomainPersistence.Entities.Venue", b =>
                 {
-                    b.HasOne("DomainPersistence.Entities.Location", "Location")
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("DomainPersistence.Entities.VenueType", "Type")
                         .WithMany()
                         .HasForeignKey("TypeId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Location");
 
                     b.Navigation("Type");
                 });

@@ -11,6 +11,7 @@ public interface ITravelService
     Task<ApiResponse<List<HotelDto>>> GetHotelsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<LocationDto>>> GetLocationsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<IdNameDto>>> GetVehicleTypesAsync(CancellationToken ct = default);
+    Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default);
     Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, CancellationToken ct = default);
 
     // Per-event booking lists (one per travel tab).
@@ -25,4 +26,5 @@ public interface ITravelService
     Task<ApiResponse<IdNameDto>> CreateRoomTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<HotelDto>> CreateHotelAsync(CreateHotelRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateVehicleTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
+    Task<ApiResponse<AirportDto>> CreateAirportAsync(CreateAirportRequest request, int userId, CancellationToken ct = default);
 }

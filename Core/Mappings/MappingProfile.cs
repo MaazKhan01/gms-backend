@@ -115,6 +115,7 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
             .ForMember(dest => dest.VenueName, opt => opt.MapFrom(src => src.Name))
             .ForMember(dest => dest.VenueType, opt => opt.MapFrom(src => src.Type != null ? src.Type.PublicId : Guid.Empty))
+            .ForMember(dest => dest.LocationId, opt => opt.MapFrom(src => src.Location != null ? (Guid?)src.Location.PublicId : null))
             .ForMember(dest => dest.Category, opt => opt.MapFrom(src => src.Category ?? new List<string>()));
         CreateMap<VenueBox, VenueBoxDto>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))

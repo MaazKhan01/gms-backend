@@ -55,14 +55,11 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     //public async Task<IActionResult> SubmitSelection(Guid eventId, [FromBody] SessionSelectionRequest request, CancellationToken ct)
     //    => ToResponse(await _vip.SubmitSelectionAsync(GuestId, eventId, request, ct));
 
-    // ---------------- Home / itinerary ----------------
-    [HttpGet("home")]
-    public async Task<IActionResult> GetHome(CancellationToken ct)
-        => ToResponse(await _vip.GetHomeAsync(GuestId, ct));
-
-    [HttpGet("itinerary")]
-    public async Task<IActionResult> GetItinerary(CancellationToken ct)
-        => ToResponse(await _vip.GetItineraryAsync(GuestId, ct));
+    // ---------------- Agenda ----------------
+    // Upcoming guest actions only: flights, hotel check-in, transport pickups.
+    [HttpGet("agenda")]
+    public async Task<IActionResult> GetAgenda(CancellationToken ct)
+        => ToResponse(await _vip.GetAgendaAsync(GuestId, ct));
 
     // ---------------- Travel ----------------
     [HttpGet("flights")]

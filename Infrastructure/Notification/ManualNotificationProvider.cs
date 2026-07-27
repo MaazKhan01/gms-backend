@@ -22,16 +22,21 @@ public class ManualNotificationProvider(
     {
         try
         {
+            // Prefer the rich payload (full response DTO) when present so the
+            // client can render without a follow-up fetch; fall back to the
+            // string-only Data dictionary.
+            object data = payload.Payload ?? payload.Data;
+
             if (payload.RecipientType == NotificationRecipientType.User && payload.UserId.HasValue)
             {
                 await _realTimeAlertService.SendToUserAsync(
-                    payload.Topic, payload.UserId.Value.ToString(), payload.Title, payload.Body, payload.Data
+                    payload.Topic, payload.UserId.Value.ToString(), payload.Title, payload.Body, data
                 ).ConfigureAwait(false);
             }
             else if (payload.RecipientType == NotificationRecipientType.Guest && payload.GuestId.HasValue)
             {
                 await _realTimeAlertService.SendToGroupAsync(
-                    payload.Topic, $"guest:{payload.GuestId.Value}", payload.Title, payload.Body, payload.Data
+                    payload.Topic, $"guest:{payload.GuestId.Value}", payload.Title, payload.Body, data
                 ).ConfigureAwait(false);
             }
         }

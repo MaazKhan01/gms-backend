@@ -3,8 +3,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Core.Authorization;
+using Core.Common;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
+using Core.ViewModel.Noification;
 
 namespace API.Controllers.v1;
 
@@ -55,10 +58,28 @@ public class NotificationsController : Controllers.BaseApiController
         return ToResponse(result);
     }
 
+    [HttpPut("{id:guid}/mark-unread")]
+    public async Task<IActionResult> MarkAsUnread(Guid id, CancellationToken ct)
+    {
+        var result = await _notificationService.MarkSingleAsUnreadAsync(id, ct);
+        return ToResponse(result);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var result = await _notificationService.DeleteNotificationAsync(id, ct);
+        return ToResponse(result);
+    }
+
+    // Admin fan-out: one/many users, a role, a permission, or everyone —
+    // and, separately (guests aren't Users), one/many guests or all guests.
+    // See SendNotificationRequest for the six mutually-exclusive targets.
+    [HttpPost("send")]
+    [HasPermission(PermissionCodes.NotificationsSend)]
+    public async Task<IActionResult> Send([FromBody] SendNotificationRequest request, CancellationToken ct)
+    {
+        var result = await _notificationService.SendNotificationAsync(request, ct);
         return ToResponse(result);
     }
 }

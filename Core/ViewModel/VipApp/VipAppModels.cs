@@ -50,40 +50,14 @@ public class GuestSessionResponse
 // Multi-select confirm/decline from the "Select Event" screen.
 public record SessionSelectionRequest(List<Guid> SessionIds, bool Decline);
 
-// ---------------- Home / itinerary ----------------
-public class HomeResponse
-{
-    public string GreetingName { get; set; }
-    public int UnreadNotifications { get; set; }
-    public List<GuestEventResponse> Events { get; set; } = new();
-    public List<AgendaCardResponse> Agenda { get; set; } = new();
-    public ItineraryCountsResponse Counts { get; set; } = new();
-}
-
+// ---------------- Agenda ----------------
 public class AgendaCardResponse
 {
     public string Flag { get; set; }        // UPCOMING FLIGHT / PICKUP / CHECK-IN
     public string Title { get; set; }
-    public string When { get; set; }
-    public string Subtitle { get; set; }
-    public string Kind { get; set; }        // flight / transport / hotel
-    public Guid? RefId { get; set; }
-}
-
-public class ItineraryCountsResponse
-{
-    public int Flights { get; set; }
-    public int Sessions { get; set; }
-    public bool HasTransport { get; set; }
-    public bool HasAccommodation { get; set; }
-}
-
-public class ItineraryItemResponse
-{
     public DateTime When { get; set; }
-    public string Kind { get; set; }        // flight / hotel / transport / session
-    public string Title { get; set; }
     public string Subtitle { get; set; }
+    public string Kind { get; set; }        // flight / hotel / transport
     public Guid? RefId { get; set; }
 }
 
@@ -92,9 +66,9 @@ public class FlightLegResponse
 {
     public Guid Id { get; set; }
     public string DepartureCode { get; set; }
-    public string DepartureCity { get; set; }
+    public string DepartureAirport { get; set; }
     public string ArrivalCode { get; set; }
-    public string ArrivalCity { get; set; }
+    public string ArrivalAirport { get; set; }
     public DateTime? DateTime { get; set; }
     public string FlightNumber { get; set; }
     public string Class { get; set; }
@@ -220,5 +194,6 @@ public class GuestNotificationResponse
     public bool Read { get; set; }
     public DateTime CreatedAt { get; set; }
     public string RedirectUrl { get; set; }
+    public string Data { get; set; }
 }
 public record RegisterDeviceRequest(string Token, string Platform); // ios / android

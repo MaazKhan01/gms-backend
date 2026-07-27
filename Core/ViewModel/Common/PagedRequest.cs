@@ -1,4 +1,6 @@
-﻿namespace Core.ViewModel.Common;
+﻿using System;
+
+namespace Core.ViewModel.Common;
 
 public class PagedRequest
 {
@@ -14,4 +16,9 @@ public class PagedRequest
  public class NotificationPagedRequest : PagedRequest
 {
     public bool IsRead { get; set; }
+
+    // Optional filters — notification history support.
+    public string Type { get; set; }
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
 }

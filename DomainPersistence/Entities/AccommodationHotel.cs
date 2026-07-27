@@ -5,4 +5,7 @@ public class AccommodationHotel : Entity
 {
     public string Name { get; set; }
     public string Address { get; set; }
+    public int? LocationId { get; set; }
+
+    public virtual Location Location { get; set; }
 }

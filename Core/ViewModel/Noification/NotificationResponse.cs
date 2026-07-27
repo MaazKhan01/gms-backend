@@ -10,4 +10,5 @@ public class NotificationResponse
     public bool? Read { get; set; }
     public DateTime? CreatedAt { get; set; }
     public string RedirectUrl { get; set; }
+    public string Data { get; set; }
 }
