@@ -7,6 +7,8 @@ using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Noification;
+using Core.ViewModel.VipApp;
+using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;
 
@@ -316,6 +318,158 @@ public class NotificationService(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error pushing unread count update for user {UserId}", userId);
+        }
+    }
+
+    // ============================================================
+    // Guest-facing (VIP app, OTP login) — moved here from VipAppService.
+    // Guests aren't Users: separate table, separate SignalR group ("guest:{id}",
+    // see RealTimeHubService), separate identity (ICurrentGuest, not ICurrentUser).
+    // ============================================================
+
+    public async Task<ApiResponse<List<GuestNotificationResponse>>> GetGuestNotificationsAsync(
+        int guestId, PagedRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var page = request?.PageNumber > 0 ? request.PageNumber : 1;
+            var size = request?.PageSize > 0 ? request.PageSize : 20;
+
+            var items = await _unitOfWork.GuestNotifications.QueryNoTracking()
+                .Where(n => n.GuestId == guestId)
+                .OrderByDescending(n => n.CreatedAt)
+                .Skip((page - 1) * size).Take(size).ToListAsync(ct);
+
+            var data = items.Select(n => new GuestNotificationResponse
+            {
+                Id = n.PublicId, Title = n.Title, Message = n.Message, Type = n.Type,
+                Read = n.Read, CreatedAt = n.CreatedAt, RedirectUrl = n.RedirectUrl, Data = n.Data
+            }).ToList();
+
+            return ApiResponse<List<GuestNotificationResponse>>.SuccessResponse(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching notifications for guest {GuestId}", guestId);
+            return ApiResponse<List<GuestNotificationResponse>>.ServerErrorResponse("An error occurred while fetching notifications");
+        }
+    }
+
+    public async Task<ApiResponse<int>> GetGuestUnreadCountAsync(int guestId, CancellationToken ct = default)
+    {
+        try
+        {
+            var count = await _unitOfWork.GuestNotifications.CountAsync(n => n.GuestId == guestId && !n.Read, ct);
+            return ApiResponse<int>.SuccessResponse(count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting unread count for guest {GuestId}", guestId);
+            return ApiResponse<int>.ServerErrorResponse("An error occurred while getting notification count");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> MarkGuestNotificationReadAsync(int guestId, Guid notificationId, CancellationToken ct = default)
+    {
+        try
+        {
+            var notification = await _unitOfWork.GuestNotifications
+                .FindFirstOrDefaultAsync(n => n.PublicId == notificationId && n.GuestId == guestId, ct);
+
+            if (notification == null)
+                return ApiResponse<bool>.NotFoundResponse("Notification not found");
+
+            if (!notification.Read)
+            {
+                notification.Read = true;
+                _unitOfWork.GuestNotifications.Update(notification);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await PushGuestUnreadCountAsync(guestId, ct);
+            }
+
+            return ApiResponse<bool>.SuccessResponse(true, "Notification marked as read");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error marking notification {Id} as read for guest {GuestId}", notificationId, guestId);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while marking the notification as read");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> MarkAllGuestNotificationsReadAsync(int guestId, CancellationToken ct = default)
+    {
+        try
+        {
+            var unread = (await _unitOfWork.GuestNotifications.FindAsync(n => n.GuestId == guestId && !n.Read, ct)).ToList();
+
+            if (unread.Count > 0)
+            {
+                foreach (var n in unread) n.Read = true;
+                _unitOfWork.GuestNotifications.UpdateRange(unread);
+                await _unitOfWork.SaveChangesAsync(ct);
+                await PushGuestUnreadCountAsync(guestId, ct);
+            }
+
+            return ApiResponse<bool>.SuccessResponse(true, $"{unread.Count} marked read");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error marking all notifications as read for guest {GuestId}", guestId);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while marking notifications as read");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> RegisterGuestDeviceAsync(int guestId, RegisterDeviceRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Token))
+                return ApiResponse<bool>.ErrorResponse("Device token is required");
+
+            // Upsert by token — a device only ever belongs to one guest at a time.
+            var existing = await _unitOfWork.GuestDevices.FindFirstOrDefaultAsync(d => d.Token == request.Token, ct);
+            if (existing is null)
+            {
+                await _unitOfWork.GuestDevices.AddAsync(new GuestDevice
+                {
+                    GuestId = guestId, Token = request.Token,
+                    Platform = request.Platform, LastSeenAt = DateTime.UtcNow
+                }, ct);
+            }
+            else
+            {
+                existing.GuestId = guestId;
+                existing.Platform = request.Platform;
+                existing.LastSeenAt = DateTime.UtcNow;
+                _unitOfWork.GuestDevices.Update(existing);
+            }
+
+            await _unitOfWork.SaveChangesAsync(ct);
+            return ApiResponse<bool>.SuccessResponse(true, "Device registered");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error registering device for guest {GuestId}", guestId);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while registering the device");
+        }
+    }
+
+    // Mirrors PushUnreadCountAsync but targets the guest:{id} SignalR group
+    // (Groups, not Clients.User — see RealTimeHubService/ManualNotificationProvider
+    // remarks on why guests can't use the built-in per-user targeting).
+    private async Task PushGuestUnreadCountAsync(int guestId, CancellationToken ct)
+    {
+        try
+        {
+            var count = await _unitOfWork.GuestNotifications.CountAsync(n => n.GuestId == guestId && !n.Read, ct);
+
+            await _realTimeAlertService.SendToGroupAsync(
+                RealtimeTopics.NotificationCountChanged, $"guest:{guestId}", null, null,
+                new { unreadCount = count }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error pushing unread count update for guest {GuestId}", guestId);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿{
+{
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem -Path \"D:\\\\Office\\\\Eventful\\\\PortalBackend\" -Recurse -Directory)",
@@ -10,7 +10,12 @@
       "PowerShell(icacls *)",
       "Bash(git push *)",
       "Bash(Test-Path *)",
-      "PowerShell(dotnet build *)"
+      "PowerShell(dotnet build *)",
+      "Bash(dotnet tool *)",
+      "Bash(xargs grep -ln \"Authorize\\(Policy\")",
+      "Bash(xargs cat)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet ef *)"
     ]
   }
 }

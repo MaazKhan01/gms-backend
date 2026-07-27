@@ -87,10 +87,13 @@ public static class ServiceExtensions
         services.AddScoped<IRealTimeAlertService, RealTimeAlertService>();
         services.AddScoped<INotificationManagerService, NotificationManagerService>();
 
-        // Push notification provider — swap to FirebaseNotificationProvider here
-        // once Firebase is wired up; no other code changes needed (see
-        // FirebaseNotificationProvider's remarks for the integration steps).
+        // Push notification providers — multi-registered on purpose:
+        // NotificationManagerService fans out to ALL of them (IEnumerable<IPushNotificationProvider>).
+        // ManualNotificationProvider = live in-app delivery over SignalR (works today).
+        // FirebaseNotificationProvider = real device push, fanned out per GuestDevice;
+        // the wire call is still a stub pending Firebase credentials (see its remarks).
         services.AddScoped<IPushNotificationProvider, ManualNotificationProvider>();
+        services.AddScoped<IPushNotificationProvider, FirebaseNotificationProvider>();
 
         // Background jobs (Hangfire) — SQL Server storage, same DB as the app.
         // Dashboard mapping + recurring job registration happens in Program.cs

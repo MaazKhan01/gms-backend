@@ -5,22 +5,33 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Core.Authorization;
 using Core.Common;
+using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Noification;
+using Core.ViewModel.VipApp;
 
 namespace API.Controllers.v1;
 
+// User/admin notifications (this file) AND guest notifications (the "guest/"
+// sub-routes below, moved here from VipAppController — same precedent as
+// support chat) both live on this controller. They're deliberately NOT the
+// same routes: a guest is not a row in the Users table (OTP login, separate
+// GuestNotification table, resolved via ICurrentGuest not ICurrentUser), so
+// merging them into one set of endpoints would require conflating two
+// distinct identities and audiences.
 [Route("api/v1/notifications")]
 [Authorize]
 [ApiVersion("1.0")]
 public class NotificationsController : Controllers.BaseApiController
 {
     private readonly INotificationService _notificationService;
+    private readonly ICurrentGuest _currentGuest;
 
-    public NotificationsController(INotificationService notificationService)
+    public NotificationsController(INotificationService notificationService, ICurrentGuest currentGuest)
     {
         _notificationService = notificationService;
+        _currentGuest = currentGuest;
     }
 
     [HttpGet]
@@ -80,6 +91,47 @@ public class NotificationsController : Controllers.BaseApiController
     public async Task<IActionResult> Send([FromBody] SendNotificationRequest request, CancellationToken ct)
     {
         var result = await _notificationService.SendNotificationAsync(request, ct);
+        return ToResponse(result);
+    }
+
+    // ============================================================
+    // Guest-facing (VIP app, OTP login) — GuestId resolved from ICurrentGuest,
+    // NOT ICurrentUser. Moved from VipAppController's "Notifications / devices"
+    // section (same precedent as support chat, extracted earlier).
+    // ============================================================
+
+    [HttpGet("guest")]
+    public async Task<IActionResult> GetGuestNotifications([FromQuery] PagedRequest request, CancellationToken ct)
+    {
+        var result = await _notificationService.GetGuestNotificationsAsync(_currentGuest.GuestId, request, ct);
+        return ToResponse(result);
+    }
+
+    [HttpGet("guest/count")]
+    public async Task<IActionResult> GetGuestUnreadCount(CancellationToken ct)
+    {
+        var result = await _notificationService.GetGuestUnreadCountAsync(_currentGuest.GuestId, ct);
+        return ToResponse(result);
+    }
+
+    [HttpPut("guest/{id:guid}/mark-read")]
+    public async Task<IActionResult> MarkGuestNotificationRead(Guid id, CancellationToken ct)
+    {
+        var result = await _notificationService.MarkGuestNotificationReadAsync(_currentGuest.GuestId, id, ct);
+        return ToResponse(result);
+    }
+
+    [HttpPut("guest/mark-all-read")]
+    public async Task<IActionResult> MarkAllGuestNotificationsRead(CancellationToken ct)
+    {
+        var result = await _notificationService.MarkAllGuestNotificationsReadAsync(_currentGuest.GuestId, ct);
+        return ToResponse(result);
+    }
+
+    [HttpPost("guest/devices")]
+    public async Task<IActionResult> RegisterGuestDevice([FromBody] RegisterDeviceRequest request, CancellationToken ct)
+    {
+        var result = await _notificationService.RegisterGuestDeviceAsync(_currentGuest.GuestId, request, ct);
         return ToResponse(result);
     }
 }

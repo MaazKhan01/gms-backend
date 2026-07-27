@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
-using Core.ViewModel.Common;
 using Core.ViewModel.VipApp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -105,24 +104,6 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     public async Task<IActionResult> UpdateSettings([FromBody] UpdateSettingsRequest request, CancellationToken ct)
         => ToResponse(await _vip.UpdateSettingsAsync(GuestId, request, ct));
 
-    // ---------------- Notifications / devices ----------------
-    [HttpGet("notifications")]
-    public async Task<IActionResult> GetNotifications([FromQuery] PagedRequest request, CancellationToken ct)
-        => ToResponse(await _vip.GetNotificationsAsync(GuestId, request, ct));
-
-    [HttpGet("notifications/count")]
-    public async Task<IActionResult> GetUnreadCount(CancellationToken ct)
-        => ToResponse(await _vip.GetUnreadCountAsync(GuestId, ct));
-
-    [HttpPut("notifications/{id:guid}/read")]
-    public async Task<IActionResult> MarkNotificationRead(Guid id, CancellationToken ct)
-        => ToResponse(await _vip.MarkNotificationReadAsync(GuestId, id, ct));
-
-    [HttpPut("notifications/read-all")]
-    public async Task<IActionResult> MarkAllNotificationsRead(CancellationToken ct)
-        => ToResponse(await _vip.MarkAllNotificationsReadAsync(GuestId, ct));
-
-    [HttpPost("devices")]
-    public async Task<IActionResult> RegisterDevice([FromBody] RegisterDeviceRequest request, CancellationToken ct)
-        => ToResponse(await _vip.RegisterDeviceAsync(GuestId, request, ct));
+    // Notifications / devices now live on NotificationsController
+    // (api/v1/notifications/guest/...) — same move as support chat above.
 }
