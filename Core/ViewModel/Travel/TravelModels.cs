@@ -5,14 +5,14 @@ namespace Core.ViewModel.Travel;
 
 // ---- Dropdown lookup DTOs (one GET endpoint per list) ----
 public class IdNameDto { public Guid Id { get; set; } public string Name { get; set; } }
-public class AirportDto { public Guid Id { get; set; } public string Code { get; set; } public string AirportName { get; set; } public Guid? LocationId { get; set; } }
+public class AirportDto { public Guid Id { get; set; } public string Code { get; set; } public string City { get; set; } public string Country { get; set; } public string Continent { get; set; } public Guid? LocationId { get; set; } }
 public class HotelDto { public Guid Id { get; set; } public string Name { get; set; } public string Address { get; set; } public Guid? LocationId { get; set; } }
 public class LocationDto { public Guid Id { get; set; } public string Address { get; set; } public string Type { get; set; } }
 
 // ---- Create wizard-dropdown lookup records (admin-managed) ----
 public class CreateNamedLookupRequest { public string Name { get; set; } }
 public class CreateHotelRequest { public string Name { get; set; } public string Address { get; set; } public Guid? LocationId { get; set; } }
-public class CreateAirportRequest { public string Code { get; set; } public string AirportName { get; set; } public Guid? LocationId { get; set; } }
+public class CreateAirportRequest { public string Code { get; set; } public string City { get; set; } public string Country { get; set; } public string Continent { get; set; } public Guid? LocationId { get; set; } }
 
 // ---- Per-guest travel: any subset of the three may be present ----
 public class GuestTravelRequest
