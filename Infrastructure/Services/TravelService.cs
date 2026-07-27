@@ -236,6 +236,11 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
             if (guest == null) return ApiResponse<bool>.NotFoundResponse("Guest not found");
 
+            // A guest can hold more than one flight/hotel/transport booking. Each
+            // Input carries the specific booking's Id when it's editing one that
+            // already exists (the wizard's prefill, or a per-booking edit) — that
+            // updates the record in place. No Id (Services' "New Booking") always
+            // adds a new one alongside whatever the guest already has.
             if (request.Flight != null)
             {
                 var typeId = await ResolveId(_unitOfWork.FlightTypes, request.Flight.FlightTypeId, ct);
@@ -244,32 +249,30 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 var fromAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.FromAirportId, ct);
                 var toAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.ToAirportId, ct);
 
-                if (!request.Append)
+                Flight flight = null;
+                if (request.Flight.Id is { } flightId && flightId != Guid.Empty)
+                    flight = await _unitOfWork.Flights.Query().Include(f => f.Legs)
+                        .FirstOrDefaultAsync(f => f.PublicId == flightId && f.GuestId == guest.Id, ct);
+
+                var isNewFlight = flight == null;
+                if (isNewFlight)
                 {
-                    var existing = await _unitOfWork.Flights.FindAsync(f => f.GuestId == guest.Id, ct);
-                    _unitOfWork.Flights.RemoveRange(existing);
+                    flight = new Flight { GuestId = guest.Id, Legs = new List<FlightLeg> { new() } };
                 }
 
-                var flight = new Flight
-                {
-                    GuestId = guest.Id,
-                    FlightTypeId = typeId.Value,
-                    FlightClassId = classId,
-                    Status = request.Flight.Status,
-                    Seat = request.Flight.Seat,
-                    Legs = new List<FlightLeg>
-                    {
-                        new()
-                        {
-                            FlightNumber = request.Flight.FlightNumber,
-                            FromAirportId = fromAirportId,
-                            ToAirportId = toAirportId,
-                            StartTime = request.Flight.StartTime,
-                            EndTime = request.Flight.EndTime,
-                        }
-                    }
-                };
-                await _unitOfWork.Flights.AddAsync(flight, ct);
+                flight.FlightTypeId = typeId.Value;
+                flight.FlightClassId = classId;
+                flight.Status = request.Flight.Status;
+                flight.Seat = request.Flight.Seat;
+
+                var leg = flight.Legs.First();
+                leg.FlightNumber = request.Flight.FlightNumber;
+                leg.FromAirportId = fromAirportId;
+                leg.ToAirportId = toAirportId;
+                leg.StartTime = request.Flight.StartTime;
+                leg.EndTime = request.Flight.EndTime;
+
+                if (isNewFlight) await _unitOfWork.Flights.AddAsync(flight, ct);
             }
 
             if (request.Accommodation != null)
@@ -278,24 +281,24 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 if (hotelId == null) return ApiResponse<bool>.ErrorResponse("Invalid hotel");
                 var roomTypeId = await ResolveNullableId(_unitOfWork.AccommodationRoomTypes, request.Accommodation.RoomTypeId, ct);
 
-                if (!request.Append)
-                {
-                    var existing = await _unitOfWork.Accommodations.FindAsync(a => a.GuestId == guest.Id, ct);
-                    _unitOfWork.Accommodations.RemoveRange(existing);
-                }
+                Accommodation acc = null;
+                if (request.Accommodation.Id is { } accId && accId != Guid.Empty)
+                    acc = await _unitOfWork.Accommodations.Query()
+                        .FirstOrDefaultAsync(a => a.PublicId == accId && a.GuestId == guest.Id, ct);
 
-                await _unitOfWork.Accommodations.AddAsync(new Accommodation
-                {
-                    GuestId = guest.Id,
-                    AccommodationHotelId = hotelId.Value,
-                    RoomTypeId = roomTypeId,
-                    CheckIn = request.Accommodation.CheckIn,
-                    CheckOut = request.Accommodation.CheckOut,
-                    RoomView = request.Accommodation.RoomView,
-                    GuestCount = request.Accommodation.GuestCount,
-                    ConciergeName = request.Accommodation.ConciergeName,
-                    ConciergePhone = request.Accommodation.ConciergePhone,
-                }, ct);
+                var isNewAcc = acc == null;
+                if (isNewAcc) acc = new Accommodation { GuestId = guest.Id };
+
+                acc.AccommodationHotelId = hotelId.Value;
+                acc.RoomTypeId = roomTypeId;
+                acc.CheckIn = request.Accommodation.CheckIn;
+                acc.CheckOut = request.Accommodation.CheckOut;
+                acc.RoomView = request.Accommodation.RoomView;
+                acc.GuestCount = request.Accommodation.GuestCount;
+                acc.ConciergeName = request.Accommodation.ConciergeName;
+                acc.ConciergePhone = request.Accommodation.ConciergePhone;
+
+                if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
             }
 
             if (request.Transport != null)
@@ -304,26 +307,26 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 var dropoffId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.DropoffLocationId, ct);
                 var vehicleTypeId = await ResolveNullableId(_unitOfWork.VehicleTypes, request.Transport.VehicleTypeId, ct);
 
-                if (!request.Append)
-                {
-                    var existing = await _unitOfWork.Transports.FindAsync(t => t.GuestId == guest.Id, ct);
-                    _unitOfWork.Transports.RemoveRange(existing);
-                }
+                Transport tr = null;
+                if (request.Transport.Id is { } trId && trId != Guid.Empty)
+                    tr = await _unitOfWork.Transports.Query()
+                        .FirstOrDefaultAsync(t => t.PublicId == trId && t.GuestId == guest.Id, ct);
 
-                await _unitOfWork.Transports.AddAsync(new Transport
-                {
-                    GuestId = guest.Id,
-                    PickupLocationId = pickupId,
-                    DropoffLocationId = dropoffId,
-                    VehicleTypeId = vehicleTypeId,
-                    Plate = request.Transport.Plate,
-                    TripStatus = request.Transport.TripStatus,
-                    DriverName = request.Transport.DriverName,
-                    DriverPhone = request.Transport.DriverPhone,
-                    DriverRating = request.Transport.DriverRating,
-                    PickupTime = request.Transport.PickupTime,
-                    EstimatedArrival = request.Transport.EstimatedArrival,
-                }, ct);
+                var isNewTransport = tr == null;
+                if (isNewTransport) tr = new Transport { GuestId = guest.Id };
+
+                tr.PickupLocationId = pickupId;
+                tr.DropoffLocationId = dropoffId;
+                tr.VehicleTypeId = vehicleTypeId;
+                tr.Plate = request.Transport.Plate;
+                tr.TripStatus = request.Transport.TripStatus;
+                tr.DriverName = request.Transport.DriverName;
+                tr.DriverPhone = request.Transport.DriverPhone;
+                tr.DriverRating = request.Transport.DriverRating;
+                tr.PickupTime = request.Transport.PickupTime;
+                tr.EstimatedArrival = request.Transport.EstimatedArrival;
+
+                if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
