@@ -20,6 +20,8 @@ public class GuestResponse
     public string Tier { get; set; }
     public DateOnly? ArrivalDate { get; set; }
     public DateOnly? DepartureDate { get; set; }
+    public string PhotoUrl { get; set; }
+    public bool AccreditationRequired { get; set; }
     public List<Guid> SessionIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
 

@@ -18,6 +18,8 @@ public class CreateGuestRequest
     public List<Guid>? SessionIds { get; set; }
     public DateOnly? ArrivalDate { get; set; }
     public DateOnly? DepartureDate { get; set; }
+    public string PhotoUrl { get; set; }
+    public bool AccreditationRequired { get; set; }
     // Selecting a template sends (or resends) the invitation email.
     public Guid? InvitationTemplateId { get; set; }
 }

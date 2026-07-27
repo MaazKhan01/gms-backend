@@ -199,7 +199,11 @@ public class GuestService(
                         EventId = eventId,
                         GuestType = string.IsNullOrEmpty(row.GuestType) ? "delegate" : row.GuestType.Trim().ToLower(),
                         Organization = row.Organization?.Trim() ?? null,
+                        NationalityId = await ResolveNationalityByNameAsync(row.Nationality, ct),
                         Tier = string.IsNullOrWhiteSpace(row.Tier) ? "Delegate" : row.Tier.Trim(),
+                        ArrivalDate = ParseCsvDate(row.ArrivalDate),
+                        DepartureDate = ParseCsvDate(row.DepartureDate),
+                        AccreditationRequired = ParseCsvBool(row.AccreditationRequired),
                     };
                     var createResult = await CreateGuestAsync(request, ct);
                     if (createResult.Success)
@@ -339,6 +343,8 @@ public class GuestService(
             guest.Tier          = request.Tier ?? guest.Tier;
             guest.ArrivalDate   = request.ArrivalDate;
             guest.DepartureDate = request.DepartureDate;
+            guest.PhotoUrl      = request.PhotoUrl;
+            guest.AccreditationRequired = request.AccreditationRequired;
 
             _unitOfWork.Guests.Update(guest);
 
@@ -409,6 +415,8 @@ public class GuestService(
                 Tier          = request.Tier,
                 ArrivalDate   = request.ArrivalDate,
                 DepartureDate = request.DepartureDate,
+                PhotoUrl      = request.PhotoUrl,
+                AccreditationRequired = request.AccreditationRequired,
                 CreatedAt     = DateTime.UtcNow,
                 IsDeleted     = false
             };
@@ -444,12 +452,71 @@ public class GuestService(
         }
     }
 
+    public async Task<ApiResponse<bool>> IssueAccreditationAsync(Guid guestId, CancellationToken ct = default)
+        => await SetAccreditationStatusAsync(guestId, GuestAccreditationStatus.Issued, "Accreditation issued", ct);
+
+    public async Task<ApiResponse<bool>> RevokeAccreditationAsync(Guid guestId, CancellationToken ct = default)
+        => await SetAccreditationStatusAsync(guestId, GuestAccreditationStatus.NotIssued, "Accreditation revoked", ct);
+
+    private async Task<ApiResponse<bool>> SetAccreditationStatusAsync(Guid guestId, string status, string successMessage, CancellationToken ct)
+    {
+        try
+        {
+            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+            if (guest == null)
+                return ApiResponse<bool>.NotFoundResponse("Guest not found");
+
+            var invitation = await _unitOfWork.Invitations.Query()
+                .FirstOrDefaultAsync(i => i.GuestId == guest.Id, ct);
+
+            if (invitation == null)
+            {
+                invitation = new Invitation { GuestId = guest.Id, AccreditationStatus = status };
+                await _unitOfWork.Invitations.AddAsync(invitation, ct);
+            }
+            else
+            {
+                invitation.AccreditationStatus = status;
+                _unitOfWork.Invitations.Update(invitation);
+            }
+
+            await _unitOfWork.SaveChangesAsync(ct);
+            return ApiResponse<bool>.SuccessResponse(true, successMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting accreditation status for guest {GuestId}", guestId);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while updating accreditation");
+        }
+    }
+
     // Resolve a public nationality Guid to its internal int key.
     private async Task<int?> ResolveNationalityIdAsync(Guid? publicId, CancellationToken ct)
     {
         if (publicId == null || publicId == Guid.Empty) return null;
         var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(publicId.Value, ct);
         return nat?.Id;
+    }
+
+    // CSV import has no Guids to work with — match the Nationality column
+    // against the lookup's Name or Code (case-insensitive) instead.
+    private async Task<Guid?> ResolveNationalityByNameAsync(string nameOrCode, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(nameOrCode)) return null;
+        var term = nameOrCode.Trim().ToLower();
+        var nat = await _unitOfWork.Nationalities.Query()
+            .FirstOrDefaultAsync(n => n.Name.ToLower() == term || n.Code.ToLower() == term, ct);
+        return nat?.PublicId;
+    }
+
+    private static DateOnly? ParseCsvDate(string value)
+        => DateOnly.TryParse(value, out var d) ? d : null;
+
+    private static bool ParseCsvBool(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var v = value.Trim().ToLowerInvariant();
+        return v is "true" or "yes" or "y" or "1" or "required";
     }
 
     // Resolve public session Guids to internal int keys.
@@ -471,6 +538,9 @@ sealed class GuestRow
     public string Email { get; set; }
     public string GuestType { get; set; }
     public string Organization { get; set; }
+    public string Nationality { get; set; }  // matched by Name or Code
     public string Tier { get; set; }
     public string ArrivalDate { get; set; }  // "YYYY-MM-DD" string
+    public string DepartureDate { get; set; }  // "YYYY-MM-DD" string
+    public string AccreditationRequired { get; set; }  // "true"/"yes"/"1"/"required"
 }

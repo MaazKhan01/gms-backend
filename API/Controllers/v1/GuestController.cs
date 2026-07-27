@@ -86,4 +86,20 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
         return ToResponse(result);
     }
 
+    [HttpPost("{id:guid}/accreditation/issue")]
+    [HasPermission(PermissionCodes.GuestsUpdate)]
+    public async Task<IActionResult> IssueAccreditation(Guid id, CancellationToken ct)
+    {
+        var result = await _guestService.IssueAccreditationAsync(id, ct);
+        return ToResponse(result);
+    }
+
+    [HttpPost("{id:guid}/accreditation/revoke")]
+    [HasPermission(PermissionCodes.GuestsUpdate)]
+    public async Task<IActionResult> RevokeAccreditation(Guid id, CancellationToken ct)
+    {
+        var result = await _guestService.RevokeAccreditationAsync(id, ct);
+        return ToResponse(result);
+    }
+
 }

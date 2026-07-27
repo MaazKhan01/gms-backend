@@ -17,6 +17,10 @@ namespace DomainPersistence.Entities
         public string Language { get; set; }
         public DateOnly? ArrivalDate { get; set; }
         public DateOnly? DepartureDate { get; set; }
+        public string PhotoUrl { get; set; }
+        // Set at creation — does this guest need an accreditation badge at all?
+        // The actual issue/revoke lifecycle lives on the Invitation row.
+        public bool AccreditationRequired { get; set; }
 
         public virtual ICollection<GuestSession> GuestSessions { get; set; } = new List<GuestSession>();
         public virtual Nationality Nationality { get; set; }

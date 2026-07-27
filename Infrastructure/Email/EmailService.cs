@@ -44,7 +44,7 @@ public class EmailService : IEmailService
             <p style='{P}'>Thank you for registering with <strong style='color:{Ink};'>{_appName}</strong>.</p>
             <p style='{P}'>Use the following verification code to complete your registration:</p>
             <div style='margin:24px 0;text-align:center;'>
-                <span style='font-size:32px;font-weight:700;letter-spacing:8px;color:{AccentSoft};background:rgba(26,174,196,0.1);border:1px solid rgba(26,174,196,0.3);padding:14px 26px;border-radius:10px;display:inline-block;font-family:{Mono};'>{otpCode}</span>
+                <span style='font-size:32px;font-weight:700;letter-spacing:8px;color:{AccentSoft};background:rgba(141,1,52,0.12);border:1px solid rgba(141,1,52,0.35);padding:14px 26px;border-radius:10px;display:inline-block;font-family:{Mono};'>{otpCode}</span>
             </div>
             <p style='{Small}'><strong style='color:{InkDim};'>This code expires in 10 minutes.</strong></p>
             <p style='{Small}'>If you did not request this, please ignore this email.</p>";
@@ -147,8 +147,8 @@ public class EmailService : IEmailService
         if (!string.IsNullOrWhiteSpace(model.Reference)) detailRows.Append(DetailRow("Reference", model.Reference, mono: true));
 
         var detailCard = $@"
-            <div style='margin:24px 0;background:rgba(26,174,196,0.06);border:1px solid rgba(26,174,196,0.2);border-radius:14px;overflow:hidden;'>
-                <div style='padding:11px 18px;background:rgba(26,174,196,0.1);border-bottom:1px solid rgba(26,174,196,0.15);font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:{AccentSoft};font-weight:600;'>Invitation Details</div>
+            <div style='margin:24px 0;background:rgba(141,1,52,0.07);border:1px solid rgba(141,1,52,0.22);border-radius:14px;overflow:hidden;'>
+                <div style='padding:11px 18px;background:rgba(141,1,52,0.12);border-bottom:1px solid rgba(141,1,52,0.18);font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:{AccentSoft};font-weight:600;'>Invitation Details</div>
                 <div>{detailRows}</div>
             </div>";
 
@@ -168,19 +168,21 @@ public class EmailService : IEmailService
     }
 
     // ── Shared branded shell ─────────────────────────────────────────────────
-    // Dark navy/teal theme — inline-styled, table-free-enough to render
-    // reasonably in modern mail clients (Gmail, Apple Mail, Outlook web).
-    private const string Bg = "#04141a";
-    private const string CardBg = "#06202a";
+    // Matches the live app's dark theme + brand palette exactly (App.jsx
+    // BRAND_THEME / style.css :root, html[data-theme="dark"]): maroon accent
+    // (#8d0134) over a near-black maroon background, not a generic color.
+    private const string Bg = "#14000a";
+    private const string CardBg = "#200011";
     private const string Ink = "#eaf6f9";
-    private const string InkDim = "rgba(234,246,249,0.75)";
-    private const string InkMute = "rgba(234,246,249,0.5)";
-    private const string InkFaint = "rgba(234,246,249,0.32)";
-    private const string Accent = "#1aaec4";
-    private const string AccentSoft = "#5fd1e0";
-    private const string Serif = "Georgia,'Times New Roman',serif";
+    private const string InkDim = "rgba(234,246,249,0.74)";
+    private const string InkMute = "rgba(234,246,249,0.50)";
+    private const string InkFaint = "rgba(234,246,249,0.16)";
+    private const string Accent = "#8d0134";
+    private const string AccentDeep = "#5e0022";
+    private const string AccentSoft = "#e0648a";
+    private const string Serif = "'Times New Roman',Georgia,serif";
     private const string Mono = "ui-monospace,Consolas,monospace";
-    private const string P = "margin:0 0 14px;font-size:14px;line-height:1.7;color:rgba(234,246,249,0.75);";
+    private const string P = "margin:0 0 14px;font-size:14px;line-height:1.7;color:rgba(234,246,249,0.74);";
     private const string Small = "margin:0;font-size:11.5px;line-height:1.6;color:rgba(234,246,249,0.4);";
 
     private string Shell(string eyebrow, string headlineHtml, string innerHtml, string pillsHtml = null)
@@ -189,9 +191,9 @@ public class EmailService : IEmailService
         return $@"
         <div style='margin:0;padding:32px 12px;background:{Bg};font-family:Arial,Helvetica,sans-serif;'>
           <div style='max-width:600px;margin:0 auto;background:{CardBg};border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);'>
-            <div style='background:linear-gradient(135deg,#041820 0%,#0a3947 60%,#051e28 100%);padding:40px 40px 32px;'>
+            <div style='background:linear-gradient(135deg,#14000a 0%,{AccentDeep} 60%,#200011 100%);padding:40px 40px 32px;'>
               <table role='presentation' cellpadding='0' cellspacing='0' style='margin-bottom:24px;'><tr>
-                <td style='width:32px;height:32px;border-radius:8px;background:rgba(26,174,196,0.15);border:1px solid rgba(26,174,196,0.35);text-align:center;vertical-align:middle;font-weight:700;font-size:13px;color:{AccentSoft};font-family:Arial,sans-serif;'>G</td>
+                <td style='width:32px;height:32px;border-radius:8px;background:rgba(141,1,52,0.22);border:1px solid rgba(141,1,52,0.45);text-align:center;vertical-align:middle;font-weight:700;font-size:13px;color:{AccentSoft};font-family:Arial,sans-serif;'>G</td>
                 <td style='padding-left:10px;font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:{InkMute};'>{_appName}</td>
               </tr></table>
               <div style='font-size:10.5px;letter-spacing:0.18em;text-transform:uppercase;color:{AccentSoft};margin-bottom:12px;font-weight:600;'>{eyebrow}</div>
@@ -210,7 +212,7 @@ public class EmailService : IEmailService
 
     private static string Cta(string url, string label) => $@"
             <div style='margin:28px 0 20px;text-align:center;'>
-                <a href='{url}' style='display:inline-block;padding:13px 30px;background:{Accent};color:#04141a;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;font-family:Arial,sans-serif;'>{label}</a>
+                <a href='{url}' style='display:inline-block;padding:13px 30px;background:linear-gradient(135deg,{Accent} 0%,{AccentDeep} 100%);color:#f6fdff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;font-family:Arial,sans-serif;'>{label}</a>
             </div>";
 
     private static string Pill(string text) => $@"
