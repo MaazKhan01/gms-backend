@@ -85,10 +85,6 @@ public class AccommodationResponse
     public DateTime? CheckIn { get; set; }
     public DateTime? CheckOut { get; set; }
     public string RoomType { get; set; }
-    public string View { get; set; }
-    public int Guests { get; set; }
-    public List<string> Tags { get; set; } = new();
-    public ContactResponse Concierge { get; set; }
 }
 
 public class TransportationResponse
@@ -99,7 +95,6 @@ public class TransportationResponse
     public string ToAddress { get; set; }
     public DateTime? EstimatedArrival { get; set; }
     public string VehicleType { get; set; }
-    public string Plate { get; set; }
     public string TripStatus { get; set; }  // On Time
     public DriverResponse Driver { get; set; }
     public List<JourneyResponse> OtherJourneys { get; set; } = new();
@@ -116,7 +111,6 @@ public class DriverResponse
 {
     public string Name { get; set; }
     public string Role { get; set; }
-    public double? Rating { get; set; }
     public string Phone { get; set; }
 }
 

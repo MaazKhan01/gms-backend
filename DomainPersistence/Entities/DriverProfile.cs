@@ -10,7 +10,6 @@ public class DriverProfile : Entity
     public string LicenseNumber { get; set; }
     public DateOnly? LicenseExpiry { get; set; }
     public int? VehicleTypeId { get; set; }
-    public string VehiclePlate { get; set; }
     public int? NationalityId { get; set; }
     public string PhotoUrl { get; set; }
 

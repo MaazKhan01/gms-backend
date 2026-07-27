@@ -51,7 +51,8 @@ public class GuestService(
         invitation.InvitationTemplateId = template.Id;
         invitation.InvitationStatus = GuestInvitationStatus.Sent;
         invitation.SentAt = DateTime.UtcNow;
-        _unitOfWork.Invitations.Update(invitation);
+        // Tracked either way (Added above, or loaded by tracking Query) — no Update() call:
+        // it would flip the new row Added -> Modified while Id is still a temp value and throw.
         await _unitOfWork.SaveChangesAsync(ct);
 
         var ev = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.Id == guest.EventId, ct);

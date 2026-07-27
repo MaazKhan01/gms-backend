@@ -51,10 +51,6 @@ public class AccommodationInput
     public Guid? RoomTypeId { get; set; }
     public DateOnly? CheckIn { get; set; }
     public DateOnly? CheckOut { get; set; }
-    public string RoomView { get; set; }
-    public int? GuestCount { get; set; }
-    public string ConciergeName { get; set; }
-    public string ConciergePhone { get; set; }
 }
 
 public class TransportInput
@@ -63,11 +59,8 @@ public class TransportInput
     public Guid? PickupLocationId { get; set; }
     public Guid? DropoffLocationId { get; set; }
     public Guid? VehicleTypeId { get; set; }
-    public string Plate { get; set; }
     public string TripStatus { get; set; }
-    public string DriverName { get; set; }
-    public string DriverPhone { get; set; }
-    public double? DriverRating { get; set; }
+    public Guid? DriverId { get; set; }   // DriverProfile public id (GET /lookups/drivers)
     public DateTime? PickupTime { get; set; }
     public DateTime? EstimatedArrival { get; set; }
 }
@@ -142,6 +135,7 @@ public class EventTransportRow
     public string Organization { get; set; }
     public string Tier { get; set; }
     public string VehicleType { get; set; }
+    public Guid? DriverId { get; set; }
     public string DriverName { get; set; }
     public string Pickup { get; set; }
     public string Dropoff { get; set; }

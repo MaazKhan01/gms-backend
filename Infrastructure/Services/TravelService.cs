@@ -57,6 +57,19 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         return ApiResponse<List<IdNameDto>>.SuccessResponse(data);
     }
 
+    public async Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default)
+    {
+        var data = await _unitOfWork.DriverProfiles.Query()
+            .OrderBy(x => x.User.FirstName).ThenBy(x => x.User.LastName)
+            .Select(x => new IdNameDto
+            {
+                Id = x.PublicId,
+                Name = (x.User.FirstName + " " + x.User.LastName).Trim()
+            })
+            .ToListAsync(ct);
+        return ApiResponse<List<IdNameDto>>.SuccessResponse(data);
+    }
+
     public async Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default)
     {
         var data = await _unitOfWork.AirportData.Query()
@@ -132,17 +145,12 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 RoomTypeId = acc.RoomType?.PublicId,
                 CheckIn = acc.CheckIn,
                 CheckOut = acc.CheckOut,
-                RoomView = acc.RoomView,
-                GuestCount = acc.GuestCount,
-                ConciergeName = acc.ConciergeName,
-                ConciergePhone = acc.ConciergePhone,
             };
 
         var tr = await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
-            .Where(t => t.GuestId == guest.Id)
-            .OrderByDescending(t => t.Id)
-            .FirstOrDefaultAsync(ct);
+            .Include(t => t.Driver)
+            .FirstOrDefaultAsync(t => t.GuestId == guest.Id, ct);
         if (tr != null)
             data.Transport = new TransportInput
             {
@@ -150,11 +158,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 PickupLocationId = tr.PickupLocation?.PublicId,
                 DropoffLocationId = tr.DropoffLocation?.PublicId,
                 VehicleTypeId = tr.VehicleType?.PublicId,
-                Plate = tr.Plate,
+                DriverId = tr.Driver?.PublicId,
                 TripStatus = tr.TripStatus,
-                DriverName = tr.DriverName,
-                DriverPhone = tr.DriverPhone,
-                DriverRating = tr.DriverRating,
                 PickupTime = tr.PickupTime,
                 EstimatedArrival = tr.EstimatedArrival,
             };
@@ -260,7 +265,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Organization = t.Guest.Organization,
                 Tier = t.Guest.Tier,
                 VehicleType = t.VehicleType.Name,
-                DriverName = t.DriverName,
+                DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
+                DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
                 Pickup = t.PickupLocation.Address,
                 Dropoff = t.DropoffLocation.Address,
                 PickupTime = t.PickupTime,
@@ -339,7 +345,18 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 acc.ConciergeName = request.Accommodation.ConciergeName;
                 acc.ConciergePhone = request.Accommodation.ConciergePhone;
 
-                if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
+                await _unitOfWork.Accommodations.AddAsync(new Accommodation
+                {
+                    GuestId = guest.Id,
+                    AccommodationHotelId = hotelId.Value,
+                    RoomTypeId = roomTypeId,
+                    CheckIn = request.Accommodation.CheckIn,
+                    CheckOut = request.Accommodation.CheckOut,
+                }, ct);
+                    GuestCount = request.Accommodation.GuestCount,
+                    ConciergeName = request.Accommodation.ConciergeName,
+                    ConciergePhone = request.Accommodation.ConciergePhone,
+                }, ct);
             }
 
             if (request.Transport != null)
@@ -347,6 +364,9 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 var pickupId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.PickupLocationId, ct);
                 var dropoffId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.DropoffLocationId, ct);
                 var vehicleTypeId = await ResolveNullableId(_unitOfWork.VehicleTypes, request.Transport.VehicleTypeId, ct);
+                var driverId = await ResolveNullableId(_unitOfWork.DriverProfiles, request.Transport.DriverId, ct);
+                if (request.Transport.DriverId is { } d && d != Guid.Empty && driverId == null)
+                    return ApiResponse<bool>.ErrorResponse("Invalid driver");
 
                 Transport tr = null;
                 if (request.Transport.Id is { } trId && trId != Guid.Empty)
@@ -363,11 +383,24 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 tr.TripStatus = request.Transport.TripStatus;
                 tr.DriverName = request.Transport.DriverName;
                 tr.DriverPhone = request.Transport.DriverPhone;
-                tr.DriverRating = request.Transport.DriverRating;
-                tr.PickupTime = request.Transport.PickupTime;
-                tr.EstimatedArrival = request.Transport.EstimatedArrival;
-
-                if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
+                await _unitOfWork.Transports.AddAsync(new Transport
+                {
+                    GuestId = guest.Id,
+                    PickupLocationId = pickupId,
+                    DropoffLocationId = dropoffId,
+                    VehicleTypeId = vehicleTypeId,
+                    DriverId = driverId,
+                    TripStatus = request.Transport.TripStatus,
+                    PickupTime = request.Transport.PickupTime,
+                    EstimatedArrival = request.Transport.EstimatedArrival,
+                }, ct);
+                    TripStatus = request.Transport.TripStatus,
+                    DriverName = request.Transport.DriverName,
+                    DriverPhone = request.Transport.DriverPhone,
+                    DriverRating = request.Transport.DriverRating,
+                    PickupTime = request.Transport.PickupTime,
+                    EstimatedArrival = request.Transport.EstimatedArrival,
+                }, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);

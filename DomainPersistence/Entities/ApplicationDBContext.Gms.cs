@@ -575,6 +575,7 @@ public partial class ApplicationDBContext
             t.HasOne(x => x.PickupLocation).WithMany().HasForeignKey(x => x.PickupLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.VehicleType).WithMany().HasForeignKey(x => x.VehicleTypeId).OnDelete(DeleteBehavior.Restrict);
+            t.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
             t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -592,7 +593,6 @@ public partial class ApplicationDBContext
             d.ToTable("DriverProfiles");
             d.HasKey(x => x.Id);
             d.Property(x => x.LicenseNumber).HasMaxLength(50);
-            d.Property(x => x.VehiclePlate).HasMaxLength(20);
             d.Property(x => x.PhotoUrl).HasMaxLength(500);
             d.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");

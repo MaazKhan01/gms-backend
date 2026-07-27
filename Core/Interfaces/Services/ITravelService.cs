@@ -11,6 +11,7 @@ public interface ITravelService
     Task<ApiResponse<List<HotelDto>>> GetHotelsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<LocationDto>>> GetLocationsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<IdNameDto>>> GetVehicleTypesAsync(CancellationToken ct = default);
+    Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default);
     Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default);
     Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, CancellationToken ct = default);
 
