@@ -20,7 +20,6 @@ public class DriverProfileInput
     public string LicenseNumber { get; set; }
     public DateOnly? LicenseExpiry { get; set; }
     public Guid? VehicleTypeId { get; set; }
-    public string VehiclePlate { get; set; }
     public Guid? NationalityId { get; set; }
     public string PhotoUrl { get; set; }
 }

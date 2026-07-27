@@ -280,7 +280,6 @@ public class UserService(
                     LicenseNumber = d.LicenseNumber,
                     LicenseExpiry = d.LicenseExpiry,
                     VehicleTypeId = vehicleTypeId,
-                    VehiclePlate = d.VehiclePlate,
                     NationalityId = nationalityId,
                     PhotoUrl = d.PhotoUrl,
                 };

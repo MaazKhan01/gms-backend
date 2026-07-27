@@ -44,6 +44,10 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public async Task<IActionResult> GetVehicleTypes(CancellationToken ct)
         => ToResponse(await _travel.GetVehicleTypesAsync(ct));
 
+    [HttpGet("drivers")]
+    public async Task<IActionResult> GetDrivers(CancellationToken ct)
+        => ToResponse(await _travel.GetDriversAsync(ct));
+
     [HttpGet("airports")]
     public async Task<IActionResult> GetAirports(CancellationToken ct)
         => ToResponse(await _travel.GetAirportsAsync(ct));

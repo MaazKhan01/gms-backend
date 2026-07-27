@@ -410,10 +410,6 @@ public class VipAppService(
             CheckIn = ToDt(acc.CheckIn),
             CheckOut = ToDt(acc.CheckOut),
             RoomType = acc.RoomType?.Name,
-            View = acc.RoomView,
-            Guests = acc.GuestCount ?? 0,
-            Concierge = string.IsNullOrWhiteSpace(acc.ConciergeName) ? null
-                : new ContactResponse { Name = acc.ConciergeName, Role = "Hotel Concierge", Phone = acc.ConciergePhone }
         };
         return ApiResponse<AccommodationResponse>.SuccessResponse(data);
     }
@@ -422,6 +418,7 @@ public class VipAppService(
     {
         var trips = await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
+            .Include(t => t.Driver).ThenInclude(d => d.User)
             .Where(t => t.GuestId == guestId).ToListAsync(ct);
 
         var primary = trips.FirstOrDefault();
@@ -435,12 +432,11 @@ public class VipAppService(
             PickupTime = primary.PickupTime,
             EstimatedArrival = primary.EstimatedArrival,
             VehicleType = primary.VehicleType?.Name,
-            Plate = primary.Plate,
             TripStatus = primary.TripStatus,
-            Driver = string.IsNullOrWhiteSpace(primary.DriverName) ? null : new DriverResponse
+            Driver = primary.Driver?.User is not { } drv ? null : new DriverResponse
             {
-                Name = primary.DriverName, Role = "Chauffeur",
-                Rating = primary.DriverRating, Phone = primary.DriverPhone
+                Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur",
+                Phone = drv.Phone
             },
             OtherJourneys = trips.Skip(1).Select(t => new JourneyResponse
             {
