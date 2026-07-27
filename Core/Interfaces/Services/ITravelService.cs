@@ -20,6 +20,11 @@ public interface ITravelService
     Task<ApiResponse<List<EventTransportRow>>> GetEventTransportsAsync(Guid eventId, CancellationToken ct = default);
     Task<ApiResponse<bool>> SaveGuestTravelAsync(Guid guestId, GuestTravelRequest request, int userId, CancellationToken ct = default);
 
+    // Remove one specific booking (a guest may have several of a kind).
+    Task<ApiResponse<bool>> DeleteFlightAsync(Guid id, CancellationToken ct = default);
+    Task<ApiResponse<bool>> DeleteAccommodationAsync(Guid id, CancellationToken ct = default);
+    Task<ApiResponse<bool>> DeleteTransportAsync(Guid id, CancellationToken ct = default);
+
     // Create wizard-dropdown lookup records.
     Task<ApiResponse<IdNameDto>> CreateFlightTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateFlightClassAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);

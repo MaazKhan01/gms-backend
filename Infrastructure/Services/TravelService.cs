@@ -350,6 +350,34 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     private static async Task<int?> ResolveNullableId<T>(IGenericRepository<T> repo, Guid? publicId, CancellationToken ct) where T : Entity
         => publicId == null || publicId == Guid.Empty ? null : (await repo.GetByPublicIdAsync(publicId.Value, ct))?.Id;
 
+    // ── Remove one specific booking (a guest may have several of a kind) ────────
+    public async Task<ApiResponse<bool>> DeleteFlightAsync(Guid id, CancellationToken ct = default)
+    {
+        var flight = await _unitOfWork.Flights.GetByPublicIdAsync(id, ct);
+        if (flight == null) return ApiResponse<bool>.NotFoundResponse("Flight booking not found");
+        _unitOfWork.Flights.Remove(flight);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return ApiResponse<bool>.SuccessResponse(true, "Flight booking removed");
+    }
+
+    public async Task<ApiResponse<bool>> DeleteAccommodationAsync(Guid id, CancellationToken ct = default)
+    {
+        var acc = await _unitOfWork.Accommodations.GetByPublicIdAsync(id, ct);
+        if (acc == null) return ApiResponse<bool>.NotFoundResponse("Accommodation booking not found");
+        _unitOfWork.Accommodations.Remove(acc);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return ApiResponse<bool>.SuccessResponse(true, "Accommodation booking removed");
+    }
+
+    public async Task<ApiResponse<bool>> DeleteTransportAsync(Guid id, CancellationToken ct = default)
+    {
+        var tr = await _unitOfWork.Transports.GetByPublicIdAsync(id, ct);
+        if (tr == null) return ApiResponse<bool>.NotFoundResponse("Transport booking not found");
+        _unitOfWork.Transports.Remove(tr);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return ApiResponse<bool>.SuccessResponse(true, "Transport booking removed");
+    }
+
     // ── Lookup record creation ───────────────────────────────────────────────
     public Task<ApiResponse<IdNameDto>> CreateFlightTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default)
         => CreateNamedAsync(_unitOfWork.FlightTypes, request.Name, userId, n => new FlightType { Name = n }, ct);
