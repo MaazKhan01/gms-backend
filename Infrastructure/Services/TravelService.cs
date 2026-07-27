@@ -340,23 +340,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 acc.RoomTypeId = roomTypeId;
                 acc.CheckIn = request.Accommodation.CheckIn;
                 acc.CheckOut = request.Accommodation.CheckOut;
-                acc.RoomView = request.Accommodation.RoomView;
-                acc.GuestCount = request.Accommodation.GuestCount;
-                acc.ConciergeName = request.Accommodation.ConciergeName;
-                acc.ConciergePhone = request.Accommodation.ConciergePhone;
 
-                await _unitOfWork.Accommodations.AddAsync(new Accommodation
-                {
-                    GuestId = guest.Id,
-                    AccommodationHotelId = hotelId.Value,
-                    RoomTypeId = roomTypeId,
-                    CheckIn = request.Accommodation.CheckIn,
-                    CheckOut = request.Accommodation.CheckOut,
-                }, ct);
-                    GuestCount = request.Accommodation.GuestCount,
-                    ConciergeName = request.Accommodation.ConciergeName,
-                    ConciergePhone = request.Accommodation.ConciergePhone,
-                }, ct);
+                if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
             }
 
             if (request.Transport != null)
@@ -379,28 +364,12 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 tr.PickupLocationId = pickupId;
                 tr.DropoffLocationId = dropoffId;
                 tr.VehicleTypeId = vehicleTypeId;
-                tr.Plate = request.Transport.Plate;
+                tr.DriverId = driverId;
                 tr.TripStatus = request.Transport.TripStatus;
-                tr.DriverName = request.Transport.DriverName;
-                tr.DriverPhone = request.Transport.DriverPhone;
-                await _unitOfWork.Transports.AddAsync(new Transport
-                {
-                    GuestId = guest.Id,
-                    PickupLocationId = pickupId,
-                    DropoffLocationId = dropoffId,
-                    VehicleTypeId = vehicleTypeId,
-                    DriverId = driverId,
-                    TripStatus = request.Transport.TripStatus,
-                    PickupTime = request.Transport.PickupTime,
-                    EstimatedArrival = request.Transport.EstimatedArrival,
-                }, ct);
-                    TripStatus = request.Transport.TripStatus,
-                    DriverName = request.Transport.DriverName,
-                    DriverPhone = request.Transport.DriverPhone,
-                    DriverRating = request.Transport.DriverRating,
-                    PickupTime = request.Transport.PickupTime,
-                    EstimatedArrival = request.Transport.EstimatedArrival,
-                }, ct);
+                tr.PickupTime = request.Transport.PickupTime;
+                tr.EstimatedArrival = request.Transport.EstimatedArrival;
+
+                if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
