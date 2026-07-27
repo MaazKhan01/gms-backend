@@ -13,5 +13,6 @@ public class UpdateInvitationTemplateRequest
     public string? BodyAr { get; set; }
     public List<string>? TargetTiers { get; set; }
     public string? Color { get; set; }
+    public string? DesignConfig { get; set; }
     public bool? IsActive { get; set; }
 }

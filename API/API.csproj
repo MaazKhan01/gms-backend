@@ -4,6 +4,10 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- This machine has the .NET 10 runtime but not .NET 9. Major roll-forward
+         lets the net9.0 app run on .NET 10. If .NET 9 is installed it is used
+         instead. Proper fix: install the .NET 9 runtime/SDK, then this is a no-op. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
 	<ItemGroup>

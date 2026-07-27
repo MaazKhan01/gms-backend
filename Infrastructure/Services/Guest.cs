@@ -57,18 +57,29 @@ public class GuestService(
 
         var ev = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.Id == guest.EventId, ct);
         var guestName = $"{guest.FirstName} {guest.LastName}".Trim();
-        var emailBody = (template.Body ?? "")
+        var link = $"{FrontendUrl}/?screen=invitation&token={invitation.InvitationToken}";
+
+        // If the admin placed their own invite button in the body (via the
+        // {{InviteLink}} placeholder), we swap in the real URL and suppress the
+        // email shell's default CTA so there aren't two buttons. Otherwise the
+        // shell appends its standard "View Invitation & Respond" button (as before).
+        var rawBody = template.Body ?? "";
+        var hasOwnButton = rawBody.Contains("{{InviteLink}}");
+        var emailBody = rawBody
             .Replace("{{GuestName}}", guestName)
             .Replace("{{FirstName}}", guest.FirstName)
-            .Replace("{{LastName}}", guest.LastName);
+            .Replace("{{LastName}}", guest.LastName)
+            .Replace("{{EventName}}", ev?.Title ?? "")
+            .Replace("{{EventDate}}", ev?.StartDate?.ToString("dd MMM yyyy") ?? "")
+            .Replace("{{Venue}}", ev?.VenueName ?? "")
+            .Replace("{{InviteLink}}", link);
 
-        var link = $"{FrontendUrl}/?screen=invitation&token={invitation.InvitationToken}";
         var emailModel = new GuestInvitationEmailModel
         {
             GuestName = guestName,
             Subject = template.Subject,
             BodyHtml = emailBody,
-            CtaUrl = link,
+            CtaUrl = hasOwnButton ? null : link,
             EventTitle = ev?.Title,
             EventVenue = ev?.VenueName,
             EventStartDate = ev?.StartDate,

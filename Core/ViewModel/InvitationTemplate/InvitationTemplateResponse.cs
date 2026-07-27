@@ -16,5 +16,6 @@ public class InvitationTemplateResponse
     public string? BodyAr { get; set; }
     public List<string> TargetTiers { get; set; } = new();
     public string? Color { get; set; }
+    public string? DesignConfig { get; set; }
     public bool IsActive { get; set; }
 }

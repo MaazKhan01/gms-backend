@@ -52,6 +52,7 @@ public class InvitationTemplateService(IUnitOfWork _unitOfWork, IMapper _mapper,
                 BodyAr      = request.BodyAr,
                 TargetTiers = request.TargetTiers.Count > 0 ? string.Join(",", request.TargetTiers) : null,
                 Color       = request.Color,
+                DesignConfig = request.DesignConfig,
                 IsActive    = true,
                 CreatedAt   = DateTime.UtcNow,
                 CreatedBy   = createdBy,
@@ -87,6 +88,7 @@ public class InvitationTemplateService(IUnitOfWork _unitOfWork, IMapper _mapper,
             if (request.BodyAr != null) template.BodyAr = request.BodyAr;
             if (request.TargetTiers != null) template.TargetTiers = request.TargetTiers.Count > 0 ? string.Join(",", request.TargetTiers) : null;
             if (request.Color != null) template.Color = request.Color;
+            if (request.DesignConfig != null) template.DesignConfig = request.DesignConfig;
             if (request.IsActive.HasValue) template.IsActive = request.IsActive.Value;
 
             template.SetUpdateAudit(updatedBy);

@@ -14,4 +14,5 @@ public class CreateInvitationTemplateRequest
     public string? BodyAr { get; set; }
     public List<string> TargetTiers { get; set; } = new();
     public string? Color { get; set; }
+    public string? DesignConfig { get; set; }
 }
