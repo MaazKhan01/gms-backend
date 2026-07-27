@@ -27,7 +27,7 @@ namespace Infrastructure.Services;
 public class SupportChatService(
     IUnitOfWork _unitOfWork,
     ICurrentUser _currentUser,
-    IPushNotificationProvider _pushNotificationProvider,
+    INotificationManagerService _notificationManagerService,
     ILogger<SupportChatService> _logger) : ISupportChatService
 {
     private const int MaxBodyLength = 4000;
@@ -300,43 +300,21 @@ public class SupportChatService(
 
     // Every User holding SupportChatManage is notified — not a hardcoded single
     // admin id, so granting the permission to a second User is the entire
-    // "add another admin" story.
+    // "add another admin" story. Persistence + realtime push both happen inside
+    // INotificationManagerService.SendToPermissionAsync — this is just the content.
     private async Task NotifyAdminsAsync(SupportConversation conversation, CancellationToken ct)
     {
         try
         {
-            var admins = await _unitOfWork.Users.Query()
-                .Where(u => u.IsActive && u.Role != null &&
-                            u.Role.RolePermissions.Any(rp => rp.Permission.Code == PermissionCodes.SupportChatManage))
-                .ToListAsync(ct);
-
-            foreach (var admin in admins)
+            await _notificationManagerService.SendToPermissionAsync(PermissionCodes.SupportChatManage, new NotificationContent
             {
-                await _unitOfWork.Notifications.AddAsync(new Notification
-                {
-                    UserId = admin.Id,
-                    Title = "New support message",
-                    Message = conversation.LastMessagePreview,
-                    Type = "support_message",
-                    RedirectUrl = $"/admin/support-chat/{conversation.PublicId}",
-                    Read = false,
-                    CreatedAt = DateTime.UtcNow
-                }, ct);
-            }
-            await _unitOfWork.SaveChangesAsync(ct);
-
-            foreach (var admin in admins)
-            {
-                await _pushNotificationProvider.SendAsync(new PushNotificationPayload
-                {
-                    RecipientType = NotificationRecipientType.User,
-                    UserId = admin.Id,
-                    Title = "New support message",
-                    Body = conversation.LastMessagePreview,
-                    Topic = RealtimeTopics.SupportMessageNew,
-                    Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() }
-                }, ct);
-            }
+                Title = "New support message",
+                Message = conversation.LastMessagePreview,
+                Type = "support_message",
+                RedirectUrl = $"/admin/support-chat/{conversation.PublicId}",
+                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() },
+                Topic = RealtimeTopics.SupportMessageNew // preserve the existing wire event name the admin UI listens on
+            }, ct);
         }
         catch (Exception ex)
         {
@@ -348,25 +326,14 @@ public class SupportChatService(
     {
         try
         {
-            await _unitOfWork.GuestNotifications.AddAsync(new GuestNotification
+            await _notificationManagerService.SendToGuestAsync(conversation.GuestId, new NotificationContent
             {
-                GuestId = conversation.GuestId,
                 Title = "New reply from support",
                 Message = conversation.LastMessagePreview,
                 Type = "support_reply",
-                Read = false,
-                RedirectUrl = $"/support/{conversation.PublicId}"
-            }, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-
-            await _pushNotificationProvider.SendAsync(new PushNotificationPayload
-            {
-                RecipientType = NotificationRecipientType.Guest,
-                GuestId = conversation.GuestId,
-                Title = "New reply from support",
-                Body = conversation.LastMessagePreview,
-                Topic = RealtimeTopics.SupportMessageNew,
-                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() }
+                RedirectUrl = $"/support/{conversation.PublicId}",
+                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() },
+                Topic = RealtimeTopics.SupportMessageNew // preserve the existing wire event name the guest app listens on
             }, ct);
         }
         catch (Exception ex)

@@ -220,5 +220,6 @@ public class GuestNotificationResponse
     public bool Read { get; set; }
     public DateTime CreatedAt { get; set; }
     public string RedirectUrl { get; set; }
+    public string Data { get; set; }
 }
 public record RegisterDeviceRequest(string Token, string Platform); // ios / android

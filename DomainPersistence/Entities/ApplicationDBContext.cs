@@ -122,8 +122,12 @@ public partial class ApplicationDBContext : DbContext
             entity.Property(e => e.Title).IsRequired().HasMaxLength(300);
             entity.Property(e => e.Type).HasMaxLength(100);
             entity.Property(e => e.RedirectUrl).HasMaxLength(500);
+            entity.Property(e => e.Data).HasColumnType("nvarchar(max)");
             entity.Property(e => e.Read).HasDefaultValueSql("((0))");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.IsDeleted).HasDefaultValueSql("((0))");
+            // Unread-first, newest-first is the dominant query shape (bell list + badge count).
+            entity.HasIndex(e => new { e.UserId, e.Read, e.CreatedAt });
             entity.HasOne(d => d.User)
                 .WithMany(p => p.Notifications)
                 .HasForeignKey(d => d.UserId)

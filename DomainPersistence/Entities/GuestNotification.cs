@@ -13,5 +13,9 @@ public class GuestNotification : Entity
     public bool Read { get; set; }
     public string RedirectUrl { get; set; }
 
+    // Optional JSON payload for extensibility (deep-link params, related
+    // entity ids, etc.) — opaque to the server, round-tripped to the client.
+    public string Data { get; set; }
+
     public virtual Guest Guest { get; set; }
 }

@@ -618,7 +618,7 @@ public class VipAppService(
         var data = items.Select(n => new GuestNotificationResponse
         {
             Id = n.PublicId, Title = n.Title, Message = n.Message, Type = n.Type,
-            Read = n.Read, CreatedAt = n.CreatedAt, RedirectUrl = n.RedirectUrl
+            Read = n.Read, CreatedAt = n.CreatedAt, RedirectUrl = n.RedirectUrl, Data = n.Data
         }).ToList();
         return ApiResponse<List<GuestNotificationResponse>>.SuccessResponse(data);
     }

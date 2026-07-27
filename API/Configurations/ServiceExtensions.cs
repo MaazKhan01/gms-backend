@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using Azure.Storage.Blobs;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Hangfire;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -91,6 +92,17 @@ public static class ServiceExtensions
         // once Firebase is wired up; no other code changes needed (see
         // FirebaseNotificationProvider's remarks for the integration steps).
         services.AddScoped<IPushNotificationProvider, ManualNotificationProvider>();
+
+        // Background jobs (Hangfire) — SQL Server storage, same DB as the app.
+        // Dashboard mapping + recurring job registration happens in Program.cs
+        // (needs the built IApplicationBuilder / a service scope for RecurringJob).
+        services.AddScoped<INotificationCleanupJob, NotificationCleanupJob>();
+        services.AddHangfire(cfg => cfg
+            .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+            .UseSimpleAssemblyNameTypeSerializer()
+            .UseRecommendedSerializerSettings()
+            .UseSqlServerStorage(configuration.GetConnectionString("DefaultConnection")));
+        services.AddHangfireServer();
 
         services.AddAutoMapper(typeof(MappingProfile));
 

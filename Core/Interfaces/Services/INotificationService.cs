@@ -12,6 +12,12 @@ public interface INotificationService
     Task<ApiResponse<NotificationResponse>> GetNotificationByIdAsync(Guid id, CancellationToken ct = default);
     Task<ApiResponse<bool>> MarkAllAsReadAsync(CancellationToken ct = default);
     Task<ApiResponse<bool>> MarkSingleAsReadAsync(Guid id, CancellationToken ct = default);
+    Task<ApiResponse<bool>> MarkSingleAsUnreadAsync(Guid id, CancellationToken ct = default);
     Task<ApiResponse<int>> GetTotalCountAsync(CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteNotificationAsync(Guid id, CancellationToken ct = default);
+
+    // Admin send — targets one/many users, a role, a permission, everyone, or
+    // (separately, since guests aren't Users) one/many guests or all guests.
+    // Gated by PermissionCodes.NotificationsSend at the controller.
+    Task<ApiResponse<SendNotificationResult>> SendNotificationAsync(SendNotificationRequest request, CancellationToken ct = default);
 }
