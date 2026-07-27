@@ -152,8 +152,10 @@ public class EmailService : IEmailService
                 <div>{detailRows}</div>
             </div>";
 
+        // Template body is admin-authored HTML with no colors of its own — without this
+        // wrapper it inherits the client's default black ink and vanishes on the dark card.
         var inner = $@"
-            {model.BodyHtml}
+            <div style='{BodyText}'>{model.BodyHtml}</div>
             {detailCard}
             {(string.IsNullOrWhiteSpace(model.CtaUrl) ? "" : Cta(model.CtaUrl, "View Invitation &amp; Respond"))}
             <p style='{Small}'>Open the button above to confirm or decline your attendance.</p>";
@@ -173,17 +175,19 @@ public class EmailService : IEmailService
     // (#8d0134) over a near-black maroon background, not a generic color.
     private const string Bg = "#14000a";
     private const string CardBg = "#200011";
-    private const string Ink = "#eaf6f9";
-    private const string InkDim = "rgba(234,246,249,0.74)";
-    private const string InkMute = "rgba(234,246,249,0.50)";
-    private const string InkFaint = "rgba(234,246,249,0.16)";
+    private const string Ink = "#ffffff";
+    private const string InkDim = "rgba(255,255,255,0.88)";
+    private const string InkMute = "rgba(255,255,255,0.68)";
+    private const string InkFaint = "rgba(255,255,255,0.48)";
     private const string Accent = "#8d0134";
     private const string AccentDeep = "#5e0022";
     private const string AccentSoft = "#e0648a";
     private const string Serif = "'Times New Roman',Georgia,serif";
     private const string Mono = "ui-monospace,Consolas,monospace";
-    private const string P = "margin:0 0 14px;font-size:14px;line-height:1.7;color:rgba(234,246,249,0.74);";
-    private const string Small = "margin:0;font-size:11.5px;line-height:1.6;color:rgba(234,246,249,0.4);";
+    private const string P = "margin:0 0 14px;font-size:14px;line-height:1.7;color:rgba(255,255,255,0.88);";
+    private const string Small = "margin:0;font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.6);";
+    // Applied to raw template HTML so untinted <p>/<div>/text inherit light ink.
+    private const string BodyText = "font-size:14.5px;line-height:1.75;color:#ffffff;font-family:Arial,Helvetica,sans-serif;";
 
     private string Shell(string eyebrow, string headlineHtml, string innerHtml, string pillsHtml = null)
     {
@@ -221,13 +225,17 @@ public class EmailService : IEmailService
     private static string DetailRow(string label, string value, bool mono = false)
     {
         var valueStyle = mono
-            ? $"font-family:{Mono};font-size:12px;color:{AccentSoft};"
-            : $"font-size:13px;font-weight:500;color:{Ink};";
+            ? $"font-family:{Mono};font-size:12.5px;color:{AccentSoft};"
+            : $"font-size:13.5px;font-weight:600;color:{Ink};";
+        // Table, not flex — Outlook and several mobile clients drop display:flex entirely
+        // and the label/value collapse onto each other.
         return $@"
-            <div style='display:flex;justify-content:space-between;gap:12px;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;'>
-                <span style='color:{InkMute};'>{label}</span>
-                <span style='{valueStyle}'>{value}</span>
-            </div>";
+            <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='border-collapse:collapse;border-bottom:1px solid rgba(255,255,255,0.09);'>
+              <tr>
+                <td style='padding:11px 18px;font-size:12.5px;color:{InkMute};white-space:nowrap;'>{label}</td>
+                <td align='right' style='padding:11px 18px;{valueStyle}'>{value}</td>
+              </tr>
+            </table>";
     }
 
     private async Task SendEmailAsync(string toEmail, string subject, string body, CancellationToken ct)
