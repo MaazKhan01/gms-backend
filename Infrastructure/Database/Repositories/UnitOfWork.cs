@@ -45,6 +45,7 @@ public class UnitOfWork : IUnitOfWork
         FlightClasses = new GenericRepository<FlightClass>(_context);
         Flights = new GenericRepository<Flight>(_context);
         FlightLegs = new GenericRepository<FlightLeg>(_context);
+        AirportData = new GenericRepository<AirportData>(_context);
         AccommodationHotels = new GenericRepository<AccommodationHotel>(_context);
         AccommodationRoomTypes = new GenericRepository<AccommodationRoomType>(_context);
         Accommodations = new GenericRepository<Accommodation>(_context);
@@ -89,6 +90,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<FlightClass> FlightClasses { get; private set; }
     public IGenericRepository<Flight> Flights { get; private set; }
     public IGenericRepository<FlightLeg> FlightLegs { get; private set; }
+    public IGenericRepository<AirportData> AirportData { get; private set; }
     public IGenericRepository<AccommodationHotel> AccommodationHotels { get; private set; }
     public IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; private set; }
     public IGenericRepository<Accommodation> Accommodations { get; private set; }

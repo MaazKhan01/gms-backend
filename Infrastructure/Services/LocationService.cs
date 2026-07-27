@@ -25,6 +25,7 @@ namespace Infrastructure.Services
                     Latitude = request.Latitude,
                     Longitude = request.Longitude,
                     Address = request.Address,
+                    Type = request.Type,
                 };
                 location.SetCreationAudit(_currentUser.UserId);
 
@@ -37,6 +38,7 @@ namespace Infrastructure.Services
                     Latitude = location.Latitude,
                     Longitude = location.Longitude,
                     Address = location.Address,
+                    Type = location.Type,
                 };
 
                 return ApiResponse<LocationResponse>.SuccessResponse(response, "Location created successfully.");

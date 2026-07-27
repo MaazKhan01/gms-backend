@@ -43,7 +43,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     {
         var data = await _unitOfWork.AccommodationHotels.Query()
             .OrderBy(x => x.Name)
-            .Select(x => new HotelDto { Id = x.PublicId, Name = x.Name, Address = x.Address })
+            .Select(x => new HotelDto { Id = x.PublicId, Name = x.Name, Address = x.Address, LocationId = x.Location.PublicId })
             .ToListAsync(ct);
         return ApiResponse<List<HotelDto>>.SuccessResponse(data);
     }
@@ -57,11 +57,20 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         return ApiResponse<List<IdNameDto>>.SuccessResponse(data);
     }
 
+    public async Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default)
+    {
+        var data = await _unitOfWork.AirportData.Query()
+            .OrderBy(x => x.Code)
+            .Select(x => new AirportDto { Id = x.PublicId, Code = x.Code, AirportName = x.AirportName, LocationId = x.Location.PublicId })
+            .ToListAsync(ct);
+        return ApiResponse<List<AirportDto>>.SuccessResponse(data);
+    }
+
     public async Task<ApiResponse<List<LocationDto>>> GetLocationsAsync(CancellationToken ct = default)
     {
         var data = await _unitOfWork.Locations.Query()
             .OrderBy(x => x.Address)
-            .Select(x => new LocationDto { Id = x.PublicId, Address = x.Address })
+            .Select(x => new LocationDto { Id = x.PublicId, Address = x.Address, Type = x.Type })
             .ToListAsync(ct);
         return ApiResponse<List<LocationDto>>.SuccessResponse(data);
     }
@@ -74,7 +83,9 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         var data = new GuestTravelResponse();
 
         var flight = await _unitOfWork.Flights.Query()
-            .Include(f => f.FlightType).Include(f => f.FlightClass).Include(f => f.Legs)
+            .Include(f => f.FlightType).Include(f => f.FlightClass)
+            .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
+            .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
             .FirstOrDefaultAsync(f => f.GuestId == guest.Id, ct);
         if (flight != null)
         {
@@ -86,10 +97,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Status = flight.Status,
                 Seat = flight.Seat,
                 FlightNumber = leg?.FlightNumber,
-                DepartureCode = leg?.DepartureCode,
-                DepartureCity = leg?.DepartureCity,
-                ArrivalCode = leg?.ArrivalCode,
-                ArrivalCity = leg?.ArrivalCity,
+                FromAirportId = leg?.FromAirport?.PublicId,
+                ToAirportId = leg?.ToAirport?.PublicId,
                 StartTime = leg?.StartTime,
                 EndTime = leg?.EndTime,
             };
@@ -149,8 +158,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Tier = f.Guest.Tier,
                 Status = f.Status,
                 FlightNumber = f.Legs.Select(l => l.FlightNumber).FirstOrDefault(),
-                DepartureCode = f.Legs.Select(l => l.DepartureCode).FirstOrDefault(),
-                ArrivalCode = f.Legs.Select(l => l.ArrivalCode).FirstOrDefault(),
+                DepartureCode = f.Legs.Select(l => l.FromAirport.Code).FirstOrDefault(),
+                ArrivalCode = f.Legs.Select(l => l.ToAirport.Code).FirstOrDefault(),
                 Date = f.Legs.Select(l => l.StartTime).FirstOrDefault(),
             })
             .ToListAsync(ct);
@@ -217,6 +226,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 var typeId = await ResolveId(_unitOfWork.FlightTypes, request.Flight.FlightTypeId, ct);
                 if (typeId == null) return ApiResponse<bool>.ErrorResponse("Invalid flight type");
                 var classId = await ResolveNullableId(_unitOfWork.FlightClasses, request.Flight.FlightClassId, ct);
+                var fromAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.FromAirportId, ct);
+                var toAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.ToAirportId, ct);
 
                 var existing = await _unitOfWork.Flights.FindAsync(f => f.GuestId == guest.Id, ct);
                 _unitOfWork.Flights.RemoveRange(existing);
@@ -233,10 +244,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                         new()
                         {
                             FlightNumber = request.Flight.FlightNumber,
-                            DepartureCode = request.Flight.DepartureCode,
-                            DepartureCity = request.Flight.DepartureCity,
-                            ArrivalCode = request.Flight.ArrivalCode,
-                            ArrivalCity = request.Flight.ArrivalCity,
+                            FromAirportId = fromAirportId,
+                            ToAirportId = toAirportId,
                             StartTime = request.Flight.StartTime,
                             EndTime = request.Flight.EndTime,
                         }
@@ -322,6 +331,41 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     public Task<ApiResponse<IdNameDto>> CreateVehicleTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default)
         => CreateNamedAsync(_unitOfWork.VehicleTypes, request.Name, userId, n => new VehicleType { Name = n }, ct);
 
+    public async Task<ApiResponse<AirportDto>> CreateAirportAsync(CreateAirportRequest request, int userId, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.AirportName))
+                return ApiResponse<AirportDto>.ErrorResponse("Code and airport name are required");
+
+            var code = request.Code.Trim().ToUpperInvariant();
+            if (await _unitOfWork.AirportData.AnyAsync(a => a.Code == code, ct))
+                return ApiResponse<AirportDto>.ErrorResponse("Airport code already exists");
+
+            var airport = new AirportData
+            {
+                Code = code,
+                AirportName = request.AirportName.Trim(),
+                LocationId = await ResolveNullableId(_unitOfWork.Locations, request.LocationId, ct)
+            };
+            airport.SetCreationAudit(userId);
+            await _unitOfWork.AirportData.AddAsync(airport, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<AirportDto>.SuccessResponse(
+                new AirportDto
+                {
+                    Id = airport.PublicId, Code = airport.Code,
+                    AirportName = airport.AirportName, LocationId = request.LocationId
+                }, "Airport created");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating airport");
+            return ApiResponse<AirportDto>.ServerErrorResponse("An error occurred while creating the airport");
+        }
+    }
+
     public async Task<ApiResponse<HotelDto>> CreateHotelAsync(CreateHotelRequest request, int userId, CancellationToken ct = default)
     {
         try
@@ -329,13 +373,18 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             if (string.IsNullOrWhiteSpace(request.Name))
                 return ApiResponse<HotelDto>.ErrorResponse("Name is required");
 
-            var hotel = new AccommodationHotel { Name = request.Name.Trim(), Address = request.Address?.Trim() ?? string.Empty };
+            var hotel = new AccommodationHotel
+            {
+                Name = request.Name.Trim(),
+                Address = request.Address?.Trim() ?? string.Empty,
+                LocationId = await ResolveNullableId(_unitOfWork.Locations, request.LocationId, ct)
+            };
             hotel.SetCreationAudit(userId);
             await _unitOfWork.AccommodationHotels.AddAsync(hotel, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             return ApiResponse<HotelDto>.SuccessResponse(
-                new HotelDto { Id = hotel.PublicId, Name = hotel.Name, Address = hotel.Address }, "Hotel created");
+                new HotelDto { Id = hotel.PublicId, Name = hotel.Name, Address = hotel.Address, LocationId = request.LocationId }, "Hotel created");
         }
         catch (Exception ex)
         {

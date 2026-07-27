@@ -11,5 +11,6 @@ namespace DomainPersistence.Entities
         public string Longitude { get; set; }
         public string Latitude { get; set; }
         public string? Address { get; set; }
+        public string? Type { get; set; }   // hotel / venue / airport / ...
     }
 }

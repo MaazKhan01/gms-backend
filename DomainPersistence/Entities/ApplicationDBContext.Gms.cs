@@ -28,6 +28,7 @@ public partial class ApplicationDBContext
     public virtual DbSet<FlightClass> FlightClasses { get; set; }
     public virtual DbSet<Flight> Flights { get; set; }
     public virtual DbSet<FlightLeg> FlightLegs { get; set; }
+    public virtual DbSet<AirportData> AirportData { get; set; }
 
     // Accommodation
     public virtual DbSet<AccommodationHotel> AccommodationHotels { get; set; }
@@ -238,6 +239,17 @@ public partial class ApplicationDBContext
                 .WithMany()
                 .HasForeignKey(x => x.TypeId)
                 .OnDelete(DeleteBehavior.Restrict);
+            v.HasOne(x => x.Location)
+                .WithMany()
+                .HasForeignKey(x => x.LocationId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Location>(l =>
+        {
+            l.ToTable("Locations");
+            l.HasKey(x => x.Id);
+            l.Property(x => x.Type).HasMaxLength(50);
         });
         modelBuilder.Entity<Meeting>(v =>
         {
@@ -492,6 +504,18 @@ public partial class ApplicationDBContext
             f.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
+        modelBuilder.Entity<AirportData>(a =>
+        {
+            a.ToTable("AirportData");
+            a.HasKey(x => x.Id);
+            a.Property(x => x.Code).IsRequired().HasMaxLength(10);
+            a.Property(x => x.AirportName).IsRequired().HasMaxLength(200);
+            a.HasIndex(x => x.Code).IsUnique();
+            a.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            a.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            a.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<FlightLeg>(fl =>
         {
             fl.ToTable("FlightLegs");
@@ -500,6 +524,8 @@ public partial class ApplicationDBContext
             fl.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             fl.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             fl.HasOne(x => x.Flight).WithMany(x => x.Legs).HasForeignKey(x => x.FlightId).OnDelete(DeleteBehavior.Cascade);
+            fl.HasOne(x => x.FromAirport).WithMany().HasForeignKey(x => x.FromAirportId).OnDelete(DeleteBehavior.Restrict);
+            fl.HasOne(x => x.ToAirport).WithMany().HasForeignKey(x => x.ToAirportId).OnDelete(DeleteBehavior.Restrict);
             fl.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -511,6 +537,7 @@ public partial class ApplicationDBContext
             h.Property(x => x.Name).IsRequired().HasMaxLength(300);
             h.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             h.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            h.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<AccommodationRoomType>(rt =>

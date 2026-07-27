@@ -30,6 +30,7 @@ namespace Infrastructure.Services
                 // SELECTs per collection makes the cost additive again.
                 var venue = await _unitOfWork.Venues.Query()
      .Include(v => v.Type)
+     .Include(v => v.Location)
      .Include(v => v.VenueBoxes!)
          .ThenInclude(vb => vb.Event)
      .Include(v => v.VenueBoxes!)
@@ -67,6 +68,7 @@ namespace Infrastructure.Services
                 // Lightweight list (scalars only) — the editor fetches full boxes via GetById on select.
                 var venues = await _unitOfWork.Venues.Query()
                     .Include(v => v.Type)
+                    .Include(v => v.Location)
                     .OrderBy(v => v.Name)
                     .ToListAsync(ct);
                 var list = venues.Select(v => _mapper.Map<GetVenueResonse>(v)).ToList();
@@ -377,10 +379,20 @@ namespace Infrastructure.Services
                         .FirstOrDefaultAsync(ct);
                 }
 
+                int? locationId = null;
+                if (request.LocationId.HasValue && request.LocationId.Value != Guid.Empty)
+                {
+                    locationId = await _unitOfWork.Locations.Query()
+                        .Where(l => l.PublicId == request.LocationId.Value)
+                        .Select(l => (int?)l.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
                 var venue = new Venue
                 {
                     Name = request.VenueName.Trim(),
                     TypeId = typeId,
+                    LocationId = locationId,
                     // Drop empty/blank category entries (e.g. Swagger's placeholder "")
                     Category = request.Category?
                         .Where(c => !string.IsNullOrWhiteSpace(c))

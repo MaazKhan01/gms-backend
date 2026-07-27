@@ -38,6 +38,10 @@ public class TravelController(ITravelService _travel, ICurrentUser _currentUser)
     public async Task<IActionResult> GetVehicleTypes(CancellationToken ct)
         => ToResponse(await _travel.GetVehicleTypesAsync(ct));
 
+    [HttpGet("lookups/airports")]
+    public async Task<IActionResult> GetAirports(CancellationToken ct)
+        => ToResponse(await _travel.GetAirportsAsync(ct));
+
     // ── Per-event booking lists (admin travel tabs) ──────────────────────────
     [HttpGet("event/{eventId:guid}/flights")]
     public async Task<IActionResult> GetEventFlights(Guid eventId, CancellationToken ct)
@@ -86,4 +90,9 @@ public class TravelController(ITravelService _travel, ICurrentUser _currentUser)
     [HasPermission(PermissionCodes.TravelManage)]
     public async Task<IActionResult> CreateVehicleType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateVehicleTypeAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("lookups/airports")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateAirport([FromBody] CreateAirportRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateAirportAsync(request, _currentUser.UserId, ct));
 }

@@ -23,9 +23,8 @@ public interface IVipAppService
     Task<ApiResponse<List<GuestSessionResponse>>> GetEventSessionsAsync(int guestId, Guid eventId, CancellationToken ct);
     Task<ApiResponse<bool>> SubmitSelectionAsync(int guestId, Guid eventId, SessionSelectionRequest request, CancellationToken ct);
 
-    // ---- Home / itinerary ----
-    Task<ApiResponse<HomeResponse>> GetHomeAsync(int guestId, CancellationToken ct);
-    Task<ApiResponse<List<ItineraryItemResponse>>> GetItineraryAsync(int guestId, CancellationToken ct);
+    // ---- Agenda (upcoming actions: flight / check-in / transport) ----
+    Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, CancellationToken ct);
 
     // ---- Travel ----
     Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct);

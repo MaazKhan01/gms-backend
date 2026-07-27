@@ -54,6 +54,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<FlightClass> FlightClasses { get; }
     IGenericRepository<Flight> Flights { get; }
     IGenericRepository<FlightLeg> FlightLegs { get; }
+    IGenericRepository<AirportData> AirportData { get; }
     IGenericRepository<AccommodationHotel> AccommodationHotels { get; }
     IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; }
     IGenericRepository<Accommodation> Accommodations { get; }

@@ -329,71 +329,46 @@ public class VipAppService(
     }
 
     // ============================================================
-    // Home / itinerary
+    // Agenda — upcoming guest actions (flight / check-in / pickup)
     // ============================================================
-    public async Task<ApiResponse<HomeResponse>> GetHomeAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, CancellationToken ct)
     {
-        var guest = await GetGuestAsync(guestId, ct);
-        if (guest is null) return ApiResponse<HomeResponse>.NotFoundResponse("Guest not found");
+        var now = DateTime.UtcNow;
+        var cards = new List<AgendaCardResponse>();
 
-        var events = (await GetEventsAsync(guestId, ct)).Data ?? new();
-        var sessionCount = await _unitOfWork.GuestSessions.CountAsync(gs => gs.GuestId == guestId, ct);
-
-        var data = new HomeResponse
+        var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
+            .Include(l => l.FromAirport).Include(l => l.ToAirport)
+            .Where(l => l.Flight.GuestId == guestId && l.StartTime > now).ToListAsync(ct);
+        cards.AddRange(legs.Select(l => new AgendaCardResponse
         {
-            Events = events,
-            Agenda = new List<AgendaCardResponse>(),   // detail lives in the travel/session endpoints
-            Counts = new ItineraryCountsResponse
+            Flag = "UPCOMING FLIGHT", Kind = "flight", RefId = l.PublicId,
+            When = l.StartTime!.Value,
+            Title = string.IsNullOrWhiteSpace(l.FlightNumber) ? "Flight" : $"Flight {l.FlightNumber}",
+            Subtitle = $"{l.FromAirport?.Code} → {l.ToAirport?.Code}"
+        }));
+
+        var accs = await _unitOfWork.Accommodations.QueryNoTracking()
+            .Include(a => a.Hotel).Where(a => a.GuestId == guestId && a.CheckIn != null).ToListAsync(ct);
+        cards.AddRange(accs
+            .Select(a => new { a, when = ToDt(a.CheckIn) })
+            .Where(x => x.when > now)
+            .Select(x => new AgendaCardResponse
             {
-                Flights = await _unitOfWork.Flights.CountAsync(f => f.GuestId == guestId, ct),
-                Sessions = sessionCount,
-                HasTransport = await _unitOfWork.Transports.AnyAsync(t => t.GuestId == guestId, ct),
-                HasAccommodation = await _unitOfWork.Accommodations.AnyAsync(a => a.GuestId == guestId, ct)
-            }
-        };
-        return ApiResponse<HomeResponse>.SuccessResponse(data);
-    }
+                Flag = "UPCOMING CHECK-IN", Kind = "hotel", RefId = x.a.PublicId,
+                When = x.when!.Value, Title = "Hotel Check-In", Subtitle = x.a.Hotel?.Name
+            }));
 
-    public async Task<ApiResponse<List<ItineraryItemResponse>>> GetItineraryAsync(int guestId, CancellationToken ct)
-    {
-        var items = new List<ItineraryItemResponse>();
-
-        var legs = await _unitOfWork.FlightLegs.Query()
-            .Where(l => l.Flight.GuestId == guestId).ToListAsync(ct);
-        items.AddRange(legs.Select(l => new ItineraryItemResponse
-        {
-            When = l.StartTime ?? DateTime.MinValue, Kind = "flight", RefId = l.PublicId,
-            Title = "Flight", Subtitle = $"{l.DepartureCode} → {l.ArrivalCode} · {l.FlightNumber}"
-        }));
-
-        var accs = await _unitOfWork.Accommodations.Query()
-            .Include(a => a.Hotel).Where(a => a.GuestId == guestId).ToListAsync(ct);
-        items.AddRange(accs.Select(a => new ItineraryItemResponse
-        {
-            When = ToDt(a.CheckIn) ?? DateTime.MinValue, Kind = "hotel", RefId = a.PublicId,
-            Title = "Hotel Check-In", Subtitle = a.Hotel?.Name
-        }));
-
-        var trips = await _unitOfWork.Transports.Query()
+        var trips = await _unitOfWork.Transports.QueryNoTracking()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
-            .Where(t => t.GuestId == guestId).ToListAsync(ct);
-        items.AddRange(trips.Select(t => new ItineraryItemResponse
+            .Where(t => t.GuestId == guestId && t.PickupTime > now).ToListAsync(ct);
+        cards.AddRange(trips.Select(t => new AgendaCardResponse
         {
-            When = t.PickupTime ?? DateTime.MinValue, Kind = "transport", RefId = t.PublicId,
-            Title = "Transport", Subtitle = $"{t.PickupLocation?.Address} → {t.DropoffLocation?.Address}"
+            Flag = "UPCOMING PICKUP", Kind = "transport", RefId = t.PublicId,
+            When = t.PickupTime!.Value, Title = "Transport Pickup",
+            Subtitle = $"{t.PickupLocation?.Address} → {t.DropoffLocation?.Address}"
         }));
 
-        var sessionIds = await _unitOfWork.GuestSessions.QueryNoTracking()
-            .Where(gs => gs.GuestId == guestId).Select(gs => gs.SessionId).ToListAsync(ct);
-        var sessions = await _unitOfWork.Sessions.QueryNoTracking()
-            .Where(s => sessionIds.Contains(s.Id)).ToListAsync(ct);
-        items.AddRange(sessions.Select(s => new ItineraryItemResponse
-        {
-            When = ToDt(s.Date, s.Time) ?? DateTime.MinValue, Kind = "session", RefId = s.PublicId,
-            Title = s.Title, Subtitle = s.VenueName
-        }));
-
-        return ApiResponse<List<ItineraryItemResponse>>.SuccessResponse(items.OrderBy(i => i.When).ToList());
+        return ApiResponse<List<AgendaCardResponse>>.SuccessResponse(cards.OrderBy(c => c.When).ToList());
     }
 
     // ============================================================
@@ -402,14 +377,16 @@ public class VipAppService(
     public async Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct)
     {
         var flights = await _unitOfWork.Flights.Query()
-            .Include(f => f.FlightClass).Include(f => f.Legs)
+            .Include(f => f.FlightClass)
+            .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
+            .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
             .Where(f => f.GuestId == guestId).ToListAsync(ct);
 
         var data = flights.SelectMany(f => f.Legs.Select(l => new FlightLegResponse
         {
             Id = l.PublicId,
-            DepartureCode = l.DepartureCode, DepartureCity = l.DepartureCity,
-            ArrivalCode = l.ArrivalCode, ArrivalCity = l.ArrivalCity,
+            DepartureCode = l.FromAirport?.Code, DepartureAirport = l.FromAirport?.AirportName,
+            ArrivalCode = l.ToAirport?.Code, ArrivalAirport = l.ToAirport?.AirportName,
             DateTime = l.StartTime, FlightNumber = l.FlightNumber,
             Class = f.FlightClass?.Name, Status = f.Status, Seat = f.Seat
         })).OrderBy(x => x.DateTime).ToList();
