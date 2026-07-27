@@ -78,4 +78,14 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     [HasPermission(PermissionCodes.TravelManage)]
     public async Task<IActionResult> CreateAirport([FromBody] CreateAirportRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateAirportAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("locations")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateLocation([FromBody] LocationRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateLocationAsync(request, _currentUser.UserId, ct));
+
+    [HttpPut("locations/{id:guid}")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> UpdateLocation(Guid id, [FromBody] LocationRequest request, CancellationToken ct)
+        => ToResponse(await _travel.UpdateLocationAsync(id, request, _currentUser.UserId, ct));
 }

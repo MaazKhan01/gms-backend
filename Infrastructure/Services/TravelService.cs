@@ -75,7 +75,11 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     {
         var data = await _unitOfWork.Locations.Query()
             .OrderBy(x => x.Address)
-            .Select(x => new LocationDto { Id = x.PublicId, Address = x.Address, Type = x.Type })
+            .Select(x => new LocationDto
+            {
+                Id = x.PublicId, Address = x.Address, Type = x.Type,
+                Longitude = x.Longitude, Latitude = x.Latitude
+            })
             .ToListAsync(ct);
         return ApiResponse<List<LocationDto>>.SuccessResponse(data);
     }
@@ -157,17 +161,50 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             .OrderBy(f => f.Guest.FirstName).ThenBy(f => f.Guest.LastName)
             .Select(f => new EventFlightRow
             {
+                Id = f.PublicId,
                 GuestId = f.Guest.PublicId,
                 GuestName = (f.Guest.FirstName + " " + f.Guest.LastName).Trim(),
                 Organization = f.Guest.Organization,
                 Tier = f.Guest.Tier,
                 Status = f.Status,
-                FlightNumber = f.Legs.Select(l => l.FlightNumber).FirstOrDefault(),
-                DepartureCode = f.Legs.Select(l => l.FromAirport.Code).FirstOrDefault(),
-                ArrivalCode = f.Legs.Select(l => l.ToAirport.Code).FirstOrDefault(),
-                Date = f.Legs.Select(l => l.StartTime).FirstOrDefault(),
+                FlightType = f.FlightType.Name,
+                FlightClass = f.FlightClass.Name,
+                Seat = f.Seat,
+                LegCount = f.Legs.Count,
+                Legs = f.Legs
+                    .OrderBy(l => l.StartTime)
+                    .Select(l => new FlightLegRow
+                    {
+                        Id = l.PublicId,
+                        FlightNumber = l.FlightNumber,
+                        DepartureCode = l.FromAirport.Code,
+                        DepartureCity = l.FromAirport.City,
+                        DepartureCountry = l.FromAirport.Country,
+                        ArrivalCode = l.ToAirport.Code,
+                        ArrivalCity = l.ToAirport.City,
+                        ArrivalCountry = l.ToAirport.Country,
+                        StartTime = l.StartTime,
+                        EndTime = l.EndTime,
+                    }).ToList(),
             })
             .ToListAsync(ct);
+
+        // Summary fields come from the itinerary ends: depart on the first leg, land on the last.
+        foreach (var row in data)
+        {
+            var first = row.Legs.FirstOrDefault();
+            var last = row.Legs.LastOrDefault();
+            if (first == null) continue;
+
+            row.FlightNumber = first.FlightNumber;
+            row.DepartureCode = first.DepartureCode;
+            row.DepartureCity = first.DepartureCity;
+            row.Date = first.StartTime;
+            row.ArrivalCode = last.ArrivalCode;
+            row.ArrivalCity = last.ArrivalCity;
+            row.ArrivalTime = last.EndTime;
+        }
+
         return ApiResponse<List<EventFlightRow>>.SuccessResponse(data);
     }
 
@@ -371,6 +408,71 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         {
             _logger.LogError(ex, "Error creating airport");
             return ApiResponse<AirportDto>.ServerErrorResponse("An error occurred while creating the airport");
+        }
+    }
+
+    public async Task<ApiResponse<LocationDto>> CreateLocationAsync(LocationRequest request, int userId, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Longitude) || string.IsNullOrWhiteSpace(request.Latitude))
+                return ApiResponse<LocationDto>.ErrorResponse("Longitude and latitude are required");
+
+            var location = new Location
+            {
+                Longitude = request.Longitude.Trim(),
+                Latitude = request.Latitude.Trim(),
+                Address = request.Address?.Trim(),
+                Type = request.Type?.Trim()
+            };
+            location.SetCreationAudit(userId);
+            await _unitOfWork.Locations.AddAsync(location, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<LocationDto>.SuccessResponse(
+                new LocationDto
+                {
+                    Id = location.PublicId, Address = location.Address, Type = location.Type,
+                    Longitude = location.Longitude, Latitude = location.Latitude
+                }, "Location created");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating location");
+            return ApiResponse<LocationDto>.ServerErrorResponse("An error occurred while creating the location");
+        }
+    }
+
+    public async Task<ApiResponse<LocationDto>> UpdateLocationAsync(Guid id, LocationRequest request, int userId, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Longitude) || string.IsNullOrWhiteSpace(request.Latitude))
+                return ApiResponse<LocationDto>.ErrorResponse("Longitude and latitude are required");
+
+            var location = await _unitOfWork.Locations.GetByPublicIdAsync(id, ct);
+            if (location == null) return ApiResponse<LocationDto>.NotFoundResponse("Location not found");
+
+            location.Longitude = request.Longitude.Trim();
+            location.Latitude = request.Latitude.Trim();
+            location.Address = request.Address?.Trim();
+            location.Type = request.Type?.Trim();
+            location.SetUpdateAudit(userId);
+
+            _unitOfWork.Locations.Update(location);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<LocationDto>.SuccessResponse(
+                new LocationDto
+                {
+                    Id = location.PublicId, Address = location.Address, Type = location.Type,
+                    Longitude = location.Longitude, Latitude = location.Latitude
+                }, "Location updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating location {LocationId}", id);
+            return ApiResponse<LocationDto>.ServerErrorResponse("An error occurred while updating the location");
         }
     }
 
