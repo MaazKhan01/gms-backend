@@ -13,12 +13,19 @@ using DomainPersistence.Entities;
 // The single reusable notification-dispatch engine — see INotificationManagerService
 // for the contract. Every Send*/Broadcast* method: (1) resolves recipients,
 // (2) bulk-persists one Notification/GuestNotification row per recipient,
-// (3) best-effort pushes each over SignalR via IPushNotificationProvider.
+// (3) best-effort pushes each to EVERY registered IPushNotificationProvider —
+// not just one. IPushNotificationProvider is multi-registered in DI (see
+// ServiceExtensions): ManualNotificationProvider (SignalR, live in-app delivery
+// while a client is connected — a recipient's every open tab/device joins the
+// same group, so multi-device fan-out there is automatic) runs alongside
+// FirebaseNotificationProvider (actual device push for when the app isn't
+// open — fans out over every DomainPersistence.Entities.GuestDevice row for
+// that guest; still a stub pending real Firebase credentials, see its remarks).
 // Callers that used to hand-roll steps 2+3 (e.g. SupportChatService) should
 // call in here instead — see SupportChatService.NotifyAdminsAsync/NotifyGuestAsync.
 public class NotificationManagerService(
     IUnitOfWork _unitOfWork,
-    IPushNotificationProvider _pushNotificationProvider,
+    IEnumerable<IPushNotificationProvider> _pushNotificationProviders,
     IRealTimeAlertService _realTimeAlertService,
     ILogger<NotificationManagerService> _logger
 ) : INotificationManagerService
@@ -174,23 +181,16 @@ public class NotificationManagerService(
         {
             var entity = entities[i];
             var response = responses[i];
-            try
+            await DispatchToProvidersAsync(new PushNotificationPayload
             {
-                await _pushNotificationProvider.SendAsync(new PushNotificationPayload
-                {
-                    RecipientType = NotificationRecipientType.Guest,
-                    GuestId = entity.GuestId,
-                    Title = entity.Title,
-                    Body = entity.Message,
-                    Topic = content.Topic ?? RealtimeTopics.NotificationNew,
-                    Data = content.Data,
-                    Payload = response
-                }, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error pushing notification to guest {GuestId}", entity.GuestId);
-            }
+                RecipientType = NotificationRecipientType.Guest,
+                GuestId = entity.GuestId,
+                Title = entity.Title,
+                Body = entity.Message,
+                Topic = content.Topic ?? RealtimeTopics.NotificationNew,
+                Data = content.Data,
+                Payload = response
+            }, $"guest {entity.GuestId}", ct).ConfigureAwait(false);
         }
 
         return responses;
@@ -242,26 +242,38 @@ public class NotificationManagerService(
         {
             var entity = entities[i];
             var response = responses[i];
-            try
+            await DispatchToProvidersAsync(new PushNotificationPayload
             {
-                await _pushNotificationProvider.SendAsync(new PushNotificationPayload
-                {
-                    RecipientType = NotificationRecipientType.User,
-                    UserId = entity.UserId,
-                    Title = entity.Title,
-                    Body = entity.Message,
-                    Topic = content.Topic ?? RealtimeTopics.NotificationNew,
-                    Data = content.Data,
-                    Payload = response
-                }, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error pushing notification to user {UserId}", entity.UserId);
-            }
+                RecipientType = NotificationRecipientType.User,
+                UserId = entity.UserId,
+                Title = entity.Title,
+                Body = entity.Message,
+                Topic = content.Topic ?? RealtimeTopics.NotificationNew,
+                Data = content.Data,
+                Payload = response
+            }, $"user {entity.UserId}", ct).ConfigureAwait(false);
         }
 
         return responses;
+    }
+
+    // Fans out one payload to every registered IPushNotificationProvider. Each
+    // provider is independently best-effort — one failing (or one provider's
+    // one dead device token) must never block another provider or another
+    // recipient; the persisted DB row is always the source of truth regardless.
+    private async Task DispatchToProvidersAsync(PushNotificationPayload payload, string recipientContext, CancellationToken ct)
+    {
+        foreach (var provider in _pushNotificationProviders)
+        {
+            try
+            {
+                await provider.SendAsync(payload, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error dispatching notification to {Recipient} via {Provider}", recipientContext, provider.GetType().Name);
+            }
+        }
     }
 
     private static string SerializeData(IDictionary<string, string> data)

@@ -46,10 +46,6 @@ public interface IVipAppService
 
     // Support chat lives entirely on ISupportChatService / SupportChatController now.
 
-    // ---- Notifications / devices ----
-    Task<ApiResponse<List<GuestNotificationResponse>>> GetNotificationsAsync(int guestId, PagedRequest request, CancellationToken ct);
-    Task<ApiResponse<int>> GetUnreadCountAsync(int guestId, CancellationToken ct);
-    Task<ApiResponse<bool>> MarkNotificationReadAsync(int guestId, Guid notificationId, CancellationToken ct);
-    Task<ApiResponse<bool>> MarkAllNotificationsReadAsync(int guestId, CancellationToken ct);
-    Task<ApiResponse<bool>> RegisterDeviceAsync(int guestId, RegisterDeviceRequest request, CancellationToken ct);
+    // Notifications / devices live entirely on INotificationService / NotificationsController
+    // now (see GetGuestNotificationsAsync et al.) — same move as support chat above.
 }

@@ -21,13 +21,16 @@ using Microsoft.IdentityModel.Tokens;
 namespace Infrastructure.Services;
 
 // ============================================================================
-// VIP Guest App service — all mobile-facing logic.
+// VIP Guest App service — mobile-facing logic (auth, events, itinerary, travel,
+// sessions, preferences, profile). Support chat and notifications/devices have
+// since been extracted to their own service/controller — see the remarks at
+// the bottom of this file and of IVipAppService.
 //
-// `guestId` is the caller, resolved by the controller from ICurrentGuest (the
-// "guestId" JWT claim). Auth endpoints issue that token via OTP (guests have no
-// password). Everything reads/writes existing GMS entities plus the four new
-// guest-app tables (GuestRefreshToken / SupportMessage / GuestDevice /
-// GuestNotification) and the Guest.PreferencesJson column.
+// `guestId` is the caller, resolved by the controller from ICurrentGuest (a
+// Core.Constants.GuestClaims.GuestId claim plus role=="guest" — see CurrentGuest).
+// Auth endpoints issue that token via OTP (guests have no password). Everything
+// reads/writes existing GMS entities plus GuestRefreshToken and the
+// Guest.PreferencesJson column.
 // ============================================================================
 public class VipAppService(
     IUnitOfWork _unitOfWork,
@@ -575,80 +578,6 @@ public class VipAppService(
 
     // Support chat lives entirely on SupportChatService / SupportChatController now.
 
-    // ============================================================
-    // Notifications / devices
-    // ============================================================
-    public async Task<ApiResponse<List<GuestNotificationResponse>>> GetNotificationsAsync(int guestId, PagedRequest request, CancellationToken ct)
-    {
-        var page = request?.PageNumber > 0 ? request.PageNumber : 1;
-        var size = request?.PageSize > 0 ? request.PageSize : 20;
-
-        var items = await _unitOfWork.GuestNotifications.QueryNoTracking()
-            .Where(n => n.GuestId == guestId)
-            .OrderByDescending(n => n.CreatedAt)
-            .Skip((page - 1) * size).Take(size).ToListAsync(ct);
-
-        var data = items.Select(n => new GuestNotificationResponse
-        {
-            Id = n.PublicId, Title = n.Title, Message = n.Message, Type = n.Type,
-            Read = n.Read, CreatedAt = n.CreatedAt, RedirectUrl = n.RedirectUrl, Data = n.Data
-        }).ToList();
-        return ApiResponse<List<GuestNotificationResponse>>.SuccessResponse(data);
-    }
-
-    public async Task<ApiResponse<int>> GetUnreadCountAsync(int guestId, CancellationToken ct)
-    {
-        var count = await _unitOfWork.GuestNotifications.CountAsync(n => n.GuestId == guestId && !n.Read, ct);
-        return ApiResponse<int>.SuccessResponse(count);
-    }
-
-    public async Task<ApiResponse<bool>> MarkNotificationReadAsync(int guestId, Guid notificationId, CancellationToken ct)
-    {
-        var n = await _unitOfWork.GuestNotifications
-            .FindFirstOrDefaultAsync(x => x.PublicId == notificationId && x.GuestId == guestId, ct);
-        if (n is null) return ApiResponse<bool>.NotFoundResponse("Notification not found");
-        n.Read = true;
-        _unitOfWork.GuestNotifications.Update(n);
-        await _unitOfWork.SaveChangesAsync(ct);
-        return ApiResponse<bool>.SuccessResponse(true);
-    }
-
-    public async Task<ApiResponse<bool>> MarkAllNotificationsReadAsync(int guestId, CancellationToken ct)
-    {
-        var unread = (await _unitOfWork.GuestNotifications
-            .FindAsync(n => n.GuestId == guestId && !n.Read, ct)).ToList();
-        foreach (var n in unread) n.Read = true;
-        if (unread.Count > 0)
-        {
-            _unitOfWork.GuestNotifications.UpdateRange(unread);
-            await _unitOfWork.SaveChangesAsync(ct);
-        }
-        return ApiResponse<bool>.SuccessResponse(true, $"{unread.Count} marked read");
-    }
-
-    public async Task<ApiResponse<bool>> RegisterDeviceAsync(int guestId, RegisterDeviceRequest request, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.Token))
-            return ApiResponse<bool>.ErrorResponse("Device token is required");
-
-        // Upsert by token — a device only ever belongs to one guest at a time.
-        var existing = await _unitOfWork.GuestDevices.FindFirstOrDefaultAsync(d => d.Token == request.Token, ct);
-        if (existing is null)
-        {
-            await _unitOfWork.GuestDevices.AddAsync(new GuestDevice
-            {
-                GuestId = guestId, Token = request.Token,
-                Platform = request.Platform, LastSeenAt = DateTime.UtcNow
-            }, ct);
-        }
-        else
-        {
-            existing.GuestId = guestId;
-            existing.Platform = request.Platform;
-            existing.LastSeenAt = DateTime.UtcNow;
-            _unitOfWork.GuestDevices.Update(existing);
-        }
-        await _unitOfWork.SaveChangesAsync(ct);
-        return ApiResponse<bool>.SuccessResponse(true, "Device registered");
-    }
+    // Notifications / devices live entirely on NotificationService / NotificationsController
+    // now (see GetGuestNotificationsAsync et al.) — same move as support chat above.
 }
