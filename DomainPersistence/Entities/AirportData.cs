@@ -4,7 +4,9 @@ namespace DomainPersistence.Entities;
 public class AirportData : Entity
 {
     public string Code { get; set; }          // IATA code, e.g. DXB
-    public string AirportName { get; set; }
+    public string City { get; set; }
+    public string Country { get; set; }
+    public string Continent { get; set; }
     public int? LocationId { get; set; }
 
     public virtual Location Location { get; set; }

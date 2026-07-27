@@ -1,4 +1,8 @@
+using Core.Authorization;
+using Core.Common;
+using Core.Common.Interfaces;
 using Core.Interfaces.Services;
+using Core.ViewModel.Travel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,11 +11,71 @@ namespace API.Controllers.v1;
 [Route("api/v1/lookups")]
 [Authorize]
 [ApiVersion("1.0")]
-public class LookupController(ILookupService _lookupService) : Controllers.BaseApiController
+public class LookupController(ILookupService _lookupService, ITravelService _travel, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
     // Code-defined guest option sets (tier, type, statuses) for form dropdowns.
     // Any authenticated user can read these — they're static reference lists.
     [HttpGet("enums/guest")]
     public IActionResult GetGuestEnums()
         => ToResponse(_lookupService.GetGuestEnums());
+
+    // ── Travel lookups — separate GET per lookup, each reads its own table ────
+    [HttpGet("flight-types")]
+    public async Task<IActionResult> GetFlightTypes(CancellationToken ct)
+        => ToResponse(await _travel.GetFlightTypesAsync(ct));
+
+    [HttpGet("flight-classes")]
+    public async Task<IActionResult> GetFlightClasses(CancellationToken ct)
+        => ToResponse(await _travel.GetFlightClassesAsync(ct));
+
+    [HttpGet("room-types")]
+    public async Task<IActionResult> GetRoomTypes(CancellationToken ct)
+        => ToResponse(await _travel.GetRoomTypesAsync(ct));
+
+    [HttpGet("hotels")]
+    public async Task<IActionResult> GetHotels(CancellationToken ct)
+        => ToResponse(await _travel.GetHotelsAsync(ct));
+
+    [HttpGet("locations")]
+    public async Task<IActionResult> GetLocations(CancellationToken ct)
+        => ToResponse(await _travel.GetLocationsAsync(ct));
+
+    [HttpGet("vehicle-types")]
+    public async Task<IActionResult> GetVehicleTypes(CancellationToken ct)
+        => ToResponse(await _travel.GetVehicleTypesAsync(ct));
+
+    [HttpGet("airports")]
+    public async Task<IActionResult> GetAirports(CancellationToken ct)
+        => ToResponse(await _travel.GetAirportsAsync(ct));
+
+    // ── Manage the wizard dropdown options ──────────────────────────────────
+    [HttpPost("flight-types")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateFlightType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateFlightTypeAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("flight-classes")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateFlightClass([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateFlightClassAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("room-types")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateRoomType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateRoomTypeAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("hotels")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateHotel([FromBody] CreateHotelRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateHotelAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("vehicle-types")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateVehicleType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateVehicleTypeAsync(request, _currentUser.UserId, ct));
+
+    [HttpPost("airports")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> CreateAirport([FromBody] CreateAirportRequest request, CancellationToken ct)
+        => ToResponse(await _travel.CreateAirportAsync(request, _currentUser.UserId, ct));
 }

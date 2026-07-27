@@ -385,8 +385,8 @@ public class VipAppService(
         var data = flights.SelectMany(f => f.Legs.Select(l => new FlightLegResponse
         {
             Id = l.PublicId,
-            DepartureCode = l.FromAirport?.Code, DepartureAirport = l.FromAirport?.AirportName,
-            ArrivalCode = l.ToAirport?.Code, ArrivalAirport = l.ToAirport?.AirportName,
+            DepartureCode = l.FromAirport?.Code, DepartureAirport = l.FromAirport?.City,
+            ArrivalCode = l.ToAirport?.Code, ArrivalAirport = l.ToAirport?.City,
             DateTime = l.StartTime, FlightNumber = l.FlightNumber,
             Class = f.FlightClass?.Name, Status = f.Status, Seat = f.Seat
         })).OrderBy(x => x.DateTime).ToList();

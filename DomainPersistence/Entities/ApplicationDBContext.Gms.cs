@@ -510,7 +510,9 @@ public partial class ApplicationDBContext
             a.ToTable("AirportData");
             a.HasKey(x => x.Id);
             a.Property(x => x.Code).IsRequired().HasMaxLength(10);
-            a.Property(x => x.AirportName).IsRequired().HasMaxLength(200);
+            a.Property(x => x.City).HasMaxLength(100);
+            a.Property(x => x.Country).HasMaxLength(100);
+            a.Property(x => x.Continent).HasMaxLength(50);
             a.HasIndex(x => x.Code).IsUnique();
             a.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             a.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");

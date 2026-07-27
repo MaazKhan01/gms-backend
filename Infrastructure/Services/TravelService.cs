@@ -61,7 +61,12 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     {
         var data = await _unitOfWork.AirportData.Query()
             .OrderBy(x => x.Code)
-            .Select(x => new AirportDto { Id = x.PublicId, Code = x.Code, AirportName = x.AirportName, LocationId = x.Location.PublicId })
+            .Select(x => new AirportDto
+            {
+                Id = x.PublicId, Code = x.Code,
+                City = x.City, Country = x.Country, Continent = x.Continent,
+                LocationId = x.Location.PublicId
+            })
             .ToListAsync(ct);
         return ApiResponse<List<AirportDto>>.SuccessResponse(data);
     }
@@ -362,8 +367,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.AirportName))
-                return ApiResponse<AirportDto>.ErrorResponse("Code and airport name are required");
+            if (string.IsNullOrWhiteSpace(request.Code))
+                return ApiResponse<AirportDto>.ErrorResponse("Code is required");
 
             var code = request.Code.Trim().ToUpperInvariant();
             if (await _unitOfWork.AirportData.AnyAsync(a => a.Code == code, ct))
@@ -372,7 +377,9 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             var airport = new AirportData
             {
                 Code = code,
-                AirportName = request.AirportName.Trim(),
+                City = request.City?.Trim(),
+                Country = request.Country?.Trim(),
+                Continent = request.Continent?.Trim(),
                 LocationId = await ResolveNullableId(_unitOfWork.Locations, request.LocationId, ct)
             };
             airport.SetCreationAudit(userId);
@@ -383,7 +390,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 new AirportDto
                 {
                     Id = airport.PublicId, Code = airport.Code,
-                    AirportName = airport.AirportName, LocationId = request.LocationId
+                    City = airport.City, Country = airport.Country, Continent = airport.Continent,
+                    LocationId = request.LocationId
                 }, "Airport created");
         }
         catch (Exception ex)
