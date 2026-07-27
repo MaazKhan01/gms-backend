@@ -452,6 +452,7 @@ public partial class ApplicationDBContext
             n.Property(x => x.Message).HasColumnType("nvarchar(max)");
             n.Property(x => x.Type).HasMaxLength(50);
             n.Property(x => x.RedirectUrl).HasMaxLength(500);
+            n.Property(x => x.Data).HasColumnType("nvarchar(max)");
             n.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             n.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             n.HasIndex(x => new { x.GuestId, x.Read });

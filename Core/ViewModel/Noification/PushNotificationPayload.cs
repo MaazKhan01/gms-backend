@@ -28,4 +28,11 @@ public class PushNotificationPayload
     public string Topic { get; set; }
 
     public IDictionary<string, string> Data { get; set; }
+
+    // Rich payload for the in-app SignalR channel (typically the full
+    // NotificationResponse/GuestNotificationResponse) — sent instead of Data
+    // when present, so the client can render the notification immediately
+    // without a round-trip. Push-only providers (Firebase/APNs, which require
+    // string-only data) should ignore this and use Data instead.
+    public object Payload { get; set; }
 }

@@ -1,7 +1,10 @@
 ﻿using API.Configurations;
 using Core.Helpers;
+using Core.Interfaces.Services;
 using Core.Middlewares;
+using Hangfire;
 using Infrastructure.Auth;
+using Infrastructure.Hangfire;
 using Microsoft.AspNetCore.ResponseCompression;
 using Scalar.AspNetCore;
 using Serilog;
@@ -67,6 +70,15 @@ app.UseResponseCompression();
 app.UseRateLimiter();
 
 app.MapHub<RealTimeHubService>("/realtimehub");
+
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] { new HangfireAuthorizationFilter() }
+});
+RecurringJob.AddOrUpdate<INotificationCleanupJob>(
+    "notification-cleanup",
+    job => job.PurgeOldNotificationsAsync(CancellationToken.None),
+    Cron.Daily(3)); // 03:00 UTC — off-peak
 
 // OpenAPI document + Scalar API reference UI (replaces Swagger).
 app.MapOpenApi("/openapi/{documentName}.json");

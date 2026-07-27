@@ -94,4 +94,7 @@ public static class PermissionCodes
     // Support chat (guest ↔ admin)
     public const string SupportChatView = "SupportChat.View";
     public const string SupportChatManage = "SupportChat.Manage";
+
+    // Notifications (admin-triggered sends to other users — everyone can read/manage their own)
+    public const string NotificationsSend = "Notifications.Send";
 }
