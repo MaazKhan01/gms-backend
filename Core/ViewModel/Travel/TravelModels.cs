@@ -15,20 +15,21 @@ public class CreateHotelRequest { public string Name { get; set; } public string
 public class CreateAirportRequest { public string Code { get; set; } public string AirportName { get; set; } public Guid? LocationId { get; set; } }
 
 // ---- Per-guest travel: any subset of the three may be present ----
+// A guest can hold more than one flight/hotel/transport booking. Each Input's
+// Id says which specific booking to update in place; leave it null/empty to
+// add a new one instead. Services' "New Booking" always omits Id (append);
+// the per-booking edit flows fetch a booking with its Id already populated
+// so saving it back updates just that record.
 public class GuestTravelRequest
 {
     public FlightInput Flight { get; set; }
     public AccommodationInput Accommodation { get; set; }
     public TransportInput Transport { get; set; }
-    // false (default) = replace the guest's existing section(s) — used by the
-    // guest wizard's edit-in-place flow. true = add alongside whatever the
-    // guest already has — used by Services' "New Booking" (a guest can hold
-    // more than one flight/hotel/transport booking).
-    public bool Append { get; set; }
 }
 
 public class FlightInput
 {
+    public Guid? Id { get; set; }
     public Guid FlightTypeId { get; set; }
     public Guid? FlightClassId { get; set; }
     public string Status { get; set; }
@@ -43,6 +44,7 @@ public class FlightInput
 
 public class AccommodationInput
 {
+    public Guid? Id { get; set; }
     public Guid HotelId { get; set; }
     public Guid? RoomTypeId { get; set; }
     public DateOnly? CheckIn { get; set; }
@@ -55,6 +57,7 @@ public class AccommodationInput
 
 public class TransportInput
 {
+    public Guid? Id { get; set; }
     public Guid? PickupLocationId { get; set; }
     public Guid? DropoffLocationId { get; set; }
     public Guid? VehicleTypeId { get; set; }

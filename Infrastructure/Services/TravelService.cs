@@ -82,16 +82,22 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
         var data = new GuestTravelResponse();
 
+        // A guest can hold more than one of each — the wizard's single accordion
+        // only ever prefills/edits the most recently added one; the rest are
+        // managed from Services' per-guest booking list instead.
         var flight = await _unitOfWork.Flights.Query()
             .Include(f => f.FlightType).Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
-            .FirstOrDefaultAsync(f => f.GuestId == guest.Id, ct);
+            .Where(f => f.GuestId == guest.Id)
+            .OrderByDescending(f => f.Id)
+            .FirstOrDefaultAsync(ct);
         if (flight != null)
         {
             var leg = flight.Legs.FirstOrDefault();
             data.Flight = new FlightInput
             {
+                Id = flight.PublicId,
                 FlightTypeId = flight.FlightType?.PublicId ?? Guid.Empty,
                 FlightClassId = flight.FlightClass?.PublicId,
                 Status = flight.Status,
@@ -106,10 +112,13 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
         var acc = await _unitOfWork.Accommodations.Query()
             .Include(a => a.Hotel).Include(a => a.RoomType)
-            .FirstOrDefaultAsync(a => a.GuestId == guest.Id, ct);
+            .Where(a => a.GuestId == guest.Id)
+            .OrderByDescending(a => a.Id)
+            .FirstOrDefaultAsync(ct);
         if (acc != null)
             data.Accommodation = new AccommodationInput
             {
+                Id = acc.PublicId,
                 HotelId = acc.Hotel?.PublicId ?? Guid.Empty,
                 RoomTypeId = acc.RoomType?.PublicId,
                 CheckIn = acc.CheckIn,
@@ -122,10 +131,13 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
         var tr = await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
-            .FirstOrDefaultAsync(t => t.GuestId == guest.Id, ct);
+            .Where(t => t.GuestId == guest.Id)
+            .OrderByDescending(t => t.Id)
+            .FirstOrDefaultAsync(ct);
         if (tr != null)
             data.Transport = new TransportInput
             {
+                Id = tr.PublicId,
                 PickupLocationId = tr.PickupLocation?.PublicId,
                 DropoffLocationId = tr.DropoffLocation?.PublicId,
                 VehicleTypeId = tr.VehicleType?.PublicId,
@@ -177,6 +189,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             .OrderBy(a => a.Guest.FirstName).ThenBy(a => a.Guest.LastName)
             .Select(a => new EventAccommodationRow
             {
+                Id = a.PublicId,
                 GuestId = a.Guest.PublicId,
                 GuestName = (a.Guest.FirstName + " " + a.Guest.LastName).Trim(),
                 Organization = a.Guest.Organization,
@@ -200,6 +213,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             .OrderBy(t => t.Guest.FirstName).ThenBy(t => t.Guest.LastName)
             .Select(t => new EventTransportRow
             {
+                Id = t.PublicId,
                 GuestId = t.Guest.PublicId,
                 GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
                 Organization = t.Guest.Organization,
@@ -230,8 +244,11 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 var fromAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.FromAirportId, ct);
                 var toAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.ToAirportId, ct);
 
-                var existing = await _unitOfWork.Flights.FindAsync(f => f.GuestId == guest.Id, ct);
-                _unitOfWork.Flights.RemoveRange(existing);
+                if (!request.Append)
+                {
+                    var existing = await _unitOfWork.Flights.FindAsync(f => f.GuestId == guest.Id, ct);
+                    _unitOfWork.Flights.RemoveRange(existing);
+                }
 
                 var flight = new Flight
                 {
@@ -261,8 +278,11 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 if (hotelId == null) return ApiResponse<bool>.ErrorResponse("Invalid hotel");
                 var roomTypeId = await ResolveNullableId(_unitOfWork.AccommodationRoomTypes, request.Accommodation.RoomTypeId, ct);
 
-                var existing = await _unitOfWork.Accommodations.FindAsync(a => a.GuestId == guest.Id, ct);
-                _unitOfWork.Accommodations.RemoveRange(existing);
+                if (!request.Append)
+                {
+                    var existing = await _unitOfWork.Accommodations.FindAsync(a => a.GuestId == guest.Id, ct);
+                    _unitOfWork.Accommodations.RemoveRange(existing);
+                }
 
                 await _unitOfWork.Accommodations.AddAsync(new Accommodation
                 {
@@ -284,8 +304,11 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 var dropoffId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.DropoffLocationId, ct);
                 var vehicleTypeId = await ResolveNullableId(_unitOfWork.VehicleTypes, request.Transport.VehicleTypeId, ct);
 
-                var existing = await _unitOfWork.Transports.FindAsync(t => t.GuestId == guest.Id, ct);
-                _unitOfWork.Transports.RemoveRange(existing);
+                if (!request.Append)
+                {
+                    var existing = await _unitOfWork.Transports.FindAsync(t => t.GuestId == guest.Id, ct);
+                    _unitOfWork.Transports.RemoveRange(existing);
+                }
 
                 await _unitOfWork.Transports.AddAsync(new Transport
                 {
