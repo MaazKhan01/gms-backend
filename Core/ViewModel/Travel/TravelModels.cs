@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Core.ViewModel.Common;
 
 namespace Core.ViewModel.Travel;
 
@@ -98,6 +99,51 @@ public class EventFlightRow
     public int LegCount { get; set; }
 
     public List<FlightLegRow> Legs { get; set; } = [];
+}
+
+// ── Arrivals & Departures ────────────────────────────────────────────────────
+// Guest-centric: one row pairs a guest's inbound flights with their outbound
+// ones, so staff can read arrival and departure off a single line. Deliberately
+// separate from EventFlightRow (and its own endpoint) so this view can be
+// permission-gated on its own later without touching the Flights tab.
+public class ArrivalsDeparturesRequest : PagedRequest
+{
+    /// <summary>"all" (default), "inbound" or "outbound".</summary>
+    public string Direction { get; set; }
+
+    /// <summary>Inclusive date window on the flight's legs. Either end may be
+    /// omitted for an open-ended range; set both to the same day to filter to
+    /// a single date.</summary>
+    public DateOnly? FromDate { get; set; }
+    public DateOnly? ToDate { get; set; }
+}
+
+public class ArrivalDepartureRow
+{
+    public Guid GuestId { get; set; }
+    public string GuestName { get; set; }
+    public string Email { get; set; }
+    public string Organization { get; set; }
+    public string Tier { get; set; }
+
+    // A guest may hold more than one booking in either direction.
+    public List<ArrivalDepartureFlight> Inbound { get; set; } = [];
+    public List<ArrivalDepartureFlight> Outbound { get; set; } = [];
+}
+
+public class ArrivalDepartureFlight
+{
+    public Guid Id { get; set; }
+    public string FlightNumber { get; set; }
+    /// <summary>The raw FlightType name, so the UI can show "Return" as-is.</summary>
+    public string FlightType { get; set; }
+    public string DepartureCode { get; set; }
+    public string DepartureCity { get; set; }
+    public string ArrivalCode { get; set; }
+    public string ArrivalCity { get; set; }
+    public DateTime? DepartureTime { get; set; }
+    public DateTime? ArrivalTime { get; set; }
+    public int LegCount { get; set; }
 }
 
 public class FlightLegRow

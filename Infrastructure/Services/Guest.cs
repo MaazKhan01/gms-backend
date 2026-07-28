@@ -242,7 +242,7 @@ public class GuestService(
         }
     }
 
-    public async Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default)
+    public async Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, GuestPagedRequest request, CancellationToken ct = default)
     {
         try
         {
@@ -264,6 +264,24 @@ public class GuestService(
                     g.LastName.ToLower().Contains(term) ||
                     (g.Email != null && g.Email.ToLower().Contains(term)) ||
                     (g.Organization != null && g.Organization.ToLower().Contains(term)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Tier))
+            {
+                var tier = request.Tier.ToLower();
+                query = query.Where(g => g.Tier.ToLower() == tier);
+            }
+
+            // Invitation status lives on the Invitation row, not the Guest — and
+            // "not_sent" also covers guests who have no invitation row at all.
+            if (!string.IsNullOrWhiteSpace(request.InvitationStatus))
+            {
+                var status = request.InvitationStatus;
+                query = status == GuestInvitationStatus.NotSent
+                    ? query.Where(g => !_unitOfWork.Invitations.Query()
+                        .Any(i => i.GuestId == g.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
+                    : query.Where(g => _unitOfWork.Invitations.Query()
+                        .Any(i => i.GuestId == g.Id && i.InvitationStatus == status));
             }
 
             // Downstream pickers (seating/meetings/travel) pass excludeDeclined=true

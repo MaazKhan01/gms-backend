@@ -16,7 +16,7 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
 {
     [HttpGet]
     //[HasPermission(PermissionCodes.GuestsView)]
-    public async Task<IActionResult> GetGuests([FromQuery] Guid eventId, [FromQuery] PagedRequest request, CancellationToken ct)
+    public async Task<IActionResult> GetGuests([FromQuery] Guid eventId, [FromQuery] GuestPagedRequest request, CancellationToken ct)
     {
         var result = await _guestService.GetGuestsAsync(eventId, request, ct);
         return ToResponse(result);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -45,7 +45,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
             .OrderByDescending(e => e.StartDate)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Include(e => e.Sessions)
+            // Venue is needed for SessionResponse.VenueId — without it the
+            // session edit form opens with an empty venue dropdown.
+            .Include(e => e.Sessions).ThenInclude(s => s.Venue)
             .ToListAsync(ct);
 
         var mapped = _mapper.Map<List<EventResponse>>(items);
@@ -56,7 +58,7 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
     public async Task<ApiResponse<EventResponse>> GetEventByIdAsync(Guid id, CancellationToken ct = default)
     {
         var ev = await _unitOfWork.Events.Query()
-            .Include(e => e.Sessions)
+            .Include(e => e.Sessions).ThenInclude(s => s.Venue)
             .FirstOrDefaultAsync(e => e.PublicId == id, ct);
 
         if (ev == null)
@@ -159,6 +161,7 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
     {
         var sessions = await _unitOfWork.Sessions.Query()
             .Include(s => s.Event)
+            .Include(s => s.Venue)
             .Where(s => s.Event.PublicId == eventId)
             .OrderBy(s => s.Date).ThenBy(s => s.Time)
             .ToListAsync(ct);
@@ -189,6 +192,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
                 return ApiResponse<SessionResponse>.NotFoundResponse("Venue not found");
             session.VenueId = venue.Id;
             session.VenueName = venue.Name;
+            // Set the nav too: the response is mapped off this instance, and the
+            // mapper reads Venue.PublicId.
+            session.Venue = venue;
         }
 
         session.SetCreationAudit(userId);
@@ -222,6 +228,9 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
                 return ApiResponse<SessionResponse>.NotFoundResponse("Venue not found");
             session.VenueId = venue.Id;
             session.VenueName = venue.Name;
+            // Set the nav too: the response is mapped off this instance, and the
+            // mapper reads Venue.PublicId.
+            session.Venue = venue;
         }
         else
         {

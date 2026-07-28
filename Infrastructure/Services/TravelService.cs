@@ -173,14 +173,27 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     }
 
     // ── Per-event booking lists (admin travel tabs) ──────────────────────────
-    public async Task<ApiResponse<List<EventFlightRow>>> GetEventFlightsAsync(Guid eventId, CancellationToken ct = default)
+    public async Task<ApiResponse<PaginatedResponse<EventFlightRow>>> GetEventFlightsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default)
     {
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
-        if (ev == null) return ApiResponse<List<EventFlightRow>>.NotFoundResponse("Event not found");
+        if (ev == null) return ApiResponse<PaginatedResponse<EventFlightRow>>.NotFoundResponse("Event not found");
 
-        var data = await _unitOfWork.Flights.Query()
-            .Where(f => f.Guest.EventId == ev.Id)
+        var query = _unitOfWork.Flights.Query().Where(f => f.Guest.EventId == ev.Id);
+
+        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        {
+            var term = request.SearchTerm.Trim();
+            query = query.Where(f =>
+                (f.Guest.FirstName + " " + f.Guest.LastName).Contains(term) ||
+                f.Legs.Any(l => l.FlightNumber.Contains(term)));
+        }
+
+        var total = await query.CountAsync(ct);
+
+        var data = await query
             .OrderBy(f => f.Guest.FirstName).ThenBy(f => f.Guest.LastName)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
             .Select(f => new EventFlightRow
             {
                 Id = f.PublicId,
@@ -227,17 +240,31 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             row.ArrivalTime = last.EndTime;
         }
 
-        return ApiResponse<List<EventFlightRow>>.SuccessResponse(data);
+        return ApiResponse<PaginatedResponse<EventFlightRow>>.SuccessResponse(
+            new PaginatedResponse<EventFlightRow>(data, total, request.PageNumber, request.PageSize));
     }
 
-    public async Task<ApiResponse<List<EventAccommodationRow>>> GetEventAccommodationsAsync(Guid eventId, CancellationToken ct = default)
+    public async Task<ApiResponse<PaginatedResponse<EventAccommodationRow>>> GetEventAccommodationsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default)
     {
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
-        if (ev == null) return ApiResponse<List<EventAccommodationRow>>.NotFoundResponse("Event not found");
+        if (ev == null) return ApiResponse<PaginatedResponse<EventAccommodationRow>>.NotFoundResponse("Event not found");
 
-        var data = await _unitOfWork.Accommodations.Query()
-            .Where(a => a.Guest.EventId == ev.Id)
+        var query = _unitOfWork.Accommodations.Query().Where(a => a.Guest.EventId == ev.Id);
+
+        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        {
+            var term = request.SearchTerm.Trim();
+            query = query.Where(a =>
+                (a.Guest.FirstName + " " + a.Guest.LastName).Contains(term) ||
+                a.Hotel.Name.Contains(term));
+        }
+
+        var total = await query.CountAsync(ct);
+
+        var data = await query
             .OrderBy(a => a.Guest.FirstName).ThenBy(a => a.Guest.LastName)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
             .Select(a => new EventAccommodationRow
             {
                 Id = a.PublicId,
@@ -251,17 +278,32 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 CheckOut = a.CheckOut,
             })
             .ToListAsync(ct);
-        return ApiResponse<List<EventAccommodationRow>>.SuccessResponse(data);
+
+        return ApiResponse<PaginatedResponse<EventAccommodationRow>>.SuccessResponse(
+            new PaginatedResponse<EventAccommodationRow>(data, total, request.PageNumber, request.PageSize));
     }
 
-    public async Task<ApiResponse<List<EventTransportRow>>> GetEventTransportsAsync(Guid eventId, CancellationToken ct = default)
+    public async Task<ApiResponse<PaginatedResponse<EventTransportRow>>> GetEventTransportsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default)
     {
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
-        if (ev == null) return ApiResponse<List<EventTransportRow>>.NotFoundResponse("Event not found");
+        if (ev == null) return ApiResponse<PaginatedResponse<EventTransportRow>>.NotFoundResponse("Event not found");
 
-        var data = await _unitOfWork.Transports.Query()
-            .Where(t => t.Guest.EventId == ev.Id)
+        var query = _unitOfWork.Transports.Query().Where(t => t.Guest.EventId == ev.Id);
+
+        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        {
+            var term = request.SearchTerm.Trim();
+            query = query.Where(t =>
+                (t.Guest.FirstName + " " + t.Guest.LastName).Contains(term) ||
+                (t.Driver != null && (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Contains(term)));
+        }
+
+        var total = await query.CountAsync(ct);
+
+        var data = await query
             .OrderBy(t => t.Guest.FirstName).ThenBy(t => t.Guest.LastName)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
             .Select(t => new EventTransportRow
             {
                 Id = t.PublicId,
@@ -278,7 +320,135 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 TripStatus = t.TripStatus,
             })
             .ToListAsync(ct);
-        return ApiResponse<List<EventTransportRow>>.SuccessResponse(data);
+
+        return ApiResponse<PaginatedResponse<EventTransportRow>>.SuccessResponse(
+            new PaginatedResponse<EventTransportRow>(data, total, request.PageNumber, request.PageSize));
+    }
+
+    // FlightType rows are admin-created via /lookups/flight-types, so their names
+    // are free text. Anything that isn't "inbound" counts as outbound — that
+    // deliberately folds the seeded "Return" type in with departures.
+    private const string InboundTypeName = "inbound";
+
+    public async Task<ApiResponse<PaginatedResponse<ArrivalDepartureRow>>> GetEventArrivalsDeparturesAsync(
+        Guid eventId, ArrivalsDeparturesRequest request, CancellationToken ct = default)
+    {
+        var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
+        if (ev == null) return ApiResponse<PaginatedResponse<ArrivalDepartureRow>>.NotFoundResponse("Event not found");
+
+        var direction = (request.Direction ?? "all").Trim().ToLowerInvariant();
+        var flights = _unitOfWork.Flights.Query();
+
+        // Date window, applied to the flight's legs. Applied to `flights` itself
+        // so it constrains both "which guests appear" and "which of their
+        // flights are listed" — otherwise a matching guest would still show
+        // their out-of-window bookings.
+        if (request.FromDate.HasValue)
+        {
+            var from = request.FromDate.Value.ToDateTime(TimeOnly.MinValue);
+            flights = flights.Where(f => f.Legs.Any(l => l.StartTime >= from));
+        }
+        if (request.ToDate.HasValue)
+        {
+            // Exclusive upper bound on the next day, so the whole ToDate counts.
+            var toExclusive = request.ToDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            flights = flights.Where(f => f.Legs.Any(l => l.StartTime < toExclusive));
+        }
+
+        // One row per guest, so paging is over guests that actually have a
+        // flight in the requested direction — not over flights.
+        var guests = _unitOfWork.Guests.Query().Where(g => g.EventId == ev.Id);
+
+        guests = direction switch
+        {
+            "inbound"  => guests.Where(g => flights.Any(f => f.GuestId == g.Id && f.FlightType.Name.ToLower() == InboundTypeName)),
+            "outbound" => guests.Where(g => flights.Any(f => f.GuestId == g.Id && f.FlightType.Name.ToLower() != InboundTypeName)),
+            _          => guests.Where(g => flights.Any(f => f.GuestId == g.Id)),
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        {
+            var term = request.SearchTerm.Trim();
+            guests = guests.Where(g =>
+                (g.FirstName + " " + g.LastName).Contains(term) ||
+                (g.Email != null && g.Email.Contains(term)) ||
+                (g.Organization != null && g.Organization.Contains(term)) ||
+                flights.Any(f => f.GuestId == g.Id && f.Legs.Any(l => l.FlightNumber.Contains(term))));
+        }
+
+        var total = await guests.CountAsync(ct);
+
+        var page = await guests
+            .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
+            .Skip((request.PageNumber - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(g => new ArrivalDepartureRow
+            {
+                GuestId = g.PublicId,
+                GuestName = (g.FirstName + " " + g.LastName).Trim(),
+                Email = g.Email,
+                Organization = g.Organization,
+                Tier = g.Tier,
+            })
+            .ToListAsync(ct);
+
+        if (page.Count == 0)
+        {
+            return ApiResponse<PaginatedResponse<ArrivalDepartureRow>>.SuccessResponse(
+                new PaginatedResponse<ArrivalDepartureRow>(page, total, request.PageNumber, request.PageSize));
+        }
+
+        // Second pass for the flights themselves: one query for the whole page,
+        // then split by direction in memory.
+        var guestIds = page.Select(r => r.GuestId).ToList();
+        var rows = await flights
+            .Where(f => guestIds.Contains(f.Guest.PublicId))
+            .Select(f => new
+            {
+                GuestPublicId = f.Guest.PublicId,
+                IsInbound = f.FlightType.Name.ToLower() == InboundTypeName,
+                Flight = new ArrivalDepartureFlight
+                {
+                    Id = f.PublicId,
+                    FlightType = f.FlightType.Name,
+                    LegCount = f.Legs.Count,
+                    // Route + timings come from the itinerary ends: leave on the
+                    // first leg, land on the last.
+                    FlightNumber = f.Legs.OrderBy(l => l.StartTime).Select(l => l.FlightNumber).FirstOrDefault(),
+                    DepartureCode = f.Legs.OrderBy(l => l.StartTime).Select(l => l.FromAirport.Code).FirstOrDefault(),
+                    DepartureCity = f.Legs.OrderBy(l => l.StartTime).Select(l => l.FromAirport.City).FirstOrDefault(),
+                    DepartureTime = f.Legs.OrderBy(l => l.StartTime).Select(l => l.StartTime).FirstOrDefault(),
+                    ArrivalCode = f.Legs.OrderByDescending(l => l.StartTime).Select(l => l.ToAirport.Code).FirstOrDefault(),
+                    ArrivalCity = f.Legs.OrderByDescending(l => l.StartTime).Select(l => l.ToAirport.City).FirstOrDefault(),
+                    ArrivalTime = f.Legs.OrderByDescending(l => l.StartTime).Select(l => l.EndTime).FirstOrDefault(),
+                },
+            })
+            .ToListAsync(ct);
+
+        var byGuest = page.ToDictionary(r => r.GuestId);
+        foreach (var r in rows)
+        {
+            if (!byGuest.TryGetValue(r.GuestPublicId, out var row)) continue;
+            // When one direction is selected the other stays empty, so the UI can
+            // drop that column entirely.
+            if (r.IsInbound)
+            {
+                if (direction != "outbound") row.Inbound.Add(r.Flight);
+            }
+            else if (direction != "inbound")
+            {
+                row.Outbound.Add(r.Flight);
+            }
+        }
+
+        foreach (var row in page)
+        {
+            row.Inbound = row.Inbound.OrderBy(f => f.DepartureTime).ToList();
+            row.Outbound = row.Outbound.OrderBy(f => f.DepartureTime).ToList();
+        }
+
+        return ApiResponse<PaginatedResponse<ArrivalDepartureRow>>.SuccessResponse(
+            new PaginatedResponse<ArrivalDepartureRow>(page, total, request.PageNumber, request.PageSize));
     }
 
     public async Task<ApiResponse<bool>> SaveGuestTravelAsync(Guid guestId, GuestTravelRequest request, int userId, CancellationToken ct = default)

@@ -13,6 +13,14 @@ public class PagedRequest
     // seating/meeting/travel pickers so a rejected guest can't be assigned).
     public bool ExcludeDeclined { get; set; }
 }
+// Guest list filters. These sit alongside paging because the guest table pages
+// server-side — filtering client-side would only ever filter the current page.
+public class GuestPagedRequest : PagedRequest
+{
+    public string Tier { get; set; }
+    public string InvitationStatus { get; set; }
+}
+
  public class NotificationPagedRequest : PagedRequest
 {
     public bool IsRead { get; set; }

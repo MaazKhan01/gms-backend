@@ -16,9 +16,13 @@ public interface ITravelService
     Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, CancellationToken ct = default);
 
     // Per-event booking lists (one per travel tab).
-    Task<ApiResponse<List<EventFlightRow>>> GetEventFlightsAsync(Guid eventId, CancellationToken ct = default);
-    Task<ApiResponse<List<EventAccommodationRow>>> GetEventAccommodationsAsync(Guid eventId, CancellationToken ct = default);
-    Task<ApiResponse<List<EventTransportRow>>> GetEventTransportsAsync(Guid eventId, CancellationToken ct = default);
+    Task<ApiResponse<PaginatedResponse<EventFlightRow>>> GetEventFlightsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
+    Task<ApiResponse<PaginatedResponse<EventAccommodationRow>>> GetEventAccommodationsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
+    Task<ApiResponse<PaginatedResponse<EventTransportRow>>> GetEventTransportsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
+
+    // Read-only arrivals/departures board. Its own method (and endpoint) so it
+    // can be permission-gated separately from the Flights tab later on.
+    Task<ApiResponse<PaginatedResponse<ArrivalDepartureRow>>> GetEventArrivalsDeparturesAsync(Guid eventId, ArrivalsDeparturesRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> SaveGuestTravelAsync(Guid guestId, GuestTravelRequest request, int userId, CancellationToken ct = default);
 
     // Remove one specific booking (a guest may have several of a kind).
