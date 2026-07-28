@@ -242,6 +242,61 @@ public class GuestService(
         }
     }
 
+    // Picker feed: one projected query, no includes, no AutoMapper, no invitation
+    // merge — just the five columns a dropdown row draws. Declined guests are
+    // always filtered out; a picker never wants them.
+    public async Task<ApiResponse<PaginatedResponse<GuestPickerResponse>>> GetGuestPickerAsync(
+        Guid eventId, PagedRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
+            if (ev == null)
+                return ApiResponse<PaginatedResponse<GuestPickerResponse>>.NotFoundResponse("Event not found");
+
+            var query = _unitOfWork.Guests.QueryNoTracking().Where(g => g.EventId == ev.Id);
+
+            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+            {
+                var term = request.SearchTerm.Trim();
+                query = query.Where(g =>
+                    g.FirstName.Contains(term) ||
+                    g.LastName.Contains(term) ||
+                    (g.Organization != null && g.Organization.Contains(term)));
+            }
+
+            query = query.Where(g => !_unitOfWork.Invitations.Query()
+                .Any(i => i.GuestId == g.Id && i.InvitationStatus == GuestInvitationStatus.Declined));
+
+            var total = await query.CountAsync(ct);
+
+            var pageSize = request.PageSize is < 1 or > 100 ? 20 : request.PageSize;
+            var pageNumber = request.PageNumber < 1 ? 1 : request.PageNumber;
+
+            var items = await query
+                .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(g => new GuestPickerResponse
+                {
+                    Id = g.PublicId,
+                    FullName = (g.FirstName + " " + g.LastName).Trim(),
+                    Organization = g.Organization,
+                    Tier = g.Tier,
+                    PhotoUrl = g.PhotoUrl,
+                })
+                .ToListAsync(ct);
+
+            return ApiResponse<PaginatedResponse<GuestPickerResponse>>.SuccessResponse(
+                new PaginatedResponse<GuestPickerResponse>(items, total, pageNumber, pageSize));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving guest picker for event {EventId}", eventId);
+            return ApiResponse<PaginatedResponse<GuestPickerResponse>>.ServerErrorResponse("An error occurred while retrieving guests");
+        }
+    }
+
     public async Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, GuestPagedRequest request, CancellationToken ct = default)
     {
         try

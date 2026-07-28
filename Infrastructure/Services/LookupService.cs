@@ -2,6 +2,7 @@ using Core.Constants;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Lookup;
+using DomainPersistence.Enums;
 
 namespace Infrastructure.Services;
 
@@ -15,4 +16,11 @@ public class LookupService : ILookupService
         var sets = GuestEnumCatalog.All.ToDictionary(kv => kv.Key, kv => kv.Value);
         return ApiResponse<Dictionary<string, List<LookupEnumOption>>>.SuccessResponse(sets);
     }
+
+    public ApiResponse<List<EnumIntOption>> GetDriverTypes()
+        => ApiResponse<List<EnumIntOption>>.SuccessResponse(new List<EnumIntOption>
+        {
+            new((int)DriverType.Fixed, "Fixed", "ثابت"),
+            new((int)DriverType.Open,  "Open",  "مفتوح"),
+        });
 }

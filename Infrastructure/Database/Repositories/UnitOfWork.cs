@@ -51,6 +51,7 @@ public class UnitOfWork : IUnitOfWork
         Accommodations = new GenericRepository<Accommodation>(_context);
         Transports = new GenericRepository<Transport>(_context);
         VehicleTypes = new GenericRepository<VehicleType>(_context);
+        Vehicles = new GenericRepository<Vehicle>(_context);
         DriverProfiles = new GenericRepository<DriverProfile>(_context);
         Organizations = new GenericRepository<Organization>(_context);
 
@@ -97,6 +98,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Accommodation> Accommodations { get; private set; }
     public IGenericRepository<Transport> Transports { get; private set; }
     public IGenericRepository<VehicleType> VehicleTypes { get; private set; }
+    public IGenericRepository<Vehicle> Vehicles { get; private set; }
     public IGenericRepository<DriverProfile> DriverProfiles { get; private set; }
     public IGenericRepository<Organization> Organizations { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }

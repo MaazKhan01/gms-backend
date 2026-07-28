@@ -30,7 +30,7 @@ public class AuthService(
     IPasswordResetTokenService _passwordResetTokenService,
     IMapper _mapper) : IAuthService
 {
-    public async Task<ApiResponse<TokenResponse>> LoginAsync(LoginModel model, CancellationToken ct = default)
+    public async Task<ApiResponse<TokenResponse>> LoginAsync(LoginModel model, string clientApp = null, CancellationToken ct = default)
     {
         var user = await _unitOfWork.Users
             .Query()
@@ -46,7 +46,13 @@ public class AuthService(
         if (!user.IsActive)
             return ApiResponse<TokenResponse>.UnauthorizedResponse("Account is inactive");
 
-        var (accessToken, refreshToken, jti) = GenerateTokenPair(user);
+        // Portal sign-in is a per-role privilege (Roles.PortalAccess). Driver-only
+        // roles have it off, so they can only sign in from the driver app.
+        var client = ClientApps.Normalize(clientApp);
+        if (client == ClientApps.Portal && user.Role?.PortalAccess != true)
+            return ApiResponse<TokenResponse>.ForbiddenResponse("This account cannot sign in to the portal");
+
+        var (accessToken, refreshToken, jti) = GenerateTokenPair(user, client);
 
         // Store refresh token JTI in DB for revocation support
         await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
@@ -92,11 +98,18 @@ public class AuthService(
             if (user == null || !user.IsActive)
                 return ApiResponse<TokenResponse>.UnauthorizedResponse("User not found or inactive");
 
+            // Same client as the session being refreshed, and the portal privilege
+            // is re-checked — revoking a role's portal access kills its sessions at
+            // the next refresh instead of lingering for the token's lifetime.
+            var client = ClientApps.Normalize(principal.FindFirstValue("client"));
+            if (client == ClientApps.Portal && user.Role?.PortalAccess != true)
+                return ApiResponse<TokenResponse>.ForbiddenResponse("This account cannot sign in to the portal");
+
             // Rotate: revoke old token, issue new one
             storedToken.IsRevoked = true;
             _unitOfWork.UserRefreshTokens.Update(storedToken);
 
-            var (newAccess, newRefresh, newJti) = GenerateTokenPair(user);
+            var (newAccess, newRefresh, newJti) = GenerateTokenPair(user, client);
 
             await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
             {
@@ -352,15 +365,17 @@ public class AuthService(
     private int GetRefreshTokenExpiryDays()
         => int.Parse(_configuration.GetSection("Authentication:Jwt")["RefreshTokenExpirationDays"] ?? "30");
 
-    private (string accessToken, string refreshToken, string jti) GenerateTokenPair(User user)
+    // clientApp is stamped into the access token as the "client" claim, so a
+    // token minted for one client can be recognised (and rejected) by the other.
+    private (string accessToken, string refreshToken, string jti) GenerateTokenPair(User user, string clientApp = ClientApps.Portal)
     {
-        var accessToken = GenerateAccessToken(user);
+        var accessToken = GenerateAccessToken(user, clientApp);
         var jti = Guid.NewGuid().ToString();
-        var refreshToken = GenerateRefreshToken(user.Id, user.Email, jti);
+        var refreshToken = GenerateRefreshToken(user.Id, user.Email, jti, clientApp);
         return (accessToken, refreshToken, jti);
     }
 
-    private string GenerateAccessToken(User user)
+    private string GenerateAccessToken(User user, string clientApp = ClientApps.Portal)
     {
         var jwtSection = _configuration.GetSection("Authentication:Jwt");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["JwtSecretKey"]));
@@ -386,6 +401,7 @@ public class AuthService(
             new("fullName", fullName),
             new("roleCode", user.Role?.Code ?? string.Empty),
             new("roleId", user.RoleId?.ToString() ?? string.Empty),
+            new("client", ClientApps.Normalize(clientApp)),
         };
         // Deliberately NOT adding Core.Constants.GuestClaims.GuestId here — that
         // claim means "this is a Guest", and this is a User token. A User and a
@@ -418,7 +434,9 @@ public class AuthService(
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private string GenerateRefreshToken(int userId, string email, string jti)
+    // Carries the client too, so a refresh re-issues an access token for the same
+    // client instead of silently upgrading a driver-app session to a portal one.
+    private string GenerateRefreshToken(int userId, string email, string jti, string clientApp = ClientApps.Portal)
     {
         var jwtSection = _configuration.GetSection("Authentication:Jwt");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["JwtSecretKey"]));
@@ -429,7 +447,8 @@ public class AuthService(
             new("sub", userId.ToString()),
             new(ClaimTypes.Email, email ?? string.Empty),
             new(JwtRegisteredClaimNames.Jti, jti),
-            new("token_type", "refresh")
+            new("token_type", "refresh"),
+            new("client", ClientApps.Normalize(clientApp))
         };
 
         var token = new JwtSecurityToken(

@@ -60,6 +60,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Accommodation> Accommodations { get; }
     IGenericRepository<Transport> Transports { get; }
     IGenericRepository<VehicleType> VehicleTypes { get; }
+    IGenericRepository<Vehicle> Vehicles { get; }
     IGenericRepository<DriverProfile> DriverProfiles { get; }
     IGenericRepository<Organization> Organizations { get; }
     // Notifications

@@ -6,15 +6,18 @@ public class Transport : Entity
     public int GuestId { get; set; }
     public int? PickupLocationId { get; set; }
     public int? DropoffLocationId { get; set; }
-    public int? VehicleTypeId { get; set; }
+    public int? VehicleId { get; set; }       // -> Vehicles (the assigned car, not its category)
     public int? DriverId { get; set; }        // -> DriverProfiles
     public string TripStatus { get; set; }    // On Time / Delayed
+    // Planned times, then what actually happened (filled in by dispatch).
     public DateTime? PickupTime { get; set; }
-    public DateTime? EstimatedArrival { get; set; }
+    public DateTime? DropoffTime { get; set; }
+    public DateTime? ActualPickupTime { get; set; }
+    public DateTime? ActualDropOffTime { get; set; }
 
     public virtual Guest Guest { get; set; }
     public virtual Location PickupLocation { get; set; }
     public virtual Location DropoffLocation { get; set; }
-    public virtual VehicleType VehicleType { get; set; }
+    public virtual Vehicle Vehicle { get; set; }
     public virtual DriverProfile Driver { get; set; }
 }

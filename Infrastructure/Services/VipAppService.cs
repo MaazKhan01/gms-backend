@@ -420,7 +420,8 @@ public class VipAppService(
     public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct)
     {
         var trips = await _unitOfWork.Transports.Query()
-            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
             .Where(t => t.GuestId == guestId).ToListAsync(ct);
 
@@ -433,8 +434,12 @@ public class VipAppService(
             FromAddress = primary.PickupLocation?.Address,
             ToAddress = primary.DropoffLocation?.Address,
             PickupTime = primary.PickupTime,
-            EstimatedArrival = primary.EstimatedArrival,
-            VehicleType = primary.VehicleType?.Name,
+            // Guest app still labels this "estimated arrival"; the planned
+            // drop-off time is what that means now.
+            EstimatedArrival = primary.DropoffTime,
+            // Transport now points at a concrete Vehicle; the guest app still only
+            // shows the category, so it reads through to the vehicle's type.
+            VehicleType = primary.Vehicle?.VehicleType?.Name,
             TripStatus = primary.TripStatus,
             Driver = primary.Driver?.User is not { } drv ? null : new DriverResponse
             {

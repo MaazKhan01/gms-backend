@@ -60,6 +60,9 @@ public partial class ApplicationDBContext : DbContext
             entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Code).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Description).HasMaxLength(500);
+            // Defaults to allowed so existing roles keep working; the driver role
+            // has to be flipped off explicitly.
+            entity.Property(e => e.PortalAccess).HasDefaultValue(true);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
         });
 

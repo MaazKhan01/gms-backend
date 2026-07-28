@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Core.Common.Interfaces;
+using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.AccountRequest;
@@ -34,7 +35,7 @@ public class AuthController : Controllers.BaseApiController
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] LoginModel model, CancellationToken ct)
     {
-        var result = await _authService.LoginAsync(model, ct);
+        var result = await _authService.LoginAsync(model, Request.Headers[ClientApps.Header], ct);
 
         if (result.Success)
         {

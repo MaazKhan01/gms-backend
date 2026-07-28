@@ -103,6 +103,8 @@ app.UseAuth(); // UnauthorizedMiddleware + UseAuthentication + UseAuthorization
 
 app.UseSerilogRequestLogging();
 
+app.UseMiddleware<Core.Middlewares.BlobSasMiddleware>();
+
 app.MapControllers();
 
 app.Run();

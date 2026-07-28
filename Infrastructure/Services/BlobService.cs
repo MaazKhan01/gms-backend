@@ -24,6 +24,8 @@ public class BlobService : IBlobService
         _logger = logger;
     }
 
+    public string BlobHost => _blobServiceClient.Uri.Host;
+
     public async Task<string> UploadBase64Async(string base64Content, string fileName, string containerName = null, CancellationToken ct = default)
     {
         var container = containerName ?? _defaultContainer;

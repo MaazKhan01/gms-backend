@@ -39,6 +39,7 @@ public partial class ApplicationDBContext
     // Transport
     public virtual DbSet<Transport> Transports { get; set; }
     public virtual DbSet<VehicleType> VehicleTypes { get; set; }
+    public virtual DbSet<Vehicle> Vehicles { get; set; }
     public virtual DbSet<DriverProfile> DriverProfiles { get; set; }
     public virtual DbSet<Venue> Venues { get; set; }
     public virtual DbSet<VenueLayout> VenueLayouts { get; set; }
@@ -590,7 +591,7 @@ public partial class ApplicationDBContext
             t.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
             t.HasOne(x => x.PickupLocation).WithMany().HasForeignKey(x => x.PickupLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
-            t.HasOne(x => x.VehicleType).WithMany().HasForeignKey(x => x.VehicleTypeId).OnDelete(DeleteBehavior.Restrict);
+            t.HasOne(x => x.Vehicle).WithMany().HasForeignKey(x => x.VehicleId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
             t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
@@ -604,6 +605,19 @@ public partial class ApplicationDBContext
             vt.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
         });
 
+        modelBuilder.Entity<Vehicle>(v =>
+        {
+            v.ToTable("Vehicles");
+            v.HasKey(x => x.Id);
+            v.Property(x => x.VehicleModel).IsRequired().HasMaxLength(100);
+            v.Property(x => x.VehicleNumber).IsRequired().HasMaxLength(50);
+            v.Property(x => x.VehicleImage).HasMaxLength(500);
+            v.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            v.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            v.HasOne(x => x.VehicleType).WithMany().HasForeignKey(x => x.VehicleTypeId).OnDelete(DeleteBehavior.Restrict);
+            v.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
         modelBuilder.Entity<DriverProfile>(d =>
         {
             d.ToTable("DriverProfiles");
@@ -613,7 +627,6 @@ public partial class ApplicationDBContext
             d.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             d.HasOne(x => x.User).WithOne(u => u.DriverProfile).HasForeignKey<DriverProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
-            d.HasOne(x => x.VehicleType).WithMany().HasForeignKey(x => x.VehicleTypeId).OnDelete(DeleteBehavior.Restrict);
             d.HasOne(x => x.Nationality).WithMany().HasForeignKey(x => x.NationalityId).OnDelete(DeleteBehavior.Restrict);
             d.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });

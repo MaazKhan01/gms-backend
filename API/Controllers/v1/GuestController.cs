@@ -22,6 +22,12 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
         return ToResponse(result);
     }
 
+    // Lightweight feed for guest pickers — name/org/tier/photo only, searched and
+    // paged server-side. The full GET above is for the guest table.
+    [HttpGet("picker")]
+    public async Task<IActionResult> GetGuestPicker([FromQuery] Guid eventId, [FromQuery] PagedRequest request, CancellationToken ct)
+        => ToResponse(await _guestService.GetGuestPickerAsync(eventId, request, ct));
+
     [HttpGet("{id:guid}")]
     //[HasPermission(PermissionCodes.GuestsView)]
     public async Task<IActionResult> GetGuestById(Guid id, CancellationToken ct)

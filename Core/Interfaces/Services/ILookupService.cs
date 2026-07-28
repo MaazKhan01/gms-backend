@@ -8,4 +8,7 @@ public interface ILookupService
 {
     /// <summary>Code-defined guest option sets (tier, type, statuses) — no DB access.</summary>
     ApiResponse<Dictionary<string, List<LookupEnumOption>>> GetGuestEnums();
+
+    /// <summary>Driver engagement types (fixed / open) — no DB access.</summary>
+    ApiResponse<List<EnumIntOption>> GetDriverTypes();
 }

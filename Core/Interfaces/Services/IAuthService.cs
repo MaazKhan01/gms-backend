@@ -8,7 +8,9 @@ namespace Core.Interfaces.Services;
 
 public interface IAuthService
 {
-    Task<ApiResponse<TokenResponse>> LoginAsync(LoginModel model, CancellationToken ct = default);
+    /// <param name="clientApp">The X-Client-App header value ("portal" / "driver-app").
+    /// Null/unknown is treated as the portal.</param>
+    Task<ApiResponse<TokenResponse>> LoginAsync(LoginModel model, string clientApp = null, CancellationToken ct = default);
     Task<ApiResponse<TokenResponse>> RefreshTokenAsync(string refreshToken, CancellationToken ct = default);
     Task<ApiResponse<bool>> RevokeRefreshTokenAsync(string refreshToken, CancellationToken ct = default);
     Task<ApiResponse<bool>> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct = default);

@@ -1,4 +1,5 @@
 using System;
+using DomainPersistence.Enums;
 
 namespace Core.ViewModel.User;
 
@@ -16,10 +17,10 @@ public class InviteUserRequest
 
 public class DriverProfileInput
 {
-    public int? Age { get; set; }
+    // DriverType enum value: 1 = fixed, 2 = open (GET /v1/lookups/enums/driver-types).
+    public DriverType? DriverType { get; set; }
     public string LicenseNumber { get; set; }
     public DateOnly? LicenseExpiry { get; set; }
-    public Guid? VehicleTypeId { get; set; }
     public Guid? NationalityId { get; set; }
     public string PhotoUrl { get; set; }
 }

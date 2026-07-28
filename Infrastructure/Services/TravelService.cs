@@ -153,7 +153,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             };
 
         var tr = await _unitOfWork.Transports.Query()
-            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.VehicleType)
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.Vehicle)
             .Include(t => t.Driver)
             .FirstOrDefaultAsync(t => t.GuestId == guest.Id, ct);
         if (tr != null)
@@ -162,11 +162,13 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Id = tr.PublicId,
                 PickupLocationId = tr.PickupLocation?.PublicId,
                 DropoffLocationId = tr.DropoffLocation?.PublicId,
-                VehicleTypeId = tr.VehicleType?.PublicId,
+                VehicleId = tr.Vehicle?.PublicId,
                 DriverId = tr.Driver?.PublicId,
                 TripStatus = tr.TripStatus,
                 PickupTime = tr.PickupTime,
-                EstimatedArrival = tr.EstimatedArrival,
+                DropoffTime = tr.DropoffTime,
+                ActualPickupTime = tr.ActualPickupTime,
+                ActualDropOffTime = tr.ActualDropOffTime,
             };
 
         return ApiResponse<GuestTravelResponse>.SuccessResponse(data);
@@ -311,7 +313,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
                 Organization = t.Guest.Organization,
                 Tier = t.Guest.Tier,
-                VehicleType = t.VehicleType.Name,
+                Vehicle = t.Vehicle == null ? null : (t.Vehicle.VehicleNumber + " · " + t.Vehicle.VehicleModel),
                 DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
                 DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
                 Pickup = t.PickupLocation.Address,
@@ -523,7 +525,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             {
                 var pickupId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.PickupLocationId, ct);
                 var dropoffId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.DropoffLocationId, ct);
-                var vehicleTypeId = await ResolveNullableId(_unitOfWork.VehicleTypes, request.Transport.VehicleTypeId, ct);
+                var vehicleId = await ResolveNullableId(_unitOfWork.Vehicles, request.Transport.VehicleId, ct);
                 var driverId = await ResolveNullableId(_unitOfWork.DriverProfiles, request.Transport.DriverId, ct);
                 if (request.Transport.DriverId is { } d && d != Guid.Empty && driverId == null)
                     return ApiResponse<bool>.ErrorResponse("Invalid driver");
@@ -538,11 +540,21 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
                 tr.PickupLocationId = pickupId;
                 tr.DropoffLocationId = dropoffId;
-                tr.VehicleTypeId = vehicleTypeId;
+                tr.VehicleId = vehicleId;
                 tr.DriverId = driverId;
-                tr.TripStatus = request.Transport.TripStatus;
+                // Status follows the driver assignment while the job hasn't started
+                // yet; once the driver has moved it on (arrived / in-progress /
+                // completed) the admin form must not drag it backwards. The actual
+                // times are the driver app's to write, never blanked from here.
+                if (isNewTransport || tr.TripStatus is null
+                    or TransportStatuses.Pending or TransportStatuses.Assigned)
+                    tr.TripStatus = driverId.HasValue ? TransportStatuses.Assigned : TransportStatuses.Pending;
+
+                tr.ActualPickupTime = request.Transport.ActualPickupTime ?? tr.ActualPickupTime;
+                tr.ActualDropOffTime = request.Transport.ActualDropOffTime ?? tr.ActualDropOffTime;
+
                 tr.PickupTime = request.Transport.PickupTime;
-                tr.EstimatedArrival = request.Transport.EstimatedArrival;
+                tr.DropoffTime = request.Transport.DropoffTime;
 
                 if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
             }

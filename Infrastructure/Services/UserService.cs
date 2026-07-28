@@ -266,9 +266,7 @@ public class UserService(
             if (role.Code == Roles.DRIVER && request.DriverProfile != null)
             {
                 var d = request.DriverProfile;
-                var vehicleTypeId = d.VehicleTypeId.HasValue
-                    ? (await _unitOfWork.VehicleTypes.GetByPublicIdAsync(d.VehicleTypeId.Value, ct))?.Id
-                    : null;
+               
                 var nationalityId = d.NationalityId.HasValue
                     ? (await _unitOfWork.Nationalities.GetByPublicIdAsync(d.NationalityId.Value, ct))?.Id
                     : null;
@@ -276,10 +274,9 @@ public class UserService(
                 var profile = new DriverProfile
                 {
                     UserId = user.Id,
-                    Age = d.Age,
+                    DriverType = d.DriverType,
                     LicenseNumber = d.LicenseNumber,
                     LicenseExpiry = d.LicenseExpiry,
-                    VehicleTypeId = vehicleTypeId,
                     NationalityId = nationalityId,
                     PhotoUrl = d.PhotoUrl,
                 };

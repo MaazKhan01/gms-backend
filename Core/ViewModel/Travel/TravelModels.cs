@@ -59,11 +59,13 @@ public class TransportInput
     public Guid? Id { get; set; }
     public Guid? PickupLocationId { get; set; }
     public Guid? DropoffLocationId { get; set; }
-    public Guid? VehicleTypeId { get; set; }
+    public Guid? VehicleId { get; set; }  // Vehicle public id (GET /v1/vehicles)
     public string TripStatus { get; set; }
     public Guid? DriverId { get; set; }   // DriverProfile public id (GET /lookups/drivers)
     public DateTime? PickupTime { get; set; }
-    public DateTime? EstimatedArrival { get; set; }
+    public DateTime? DropoffTime { get; set; }
+    public DateTime? ActualPickupTime { get; set; }
+    public DateTime? ActualDropOffTime { get; set; }
 }
 
 // ---- Get (prefill edit): echoes inputs (public guids) + display names ----
@@ -180,7 +182,8 @@ public class EventTransportRow
     public string GuestName { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
-    public string VehicleType { get; set; }
+    // Display label for the assigned vehicle: "AB-1234 · Toyota Land Cruiser".
+    public string Vehicle { get; set; }
     public Guid? DriverId { get; set; }
     public string DriverName { get; set; }
     public string Pickup { get; set; }

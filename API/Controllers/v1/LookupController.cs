@@ -19,6 +19,11 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public IActionResult GetGuestEnums()
         => ToResponse(_lookupService.GetGuestEnums());
 
+    // Driver engagement types (fixed / open) for the driver invite form.
+    [HttpGet("enums/driver-types")]
+    public IActionResult GetDriverTypes()
+        => ToResponse(_lookupService.GetDriverTypes());
+
     // ── Travel lookups — separate GET per lookup, each reads its own table ────
     [HttpGet("flight-types")]
     public async Task<IActionResult> GetFlightTypes(CancellationToken ct)

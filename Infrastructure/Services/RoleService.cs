@@ -52,6 +52,8 @@ public class RoleService : IRoleService
                     Name = request.Name,
                     Code = request.Code,
                     Description = request.Description,
+                    // Default on: a new role is a portal role unless told otherwise.
+                    PortalAccess = request.PortalAccess ?? true,
                     CreatedBy = currentUserId,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -172,6 +174,7 @@ public class RoleService : IRoleService
             {
                 role.Name = request.Name;
                 role.Description = request.Description;
+                if (request.PortalAccess.HasValue) role.PortalAccess = request.PortalAccess.Value;
                 _unitOfWork.Roles.Update(role);
                 await _unitOfWork.SaveChangesAsync(ct);
 
