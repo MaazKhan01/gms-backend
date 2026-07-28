@@ -19,6 +19,7 @@ public partial class ApplicationDBContext
     public virtual DbSet<InvitationTemplate> InvitationTemplates { get; set; }
     public virtual DbSet<Meeting> Meetings { get; set; }
     public virtual DbSet<Location> Locations { get; set; }
+    public virtual DbSet<Organization> Organizations { get; set; }
 
     // Invitation / accreditation
     public virtual DbSet<Invitation> Invitations { get; set; }
@@ -250,6 +251,21 @@ public partial class ApplicationDBContext
             l.ToTable("Locations");
             l.HasKey(x => x.Id);
             l.Property(x => x.Type).HasMaxLength(50);
+        });
+
+        modelBuilder.Entity<Organization>(o =>
+        {
+            o.ToTable("Organizations");
+            o.HasKey(x => x.Id);
+            o.Property(x => x.Name).IsRequired().HasMaxLength(300);
+            o.Property(x => x.NameAr).HasMaxLength(300);
+            o.Property(x => x.Code).IsRequired().HasMaxLength(50);
+            o.HasIndex(x => x.Code).IsUnique().HasFilter("[IsDeleted] = 0");
+            o.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            o.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            // Restrict: an organisation's address row must be detached before the
+            // location itself can go, so a delete never silently orphans the org.
+            o.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<Meeting>(v =>
         {

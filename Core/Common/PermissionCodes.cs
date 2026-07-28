@@ -27,6 +27,11 @@ public static class PermissionCodes
     public const string LookupsView = "Lookups.View";
     public const string LookupsManage = "Lookups.Manage";
 
+    // Organizations (admin managed; the read endpoint is open to any signed-in
+    // user so every module can populate an organisation dropdown).
+    public const string OrganizationsView = "Organizations.View";
+    public const string OrganizationsManage = "Organizations.Manage";
+
     // ── GMS modules ─────────────────────────────────────────────────────
     // Each module exposes a `.View` (read-only, no action buttons) plus its
     // action permissions. Policies register automatically via reflection in

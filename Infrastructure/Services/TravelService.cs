@@ -1,3 +1,4 @@
+using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -57,14 +58,18 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         return ApiResponse<List<IdNameDto>>.SuccessResponse(data);
     }
 
+    // Sourced from Users (not just DriverProfiles) so a driver who's been
+    // deactivated or reassigned to a different role drops out of the dropdown
+    // immediately, even though their DriverProfile row is left in place.
     public async Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default)
     {
-        var data = await _unitOfWork.DriverProfiles.Query()
-            .OrderBy(x => x.User.FirstName).ThenBy(x => x.User.LastName)
-            .Select(x => new IdNameDto
+        var data = await _unitOfWork.Users.Query()
+            .Where(u => u.IsActive && u.Role.Code == Roles.DRIVER && u.DriverProfile != null)
+            .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
+            .Select(u => new IdNameDto
             {
-                Id = x.PublicId,
-                Name = (x.User.FirstName + " " + x.User.LastName).Trim()
+                Id = u.DriverProfile.PublicId,
+                Name = (u.FirstName + " " + u.LastName).Trim()
             })
             .ToListAsync(ct);
         return ApiResponse<List<IdNameDto>>.SuccessResponse(data);

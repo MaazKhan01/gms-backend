@@ -181,6 +181,16 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         var session = _mapper.Map<Session>(request);
         session.EventId = ev.Id;
         session.Event = ev;
+
+        if (request.VenueId.HasValue)
+        {
+            var venue = await _unitOfWork.Venues.GetByPublicIdAsync(request.VenueId.Value, ct);
+            if (venue == null)
+                return ApiResponse<SessionResponse>.NotFoundResponse("Venue not found");
+            session.VenueId = venue.Id;
+            session.VenueName = venue.Name;
+        }
+
         session.SetCreationAudit(userId);
 
         await _unitOfWork.Sessions.AddAsync(session, ct);
@@ -204,7 +214,20 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper) : IEventServ
         session.Title = request.Title ?? session.Title;
         session.Date = request.Date ?? session.Date;
         session.Time = request.Time ?? session.Time;
-        session.VenueName = request.VenueName ?? session.VenueName;
+
+        if (request.VenueId.HasValue)
+        {
+            var venue = await _unitOfWork.Venues.GetByPublicIdAsync(request.VenueId.Value, ct);
+            if (venue == null)
+                return ApiResponse<SessionResponse>.NotFoundResponse("Venue not found");
+            session.VenueId = venue.Id;
+            session.VenueName = venue.Name;
+        }
+        else
+        {
+            session.VenueName = request.VenueName ?? session.VenueName;
+        }
+
         session.Room = request.Room ?? session.Room;
         session.Speaker = request.Speaker ?? session.Speaker;
         if (request.Capacity > 0) session.Capacity = request.Capacity;

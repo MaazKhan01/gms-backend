@@ -67,14 +67,16 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId));
         CreateMap<Session, SessionResponse>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
-            .ForMember(dest => dest.EventId, opt => opt.MapFrom(src => src.Event != null ? src.Event.PublicId : Guid.Empty));
+            .ForMember(dest => dest.EventId, opt => opt.MapFrom(src => src.Event != null ? src.Event.PublicId : Guid.Empty))
+            .ForMember(dest => dest.VenueId, opt => opt.MapFrom(src => src.Venue != null ? (Guid?)src.Venue.PublicId : null));
         CreateMap<CreateEventRequest, Event>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.AppKey, opt => opt.Ignore())
             .ForMember(dest => dest.Sessions, opt => opt.Ignore());
         CreateMap<CreateSessionRequest, Session>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())
-            .ForMember(dest => dest.Event, opt => opt.Ignore());
+            .ForMember(dest => dest.Event, opt => opt.Ignore())
+            .ForMember(dest => dest.VenueId, opt => opt.Ignore());
 
         // Account request mappings
         CreateMap<AccountRequest, AccountRequestResponse>()

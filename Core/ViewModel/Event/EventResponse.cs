@@ -30,6 +30,7 @@ public class SessionResponse
     public DateOnly? Date { get; set; }
     public string Time { get; set; }
     public string VenueName { get; set; }
+    public Guid? VenueId { get; set; }
     public string Room { get; set; }
     public string Speaker { get; set; }
     public int Capacity { get; set; }
