@@ -104,6 +104,9 @@ app.UseSwaggerUI(options =>
 {
     options.SwaggerEndpoint("/openapi/v1.json", "GMS API v1");
     options.RoutePrefix = "swagger";
+    // Keeps the Authorize token in browser localStorage, so a reload doesn't
+    // log you out of the UI. Dev convenience only — the token is in the browser.
+    options.ConfigObject.PersistAuthorization = true;
 });
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();

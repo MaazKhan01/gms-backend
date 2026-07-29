@@ -38,6 +38,8 @@ public class AuthService(
                 .ThenInclude(r => r.RolePermissions)
                     .ThenInclude(rp => rp.Permission)
             .Include(u => u.ModuleGrants)
+            .Include(u => u.DriverProfile)
+                .ThenInclude(d => d.Nationality)
             .FirstOrDefaultAsync(u => u.Email == model.Email && u.IsDeleted != true, ct);
 
         if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(model.Password, user.PasswordHash))
@@ -93,6 +95,8 @@ public class AuthService(
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
                 .Include(u => u.ModuleGrants)
+                .Include(u => u.DriverProfile)
+                    .ThenInclude(d => d.Nationality)
                 .FirstOrDefaultAsync(u => u.Email == email && u.IsDeleted != true, ct);
 
             if (user == null || !user.IsActive)
@@ -181,6 +185,8 @@ public class AuthService(
                 .Include(u => u.Role)
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
+                .Include(u => u.DriverProfile)
+                    .ThenInclude(d => d.Nationality)
                 .FirstOrDefaultAsync(u => u.Email == email && u.IsDeleted != true, ct);
 
             if (user == null || !user.IsActive)
@@ -290,6 +296,8 @@ public class AuthService(
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
                 .Include(u => u.ModuleGrants)
+                .Include(u => u.DriverProfile)
+                    .ThenInclude(d => d.Nationality)
                 .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsDeleted != true, ct);
 
             if (user == null)
@@ -481,7 +489,10 @@ public class AuthService(
     }
 
     private static TokenResponse BuildTokenResponse(User user, string accessToken, string refreshToken)
-        => new()
+    {
+        var isDriver = user.Role?.Code == Roles.DRIVER;
+
+        return new()
         {
             AccessToken = accessToken,
             RefreshToken = refreshToken,
@@ -495,10 +506,24 @@ public class AuthService(
                 Role = user.Role?.Name,
                 RoleCode = user.Role?.Code,
                 RoleId = user.Role?.PublicId,
-                Permissions = user.Role?.RolePermissions?
+                // Drivers get driverDetails instead; both props are omitted when null.
+                Permissions = isDriver ? null : user.Role?.RolePermissions?
                     .Where(rp => rp.Permission != null)
                     .Select(rp => rp.Permission.Code)
-                    .ToList() ?? new()
+                    .ToList() ?? new(),
+                DriverDetails = isDriver && user.DriverProfile != null
+                    ? new DriverDetails
+                    {
+                        Id = user.DriverProfile.PublicId,
+                        DriverType = user.DriverProfile.DriverType?.ToString(),
+                        LicenseNumber = user.DriverProfile.LicenseNumber,
+                        LicenseExpiry = user.DriverProfile.LicenseExpiry,
+                        NationalityId = user.DriverProfile.Nationality?.PublicId,
+                        Nationality = user.DriverProfile.Nationality?.Name,
+                        PhotoUrl = user.DriverProfile.PhotoUrl
+                    }
+                    : null
             }
         };
+    }
 }

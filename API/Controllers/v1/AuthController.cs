@@ -33,9 +33,14 @@ public class AuthController : Controllers.BaseApiController
     [HttpPost("login")]
     [AllowAnonymous]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> Login([FromBody] LoginModel model, CancellationToken ct)
+    /// <param name="clientApp">"portal" (default) or "driver-app". Declared as a
+    /// parameter so Swagger offers a box for it; real clients send the header.</param>
+    public async Task<IActionResult> Login(
+        [FromBody] LoginModel model,
+        [FromHeader(Name = ClientApps.Header)] string clientApp,
+        CancellationToken ct)
     {
-        var result = await _authService.LoginAsync(model, Request.Headers[ClientApps.Header], ct);
+        var result = await _authService.LoginAsync(model, clientApp, ct);
 
         if (result.Success)
         {

@@ -11,6 +11,7 @@ public static class ClientApps
 
     public const string Portal = "portal";
     public const string DriverApp = "driver-app";
+    public const string GuestApp = "guest-app";
 
     /// <summary>Normalises the header value. A missing/unknown value is treated
     /// as the portal — that's the client that existed before this header did.</summary>

@@ -14,7 +14,11 @@ public static class TransportStatuses
     public const string Assigned = "assigned";
     public const string Arrived = "arrived";
     public const string InProgress = "in-progress";
+    public const string InTransit = "in-transit";
     public const string Completed = "completed";
+
+    /// <summary>Every valid status — used to reject junk status filters.</summary>
+    public static readonly string[] All = { Pending, Assigned, Arrived, InProgress, Completed };
 
     /// <summary>The status a driver may move a job to, given its current one.</summary>
     public static string NextFor(string current) => current switch
