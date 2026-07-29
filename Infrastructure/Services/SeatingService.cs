@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -35,6 +36,16 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
                 .FirstOrDefaultAsync(g => g.PublicId == request.GuestId, ct);
             if (guest == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest not found.");
+
+            // A seat can only go to a guest who has actually confirmed they're
+            // coming, and — if their tier requires it — has been accredited.
+            // Mirrors the same gate AccreditationView enforces before issuing.
+            var invitation = await _unitOfWork.Invitations.Query()
+                .FirstOrDefaultAsync(i => i.GuestId == guest.Id, ct);
+            if (invitation?.InvitationStatus != GuestInvitationStatus.Accepted)
+                return ApiResponse<bool>.ConflictResponse("This guest hasn't accepted their invitation yet — a seat can't be assigned until they do.");
+            if (guest.AccreditationRequired && invitation.AccreditationStatus != GuestAccreditationStatus.Issued)
+                return ApiResponse<bool>.ConflictResponse("This guest's accreditation hasn't been issued yet — a seat can't be assigned until it is.");
 
             // Resolve the event's public id to its internal id.
             var eventEntity = await _unitOfWork.Events.Query()
@@ -232,6 +243,36 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
         {
             _logger.LogError(ex, "Error loading seat assignments for box {VenueBoxId}", venueBoxId);
             return ApiResponse<List<SeatAssignmentDto>>.ServerErrorResponse("An error occurred while loading seat assignments.");
+        }
+    }
+
+    // Used by the Guests screen to warn before deleting a guest who still holds
+    // a seat — surfaces exactly which event/session/seat so the confirmation
+    // can name them, matching the wording used for the delete itself (the seat
+    // is freed automatically when the guest is deleted — see Guest.DeleteGuestByIdAsync).
+    public async Task<ApiResponse<List<GuestSeatAssignmentDto>>> GetGuestSeatAssignmentsAsync(Guid guestId, CancellationToken ct)
+    {
+        try
+        {
+            if (guestId == Guid.Empty)
+                return ApiResponse<List<GuestSeatAssignmentDto>>.ErrorResponse("GuestId is required.");
+
+            var list = await _unitOfWork.SeatAssigns.Query()
+                .Where(sa => sa.Guest.PublicId == guestId)
+                .Select(sa => new GuestSeatAssignmentDto
+                {
+                    EventTitle = sa.Seating.Event.Title,
+                    SessionTitle = sa.Seating.Session != null ? sa.Seating.Session.Title : null,
+                    SeatCode = sa.Seat.Code,
+                })
+                .ToListAsync(ct);
+
+            return ApiResponse<List<GuestSeatAssignmentDto>>.SuccessResponse(list);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading seat assignments for guest {GuestId}", guestId);
+            return ApiResponse<List<GuestSeatAssignmentDto>>.ServerErrorResponse("An error occurred while loading the guest's seat assignments.");
         }
     }
 }

@@ -38,5 +38,15 @@ namespace API.Controllers.v1
             var result = await _seatingService.GetSeatAssignmentsAsync(venueBoxId, eventId, sessionId, ct);
             return ToResponse(result);
         }
+
+        // Every seat this guest currently holds, across sessions/scopes — used by
+        // the Guests screen to warn before deleting a seated guest.
+        [HttpGet("guest/{guestId:guid}")]
+        [HasPermission(PermissionCodes.SeatingView)]
+        public async Task<IActionResult> GetGuestSeatAssignments(Guid guestId, CancellationToken ct = default)
+        {
+            var result = await _seatingService.GetGuestSeatAssignmentsAsync(guestId, ct);
+            return ToResponse(result);
+        }
     }
 }
