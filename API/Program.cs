@@ -68,7 +68,7 @@ using (var scope = app.Services.CreateScope())
     var sp = scope.ServiceProvider;
     var db = sp.GetRequiredService<DomainPersistence.Entities.ApplicationDBContext>();
     var seedLogger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("DataSeeder");
-    await Infrastructure.Data.DataSeeder.SeedAsync(db, app.Configuration, seedLogger);
+    //await Infrastructure.Data.DataSeeder.SeedAsync(db, app.Configuration, seedLogger);
 }
 
 app.UseRouting();
