@@ -15,7 +15,17 @@
       "Bash(xargs grep -ln \"Authorize\\(Policy\")",
       "Bash(xargs cat)",
       "Bash(dotnet build *)",
-      "Bash(dotnet ef *)"
+      "Bash(dotnet ef *)",
+      "Bash(where pandoc *)",
+      "Bash(where wkhtmltopdf *)",
+      "Bash(where chrome *)",
+      "Bash(where msedge *)",
+      "Bash(command -v pandoc)",
+      "Bash(command -v wkhtmltopdf)",
+      "Read(//c/Program Files/Google/Chrome/Application/**)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/Microsoft/Edge/Application/**)",
+      "Bash(python3 -c \"import weasyprint\")",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless --disable-gpu --no-pdf-header-footer --print-to-pdf=\"C:\\\\Users\\\\USER\\\\.claude\\\\jobs\\\\6e41dc5a\\\\tmp\\\\support-chat-api.pdf\" \"C:\\\\Users\\\\USER\\\\.claude\\\\jobs\\\\6e41dc5a\\\\tmp\\\\support-chat-api.html\")"
     ]
   }
 }

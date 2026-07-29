@@ -21,6 +21,9 @@ public static class TransportStatuses
     public const string InProgress = "in-progress";
     public const string InTransit = "in-transit";
     public const string Completed = "completed";
+    // Terminal, explicit-action only — never reachable via NextFor(), so the
+    // driver app's existing "advance" button can't land on it by accident.
+    public const string Cancelled = "cancelled";
 
     /// <summary>Every valid status — used to reject junk status filters.</summary>
     public static readonly string[] All = { New, Pending, Assigned, InProgress, Arrived, InTransit, Completed };

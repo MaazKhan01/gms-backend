@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260729122538_AddTransportationModule")]
+    partial class AddTransportationModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -405,9 +408,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValueSql("((0))");
 
-                    b.Property<bool>("IsOnline")
-                        .HasColumnType("bit");
-
                     b.Property<DateOnly?>("LicenseExpiry")
                         .HasColumnType("date");
 
@@ -615,9 +615,6 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTime?>("ArrivalTime")
-                        .HasColumnType("datetime2");
-
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -631,9 +628,6 @@ namespace DomainPersistence.Migrations
 
                     b.Property<int?>("DeletedBy")
                         .HasColumnType("int");
-
-                    b.Property<DateTime?>("DepartureTime")
-                        .HasColumnType("datetime2");
 
                     b.Property<int?>("FlightClassId")
                         .HasColumnType("int");
@@ -1620,7 +1614,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId", "Read", "CreatedAt");
 
-                    b.ToTable("Notifications", (string)null);
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Organization", b =>
@@ -1757,7 +1751,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("OtpVerifications", (string)null);
+                    b.ToTable("OtpVerifications");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Permission", b =>
@@ -1822,7 +1816,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Permissions", (string)null);
+                    b.ToTable("Permissions");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.RideRequest", b =>
@@ -1973,7 +1967,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.RolePermission", b =>
@@ -2028,7 +2022,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RolePermissions", (string)null);
+                    b.ToTable("RolePermissions");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.SeatAssign", b =>
@@ -2550,7 +2544,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("SystemErrorLogs", (string)null);
+                    b.ToTable("SystemErrorLogs");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Transport", b =>
@@ -2864,7 +2858,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserLoginLogs", (string)null);
+                    b.ToTable("UserLoginLogs");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.UserModuleGrant", b =>
@@ -2954,7 +2948,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserRefreshTokens", (string)null);
+                    b.ToTable("UserRefreshTokens");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Vehicle", b =>

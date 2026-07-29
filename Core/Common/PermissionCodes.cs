@@ -63,6 +63,11 @@ public static class PermissionCodes
     public const string TravelManage = "Travel.Manage";
     public const string TravelSyncHayya = "Travel.SyncHayya";
 
+    // Transportation — driver assignment & guest ride requests
+    public const string TransportationView = "Transportation.View";
+    public const string TransportationManage = "Transportation.Manage";
+    public const string TransportationAssign = "Transportation.Assign";
+
     // Accreditation
     public const string AccreditationView = "Accreditation.View";
     public const string AccreditationIssue = "Accreditation.Issue";

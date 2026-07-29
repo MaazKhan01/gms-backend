@@ -13,5 +13,6 @@ namespace Core.Interfaces.Services
         Task<ApiResponse<bool>> AssignSeatToGuestAsync(RequestSeatAssignDto request, int userId, CancellationToken ct);
         Task<ApiResponse<bool>> UnassignSeatAsync(Guid seatId, Guid venueBoxId, Guid eventId, Guid? sessionId, CancellationToken ct);
         Task<ApiResponse<List<SeatAssignmentDto>>> GetSeatAssignmentsAsync(Guid venueBoxId, Guid eventId, Guid? sessionId, CancellationToken ct);
+        Task<ApiResponse<List<GuestSeatAssignmentDto>>> GetGuestSeatAssignmentsAsync(Guid guestId, CancellationToken ct);
     }
 }

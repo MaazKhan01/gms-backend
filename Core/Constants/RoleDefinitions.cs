@@ -16,7 +16,7 @@ public static class RoleDefinitions
     public static readonly string[] AllViews =
     {
         PermissionCodes.EventsView, PermissionCodes.InvitationsView, PermissionCodes.GuestsView,
-        PermissionCodes.TravelView, PermissionCodes.AccreditationView, PermissionCodes.VenueView,
+        PermissionCodes.TravelView, PermissionCodes.TransportationView, PermissionCodes.AccreditationView, PermissionCodes.VenueView,
         PermissionCodes.SeatingView, PermissionCodes.MeetingsView, PermissionCodes.ProtocolView,
         PermissionCodes.FinancialsView, PermissionCodes.ReportsView, PermissionCodes.DashboardView,
     };
@@ -46,6 +46,9 @@ public static class RoleDefinitions
         new("travel-manager", "Travel & Logistics Manager", "Manage flights, hotels, transfers and visas", new[]
         {
             PermissionCodes.TravelView, PermissionCodes.TravelManage, PermissionCodes.TravelSyncHayya,
+            // Transportation module (driver assignment, schedules, on-demand
+            // requests) is the same "transfers" concern this role already owns.
+            PermissionCodes.TransportationView, PermissionCodes.TransportationManage, PermissionCodes.TransportationAssign,
             PermissionCodes.DashboardView,
         }),
         new("accreditation-manager", "Accreditation Manager", "Issue and revoke accreditation badges", new[]

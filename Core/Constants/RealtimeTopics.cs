@@ -14,5 +14,18 @@ namespace Core.Constants
         // Pushed after any mutation that changes a user's unread count (mark-read,
         // mark-all-read, delete) so the badge stays in sync across open tabs/devices.
         public const string NotificationCountChanged = "notification-count-changed";
+
+        // ── Transportation module ────────────────────────────────────────
+        // Guest-facing
+        public const string TransportationDriverAssigned = "transportation-driver-assigned";
+        public const string TransportationRequestAccepted = "transportation-request-accepted";
+        public const string TransportationDriverArrived = "transportation-driver-arrived";
+        public const string TransportationRideStarted = "transportation-ride-started";
+        public const string TransportationRideCompleted = "transportation-ride-completed";
+        public const string TransportationRideCancelled = "transportation-ride-cancelled";
+        // Driver-facing
+        public const string TransportationRequestAvailable = "transportation-request-available";
+        public const string TransportationRequestUnavailable = "transportation-request-unavailable";
+        public const string TransportationScheduleUpdated = "transportation-schedule-updated";
     }
 }

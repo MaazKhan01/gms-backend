@@ -10,6 +10,7 @@ using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.TransportApp;
+using Core.ViewModel.Transportation;
 using DomainPersistence.Entities;
 using DomainPersistence.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +20,9 @@ namespace Infrastructure.Services;
 
 // Driver app. Every query is scoped to the caller's own DriverProfile — a driver
 // can only ever see or touch transfers assigned to them.
-public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppService> _logger) : ITransportAppService
+public class TransportAppService(
+    IUnitOfWork _unitOfWork, IRideRequestService _rideRequests,
+    IRealTimeAlertService _realTimeAlerts, ILogger<TransportAppService> _logger) : ITransportAppService
 {
     public async Task<ApiResponse<DriverStatsResponse>> GetStatsAsync(
         int userId, Guid? eventId = null, CancellationToken ct = default)
@@ -543,6 +546,20 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
             _unitOfWork.Transports.Update(job);
             await _unitOfWork.SaveChangesAsync(ct);
 
+            await _unitOfWork.TransportStatusHistories.AddAsync(
+                new TransportStatusHistory { TransportId = job.Id, Status = next, ChangedByUserId = userId }, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            var guestTopic = next switch
+            {
+                TransportStatuses.Arrived => RealtimeTopics.TransportationDriverArrived,
+                TransportStatuses.InProgress => RealtimeTopics.TransportationRideStarted,
+                TransportStatuses.Completed => RealtimeTopics.TransportationRideCompleted,
+                _ => null,
+            };
+            if (guestTopic != null)
+                await _realTimeAlerts.SendToGroupAsync(guestTopic, $"guest:{job.GuestId}", "Ride update", $"Your ride is now '{next}'.");
+
             var updated = await _unitOfWork.Transports.Query()
                 .Where(t => t.Id == job.Id)
                 .Select(Project)
@@ -555,6 +572,38 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
             _logger.LogError(ex, "Error moving driver job {JobId} to {Status}", jobId, next);
             return ApiResponse<DriverJobResponse>.ServerErrorResponse("An error occurred while updating the job");
         }
+    }
+
+    public async Task<ApiResponse<bool>> ToggleAvailabilityAsync(int userId, bool isAvailable, CancellationToken ct = default)
+    {
+        var driver = await _unitOfWork.DriverProfiles.Query().FirstOrDefaultAsync(d => d.UserId == userId, ct);
+        if (driver == null) return ApiResponse<bool>.NotFoundResponse("No driver profile for this user");
+
+        driver.IsAvailable = isAvailable;
+        driver.AvailabilityChangedAt = DateTime.UtcNow;
+        driver.SetUpdateAudit(userId);
+        _unitOfWork.DriverProfiles.Update(driver);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return ApiResponse<bool>.SuccessResponse(true, isAvailable
+            ? "You are now available for ride requests"
+            : "You are now unavailable for ride requests");
+    }
+
+    public async Task<ApiResponse<List<RideRequestRow>>> GetOpenRideRequestsAsync(int userId, CancellationToken ct = default)
+    {
+        var driverId = await ResolveDriverIdAsync(userId, ct);
+        if (driverId == null) return ApiResponse<List<RideRequestRow>>.NotFoundResponse("No driver profile for this user");
+
+        return await _rideRequests.GetOpenAsync(ct);
+    }
+
+    public async Task<ApiResponse<RideRequestRow>> AcceptRideRequestAsync(int userId, Guid rideRequestId, CancellationToken ct = default)
+    {
+        var driverId = await ResolveDriverIdAsync(userId, ct);
+        if (driverId == null) return ApiResponse<RideRequestRow>.NotFoundResponse("No driver profile for this user");
+
+        return await _rideRequests.AcceptAsync(driverId.Value, rideRequestId, ct);
     }
 
     private IQueryable<User> UserWithDriverProfile()
