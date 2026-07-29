@@ -60,6 +60,14 @@ public class SupportChatController(ISupportChatService _supportChat, ICurrentGue
     public async Task<IActionResult> Reply(Guid conversationId, [FromBody] SendSupportMessageRequest request, CancellationToken ct)
         => ToResponse(await _supportChat.ReplyAsync(conversationId, request, ct));
 
+    // Admin starts (or continues) a conversation by guest id — no prior
+    // conversation needs to exist. The literal "by-guest" segment keeps this
+    // from colliding with the {conversationId:guid} route above.
+    [HttpPost("conversations/by-guest/{guestId:guid}/messages"), EnableRateLimiting("chat")]
+    [HasPermission(PermissionCodes.SupportChatManage)]
+    public async Task<IActionResult> StartOrReply(Guid guestId, [FromBody] SendSupportMessageRequest request, CancellationToken ct)
+        => ToResponse(await _supportChat.StartOrReplyByGuestAsync(guestId, request, ct));
+
     [HttpPost("conversations/{conversationId:guid}/read")]
     [HasPermission(PermissionCodes.SupportChatManage)]
     public async Task<IActionResult> MarkRead(Guid conversationId, CancellationToken ct)

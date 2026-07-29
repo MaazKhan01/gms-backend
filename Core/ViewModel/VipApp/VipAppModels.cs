@@ -167,6 +167,7 @@ public record UpdateSettingsRequest(bool NotificationsEnabled, string Language, 
 public class SupportMessageResponse
 {
     public Guid Id { get; set; }
+    public Guid ConversationId { get; set; }
     public string Body { get; set; }
     public bool FromGuest { get; set; }
     public DateTime SentAt { get; set; }
@@ -176,7 +177,16 @@ public class SupportMessageResponse
     public string AttachmentType { get; set; }
     public string SenderName { get; set; } // populated for admin-sent messages
 }
-public record SendSupportMessageRequest(string Body);
+
+// Plain class (not a positional record) so every field is independently
+// optional on the wire — a record's positional ctor makes the first parameter
+// awkward to omit. A message needs Body, an attachment, or both; never neither.
+public class SendSupportMessageRequest
+{
+    public string Body { get; set; }
+    public string AttachmentUrl { get; set; }
+    public string AttachmentType { get; set; }
+}
 
 // ---------------- Notifications / devices ----------------
 public class GuestNotificationResponse

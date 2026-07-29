@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -56,6 +57,7 @@ public class SupportChatService(
 
         var query = _unitOfWork.SupportMessages.QueryNoTracking()
             .Include(m => m.SenderUser)
+            .Include(m => m.Conversation)
             .Where(m => m.GuestId == guestId);
 
         var total = await query.CountAsync(ct);
@@ -72,7 +74,7 @@ public class SupportChatService(
 
     public async Task<ApiResponse<SupportMessageResponse>> SendGuestMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct = default)
     {
-        var validation = ValidateBody(request?.Body);
+        var validation = ValidateSend(request);
         if (validation != null)
             return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
 
@@ -84,20 +86,23 @@ public class SupportChatService(
             conversation.ClosedByUserId = null;
         }
 
-        var body = request.Body.Trim();
+        var body = request.Body?.Trim() ?? string.Empty;
         var msg = new SupportMessage
         {
             GuestId = guestId,
             ConversationId = conversation.Id,
+            Conversation = conversation,
             Body = body,
             FromGuest = true,
             SentAt = DateTime.UtcNow,
-            IsRead = false
+            IsRead = false,
+            AttachmentUrl = request.AttachmentUrl,
+            AttachmentType = request.AttachmentType,
         };
         await _unitOfWork.SupportMessages.AddAsync(msg, ct);
 
         conversation.LastMessageAt = msg.SentAt;
-        conversation.LastMessagePreview = Truncate(body, PreviewLength);
+        conversation.LastMessagePreview = ComputePreview(body, request.AttachmentType);
         conversation.LastMessageFromGuest = true;
         conversation.UnreadByAdminCount += 1;
         _unitOfWork.SupportConversations.Update(conversation);
@@ -176,6 +181,7 @@ public class SupportChatService(
 
         var query = _unitOfWork.SupportMessages.QueryNoTracking()
             .Include(m => m.SenderUser)
+            .Include(m => m.Conversation)
             .Where(m => m.ConversationId == conversation.Id);
 
         var total = await query.CountAsync(ct);
@@ -192,7 +198,7 @@ public class SupportChatService(
 
     public async Task<ApiResponse<SupportMessageResponse>> ReplyAsync(Guid conversationId, SendSupportMessageRequest request, CancellationToken ct = default)
     {
-        var validation = ValidateBody(request?.Body);
+        var validation = ValidateSend(request);
         if (validation != null)
             return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
 
@@ -200,22 +206,62 @@ public class SupportChatService(
         if (conversation is null)
             return ApiResponse<SupportMessageResponse>.NotFoundResponse("Conversation not found");
 
-        var body = request.Body.Trim();
+        return await SendAdminMessageAsync(conversation, request, ct);
+    }
+
+    // Admin-initiated: get-or-create the guest's conversation, then send through
+    // the exact same path ReplyAsync uses. Safe to call even when a conversation
+    // already exists for this guest (e.g. the admin's local list was stale) —
+    // it just continues that thread rather than erroring or duplicating it.
+    public async Task<ApiResponse<SupportMessageResponse>> StartOrReplyByGuestAsync(Guid guestId, SendSupportMessageRequest request, CancellationToken ct = default)
+    {
+        var validation = ValidateSend(request);
+        if (validation != null)
+            return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
+
+        var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+        if (guest is null)
+            return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest not found");
+
+        var conversation = await GetOrCreateConversationAsync(guest.Id, ct);
+        return await SendAdminMessageAsync(conversation, request, ct);
+    }
+
+    // Shared by ReplyAsync and StartOrReplyByGuestAsync. Reopens a Closed
+    // conversation on send — the admin UI normally requires an explicit
+    // "Reopen" click first, but StartOrReplyByGuestAsync can land here without
+    // that check ever running (a guest picked from the "start new chat" list
+    // may already have an existing, closed conversation the admin's client
+    // didn't know about) — so this is the actual safety net, not the UI gate.
+    private async Task<ApiResponse<SupportMessageResponse>> SendAdminMessageAsync(
+        SupportConversation conversation, SendSupportMessageRequest request, CancellationToken ct)
+    {
+        if (conversation.Status == SupportChatStatuses.Closed)
+        {
+            conversation.Status = SupportChatStatuses.Open;
+            conversation.ClosedAt = null;
+            conversation.ClosedByUserId = null;
+        }
+
+        var body = request.Body?.Trim() ?? string.Empty;
         var adminUserId = _currentUser.UserId;
         var msg = new SupportMessage
         {
             GuestId = conversation.GuestId,
             ConversationId = conversation.Id,
+            Conversation = conversation,
             Body = body,
             FromGuest = false,
             SenderUserId = adminUserId,
             SentAt = DateTime.UtcNow,
-            IsRead = false
+            IsRead = false,
+            AttachmentUrl = request.AttachmentUrl,
+            AttachmentType = request.AttachmentType,
         };
         await _unitOfWork.SupportMessages.AddAsync(msg, ct);
 
         conversation.LastMessageAt = msg.SentAt;
-        conversation.LastMessagePreview = Truncate(body, PreviewLength);
+        conversation.LastMessagePreview = ComputePreview(body, request.AttachmentType);
         conversation.LastMessageFromGuest = false;
         conversation.UnreadByGuestCount += 1;
         _unitOfWork.SupportConversations.Update(conversation);
@@ -227,7 +273,7 @@ public class SupportChatService(
         var senderName = _currentUser.UserInfo != null
             ? $"{_currentUser.UserInfo.FirstName} {_currentUser.UserInfo.LastName}".Trim()
             : null;
-        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, senderName), "Reply sent");
+        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, senderName), "Message sent");
     }
 
     public async Task<ApiResponse<bool>> MarkReadByAdminAsync(Guid conversationId, CancellationToken ct = default)
@@ -342,17 +388,33 @@ public class SupportChatService(
         }
     }
 
-    private static string ValidateBody(string body)
+    // A message needs a body, an attachment, or both — never neither.
+    private static string ValidateSend(SendSupportMessageRequest request)
     {
-        if (string.IsNullOrWhiteSpace(body))
-            return "Message body is required";
-        if (body.Trim().Length > MaxBodyLength)
+        var hasBody = !string.IsNullOrWhiteSpace(request?.Body);
+        var hasAttachment = !string.IsNullOrWhiteSpace(request?.AttachmentUrl);
+        if (!hasBody && !hasAttachment)
+            return "Message body or an attachment is required";
+        if (hasBody && request.Body.Trim().Length > MaxBodyLength)
             return $"Message cannot exceed {MaxBodyLength} characters";
         return null;
     }
 
     private static string Truncate(string s, int max)
         => string.IsNullOrEmpty(s) || s.Length <= max ? s : s.Substring(0, max);
+
+    private static readonly Regex HtmlTag = new("<[^>]*>", RegexOptions.Compiled);
+
+    // The admin composer sends rich-text HTML (Tiptap); the guest app always
+    // sends plain text. Stripping tags here means the inbox's "latest message"
+    // column is never asked to render raw markup as if it were plain text.
+    private static string ComputePreview(string body, string attachmentType)
+    {
+        var plain = string.IsNullOrWhiteSpace(body) ? string.Empty : HtmlTag.Replace(body, string.Empty).Trim();
+        if (plain.Length > 0) return Truncate(plain, PreviewLength);
+        return attachmentType?.StartsWith("image", StringComparison.OrdinalIgnoreCase) == true
+            ? "📷 Photo" : "📎 Attachment";
+    }
 
     private static SupportConversationSummaryResponse MapSummary(SupportConversation c, int unreadCount) => new()
     {
@@ -370,6 +432,7 @@ public class SupportChatService(
     private static SupportMessageResponse MapMessage(SupportMessage m, string senderName = null) => new()
     {
         Id = m.PublicId,
+        ConversationId = m.Conversation.PublicId,
         Body = m.Body,
         FromGuest = m.FromGuest,
         SentAt = m.SentAt,

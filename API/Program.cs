@@ -2,6 +2,7 @@
 using Core.Helpers;
 using Core.Interfaces.Services;
 using Core.Middlewares;
+using Core.Serialization;
 using Hangfire;
 using Infrastructure.Auth;
 using Infrastructure.Hangfire;
@@ -20,7 +21,15 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    // Every DateTime this API returns is UTC — see UtcDateTimeConverters for why
+    // this is necessary despite that (EF Core + SQL Server's datetime2 losing the
+    // Kind tag on every read).
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+        o.JsonSerializerOptions.Converters.Add(new UtcNullableDateTimeConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddApplicationServices(builder.Configuration);
