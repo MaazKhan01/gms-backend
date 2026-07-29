@@ -81,6 +81,9 @@ public class FlightLegResponse
     public string ArrivalCode { get; set; }
     public string ArrivalAirport { get; set; }
     public DateTime? DateTime { get; set; }
+    // Booking-level times from the Flights row (the leg's own times drive DateTime).
+    public DateTime? DepartureTime { get; set; }
+    public DateTime? ArrivalTime { get; set; }
     public string FlightNumber { get; set; }
     public string Class { get; set; }
     public string Status { get; set; }      // Confirmed / Pending

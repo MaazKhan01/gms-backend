@@ -36,6 +36,10 @@ public interface ITransportAppService
     /// <param name="eventId">Event public id. Null = every event.</param>
     Task<ApiResponse<List<DriverJobResponse>>> GetRecentActivityAsync(int userId, Guid? eventId = null, CancellationToken ct = default);
 
+    /// <summary>Completed jobs only: on-time / delay counts plus each job's planned vs actual times.</summary>
+    /// <param name="eventId">Event public id. Null = every event.</param>
+    Task<ApiResponse<DriverSummaryResponse>> GetSummaryAsync(int userId, Guid? eventId = null, CancellationToken ct = default);
+
     /// <summary>Events this driver has transfers assigned on.</summary>
     Task<ApiResponse<List<DriverEventResponse>>> GetEventsAsync(int userId, CancellationToken ct = default);
 

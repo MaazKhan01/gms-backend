@@ -368,7 +368,8 @@ public class AuthService(
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private static string GenerateOtpCode() => Random.Shared.Next(100000, 999999).ToString();
+    // 4 digits, 1000-9999 so it never renders with a leading zero.
+    private static string GenerateOtpCode() => Random.Shared.Next(1000, 10000).ToString();
 
     private int GetRefreshTokenExpiryDays()
         => int.Parse(_configuration.GetSection("Authentication:Jwt")["RefreshTokenExpirationDays"] ?? "30");

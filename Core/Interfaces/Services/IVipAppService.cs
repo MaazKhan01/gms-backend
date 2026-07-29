@@ -27,8 +27,9 @@ public interface IVipAppService
     Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, CancellationToken ct);
 
     /// <summary>The guest's flights / transport / accommodation / sessions in one call.</summary>
+    /// <param name="eventId">Only this event. Null = every event the guest is on.</param>
     /// <param name="date">Only what falls on this date. Null = the whole itinerary.</param>
-    Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(int guestId, DateOnly? date = null, CancellationToken ct = default);
+    Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(int guestId, Guid? eventId = null, DateOnly? date = null, CancellationToken ct = default);
 
     // ---- Travel ----
     Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct);

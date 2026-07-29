@@ -37,6 +37,9 @@ public class FlightInput
     public Guid? FlightClassId { get; set; }
     public string Status { get; set; }
     public string Seat { get; set; }
+    // Booking-level depart/land times, stored on Flights (not on the leg).
+    public DateTime? DepartureTime { get; set; }
+    public DateTime? ArrivalTime { get; set; }
     // single leg (MVP)
     public string FlightNumber { get; set; }
     public Guid? FromAirportId { get; set; }
@@ -97,6 +100,8 @@ public class EventFlightRow
     public string ArrivalCode { get; set; }
     public string ArrivalCity { get; set; }
     public DateTime? Date { get; set; }
+    // Booking-level times from Flights; fall back to the itinerary ends.
+    public DateTime? DepartureTime { get; set; }
     public DateTime? ArrivalTime { get; set; }
     public int LegCount { get; set; }
 

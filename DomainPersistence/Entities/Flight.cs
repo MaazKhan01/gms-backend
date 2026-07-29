@@ -8,6 +8,10 @@ public class Flight : Entity
     public int? FlightClassId { get; set; }
     public string Status { get; set; }   // Confirmed / Pending
     public string Seat { get; set; }
+    // Booking-level times entered on the travel form. The legs carry their own
+    // Start/EndTime; these are what the guest app shows as depart/land.
+    public DateTime? DepartureTime { get; set; }
+    public DateTime? ArrivalTime { get; set; }
 
     public virtual Guest Guest { get; set; }
     public virtual FlightType FlightType { get; set; }

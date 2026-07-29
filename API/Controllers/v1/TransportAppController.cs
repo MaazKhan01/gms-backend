@@ -27,6 +27,12 @@ public class TransportAppController(ITransportAppService _transportApp, ICurrent
     public async Task<IActionResult> GetStats([FromQuery] Guid? eventId, CancellationToken ct)
         => ToResponse(await _transportApp.GetStatsAsync(_currentUser.UserId, eventId, ct));
 
+    // Completed jobs only: completedJobs / onTimeJobs / delayJobs plus the
+    // per-job planned-vs-actual cards. eventId optional.
+    [HttpGet("summary")]
+    public async Task<IActionResult> GetSummary([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _transportApp.GetSummaryAsync(_currentUser.UserId, eventId, ct));
+
     // Events this driver has transfers on — the eventId values the two job
     // endpoints below accept.
     [HttpGet("events")]

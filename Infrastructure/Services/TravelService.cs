@@ -129,6 +129,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 FlightClassId = flight.FlightClass?.PublicId,
                 Status = flight.Status,
                 Seat = flight.Seat,
+                DepartureTime = flight.DepartureTime,
+                ArrivalTime = flight.ArrivalTime,
                 FlightNumber = leg?.FlightNumber,
                 FromAirportId = leg?.FromAirport?.PublicId,
                 ToAirportId = leg?.ToAirport?.PublicId,
@@ -207,6 +209,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 FlightType = f.FlightType.Name,
                 FlightClass = f.FlightClass.Name,
                 Seat = f.Seat,
+                DepartureTime = f.DepartureTime,
+                ArrivalTime = f.ArrivalTime,
                 LegCount = f.Legs.Count,
                 Legs = f.Legs
                     .OrderBy(l => l.StartTime)
@@ -239,7 +243,10 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             row.Date = first.StartTime;
             row.ArrivalCode = last.ArrivalCode;
             row.ArrivalCity = last.ArrivalCity;
-            row.ArrivalTime = last.EndTime;
+            // The booking's own times win when they're filled in; otherwise fall
+            // back to the itinerary ends, as before.
+            row.DepartureTime ??= first.StartTime;
+            row.ArrivalTime ??= last.EndTime;
         }
 
         return ApiResponse<PaginatedResponse<EventFlightRow>>.SuccessResponse(
@@ -488,6 +495,8 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 flight.FlightClassId = classId;
                 flight.Status = request.Flight.Status;
                 flight.Seat = request.Flight.Seat;
+                flight.DepartureTime = request.Flight.DepartureTime;
+                flight.ArrivalTime = request.Flight.ArrivalTime;
 
                 var leg = flight.Legs.First();
                 leg.FlightNumber = request.Flight.FlightNumber;

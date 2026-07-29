@@ -224,6 +224,66 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
         return ApiResponse<List<DriverJobResponse>>.SuccessResponse(jobs);
     }
 
+    // Anything later than this past its planned time counts as a delay. ponytail:
+    // fixed grace, move it to config if ops start arguing about the number.
+    private const int OnTimeGraceMinutes = 5;
+
+    public async Task<ApiResponse<DriverSummaryResponse>> GetSummaryAsync(
+        int userId, Guid? eventId = null, CancellationToken ct = default)
+    {
+        var driverId = await ResolveDriverIdAsync(userId, ct);
+        if (driverId == null)
+            return ApiResponse<DriverSummaryResponse>.NotFoundResponse("No driver profile for this user");
+
+        // Completed only — planned vs actual is meaningless before a job ends.
+        var jobs = await ScopedJobs(driverId, eventId)
+            .Where(t => t.TripStatus == TransportStatuses.Completed)
+            .OrderByDescending(t => t.ActualDropOffTime ?? t.DropoffTime)
+            .Select(t => new DriverJobPerformanceResponse
+            {
+                Id = t.PublicId,
+                JobNumber = "VIP-" + t.Id,
+                EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
+                EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,
+                GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+                Pickup = t.PickupLocation == null ? null : t.PickupLocation.Address,
+                Dropoff = t.DropoffLocation == null ? null : t.DropoffLocation.Address,
+                PickupTime = t.PickupTime,
+                ActualPickupTime = t.ActualPickupTime,
+                DropoffTime = t.DropoffTime,
+                ActualDropOffTime = t.ActualDropOffTime,
+            })
+            .ToListAsync(ct);
+
+        foreach (var j in jobs)
+        {
+            j.PickupDeltaMinutes = DeltaMinutes(j.PickupTime, j.ActualPickupTime);
+            j.DropoffDeltaMinutes = DeltaMinutes(j.DropoffTime, j.ActualDropOffTime);
+            j.EstimatedDurationMinutes = DeltaMinutes(j.PickupTime, j.DropoffTime);
+            j.ActualDurationMinutes = DeltaMinutes(j.ActualPickupTime, j.ActualDropOffTime);
+            j.DurationDeltaMinutes = j.EstimatedDurationMinutes == null || j.ActualDurationMinutes == null
+                ? null
+                : j.ActualDurationMinutes - j.EstimatedDurationMinutes;
+
+            // Late at either end is a delay. Nothing recorded to compare against
+            // counts as on time — a finished job with no measured lateness.
+            var late = j.PickupDeltaMinutes > OnTimeGraceMinutes || j.DropoffDeltaMinutes > OnTimeGraceMinutes;
+            j.Status = late ? "delayed" : "on-time";
+        }
+
+        return ApiResponse<DriverSummaryResponse>.SuccessResponse(new DriverSummaryResponse
+        {
+            CompletedJobs = jobs.Count,
+            OnTimeJobs = jobs.Count(j => j.Status == "on-time"),
+            DelayJobs = jobs.Count(j => j.Status == "delayed"),
+            Jobs = jobs,
+        });
+    }
+
+    // Whole minutes from planned to actual. Negative = early, null = either side missing.
+    private static int? DeltaMinutes(DateTime? planned, DateTime? actual)
+        => planned == null || actual == null ? null : (int)Math.Round((actual.Value - planned.Value).TotalMinutes);
+
     public async Task<ApiResponse<List<DriverEventResponse>>> GetEventsAsync(int userId, CancellationToken ct = default)
     {
         var driverId = await ResolveDriverIdAsync(userId, ct);
@@ -351,6 +411,7 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
     private static readonly Expression<Func<Transport, DriverJobResponse>> Project = t => new DriverJobResponse
     {
         Id = t.PublicId,
+        JobNumber = "VIP-" + t.Id,
         Status = t.TripStatus,
         EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
         EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,

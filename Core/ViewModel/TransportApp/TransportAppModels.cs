@@ -19,6 +19,7 @@ public class DriverJobResponse
 {
     public Guid Id { get; set; }
     public string Status { get; set; }
+    public string JobNumber { get; set; }
     public Guid? EventId { get; set; }
     public string EventName { get; set; }
     public string GuestName { get; set; }
@@ -34,6 +35,44 @@ public class DriverJobResponse
     /// <summary>True on at most one job in the list — the next assigned job the
     /// driver may start. False on everything else.</summary>
     public bool ShowStartButton { get; set; }
+}
+
+/// <summary>Completed-job performance for the driver: the three tiles plus the
+/// per-job cards behind them.</summary>
+public class DriverSummaryResponse
+{
+    public int CompletedJobs { get; set; }
+    public int OnTimeJobs { get; set; }
+    public int DelayJobs { get; set; }
+    public List<DriverJobPerformanceResponse> Jobs { get; set; } = new();
+}
+
+/// <summary>One completed job, planned vs actual.</summary>
+public class DriverJobPerformanceResponse
+{
+    public Guid Id { get; set; }
+    /// <summary>Display number on the card, e.g. "VIP-1054".</summary>
+    public string JobNumber { get; set; }
+    /// <summary>"on-time" or "delayed" — drives the status pill.</summary>
+    public string Status { get; set; }
+    public Guid? EventId { get; set; }
+    public string EventName { get; set; }
+    public string GuestName { get; set; }
+    public string Pickup { get; set; }
+    public string Dropoff { get; set; }
+
+    public DateTime? PickupTime { get; set; }
+    public DateTime? ActualPickupTime { get; set; }
+    /// <summary>Actual minus planned, in minutes. Negative = early. Null = not measurable.</summary>
+    public int? PickupDeltaMinutes { get; set; }
+
+    public DateTime? DropoffTime { get; set; }
+    public DateTime? ActualDropOffTime { get; set; }
+    public int? DropoffDeltaMinutes { get; set; }
+
+    public int? EstimatedDurationMinutes { get; set; }
+    public int? ActualDurationMinutes { get; set; }
+    public int? DurationDeltaMinutes { get; set; }
 }
 
 /// <summary>An event this driver has transfers on — feeds the eventId filter.</summary>
