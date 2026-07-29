@@ -37,6 +37,51 @@ public class DriverJobResponse
     public bool ShowStartButton { get; set; }
 }
 
+/// <summary>One job, everything the detail screen needs — including map coordinates.</summary>
+public class DriverJobDetailResponse
+{
+    public Guid Id { get; set; }
+    public string JobNumber { get; set; }
+    public string Status { get; set; }
+    /// <summary>The only status this job may be moved to, or null when it's finished.</summary>
+    public string NextStatus { get; set; }
+
+    public Guid? EventId { get; set; }
+    public string EventName { get; set; }
+
+    public string GuestName { get; set; }
+    public string GuestTier { get; set; }
+    public string GuestType { get; set; }
+    public string GuestOrganization { get; set; }
+    public string GuestEmail { get; set; }
+    public string GuestPhotoUrl { get; set; }
+
+    public JobLocationResponse Pickup { get; set; }
+    public JobLocationResponse Dropoff { get; set; }
+
+    public DateTime? PickupTime { get; set; }
+    public DateTime? DropoffTime { get; set; }
+    public DateTime? ActualPickupTime { get; set; }
+    public DateTime? ActualDropOffTime { get; set; }
+
+    public string VehicleNumber { get; set; }
+    public string VehicleModel { get; set; }
+    public string VehicleType { get; set; }
+    public string VehicleImage { get; set; }
+    public int? VehicleCapacity { get; set; }
+}
+
+/// <summary>A pickup or drop-off point. Latitude/Longitude are strings because
+/// that's how Locations stores them; null when the point isn't geocoded.</summary>
+public class JobLocationResponse
+{
+    public Guid? Id { get; set; }
+    public string Address { get; set; }
+    public string Type { get; set; }
+    public string Latitude { get; set; }
+    public string Longitude { get; set; }
+}
+
 /// <summary>Completed-job performance for the driver: the three tiles plus the
 /// per-job cards behind them.</summary>
 public class DriverSummaryResponse
@@ -95,7 +140,10 @@ public class DriverProfileResponse
     public string FirstName { get; set; }
     public string LastName { get; set; }
     public string FullName { get; set; }
-    public string Phone { get; set; }
+    /// <summary>Dial code, e.g. "+971". Stored joined with PhoneNumber in one column.</summary>
+    public string CountryCode { get; set; }
+    /// <summary>National number without the dial code, e.g. "501234567".</summary>
+    public string PhoneNumber { get; set; }
     public bool IsActive { get; set; }
     public string Role { get; set; }
 
@@ -103,6 +151,8 @@ public class DriverProfileResponse
     public Guid? DriverProfileId { get; set; }
     /// <summary>Enum name ("Fixed"/"Open"), not its int value.</summary>
     public string DriverType { get; set; }
+    /// <summary>Only Open drivers can change this — see POST profile/toggle-online.</summary>
+    public bool IsOnline { get; set; }
     public string LicenseNumber { get; set; }
     public DateOnly? LicenseExpiry { get; set; }
     public Guid? NationalityId { get; set; }
@@ -115,13 +165,12 @@ public class UpdateDriverProfileRequest
 {
     public string FirstName { get; set; }
     public string LastName { get; set; }
-    public string Phone { get; set; }
+    /// <summary>Dial code, e.g. "+971". Sent alongside PhoneNumber; saved as one value.</summary>
+    public string CountryCode { get; set; }
+    public string PhoneNumber { get; set; }
     /// <summary>Blob URL from POST /api/v1/upload.</summary>
     public string PhotoUrl { get; set; }
 }
 
-/// <summary>Driver moving a job along: arrived → in-progress → completed.</summary>
-public class UpdateJobStatusRequest
-{
-    public string Status { get; set; }
-}
+// Status moves are four dedicated POSTs now (start-job / arrived / start-trip /
+// complete) — no request body, so no DTO.

@@ -23,6 +23,9 @@ public interface ITransportAppService
     /// <summary>The caller's own profile: User row + DriverProfile row.</summary>
     Task<ApiResponse<DriverProfileResponse>> GetProfileAsync(int userId, CancellationToken ct = default);
 
+    /// <summary>Flips the caller's online flag. Open drivers only — a Fixed driver gets a 400.</summary>
+    Task<ApiResponse<DriverProfileResponse>> ToggleOnlineAsync(int userId, CancellationToken ct = default);
+
     /// <summary>Driver edits their own name / phone / photo. Null fields stay as they are.</summary>
     Task<ApiResponse<DriverProfileResponse>> UpdateProfileAsync(int userId, UpdateDriverProfileRequest request, CancellationToken ct = default);
 
@@ -36,6 +39,9 @@ public interface ITransportAppService
     /// <param name="eventId">Event public id. Null = every event.</param>
     Task<ApiResponse<List<DriverJobResponse>>> GetRecentActivityAsync(int userId, Guid? eventId = null, CancellationToken ct = default);
 
+    /// <summary>One job in full, with pickup/drop-off coordinates. 404 if it isn't this driver's.</summary>
+    Task<ApiResponse<DriverJobDetailResponse>> GetJobDetailAsync(int userId, Guid jobId, CancellationToken ct = default);
+
     /// <summary>Completed jobs only: on-time / delay counts plus each job's planned vs actual times.</summary>
     /// <param name="eventId">Event public id. Null = every event.</param>
     Task<ApiResponse<DriverSummaryResponse>> GetSummaryAsync(int userId, Guid? eventId = null, CancellationToken ct = default);
@@ -43,5 +49,25 @@ public interface ITransportAppService
     /// <summary>Events this driver has transfers assigned on.</summary>
     Task<ApiResponse<List<DriverEventResponse>>> GetEventsAsync(int userId, CancellationToken ct = default);
 
-    Task<ApiResponse<DriverJobResponse>> UpdateJobStatusAsync(int userId, Guid jobId, UpdateJobStatusRequest request, CancellationToken ct = default);
+    /// <summary>Guest-requested jobs ("new", no driver) that any driver may claim.</summary>
+    /// <param name="eventId">Event public id. Null = every event.</param>
+    Task<ApiResponse<List<DriverJobResponse>>> GetAvailableJobsAsync(int userId, Guid? eventId = null, CancellationToken ct = default);
+
+    /// <summary>Claims a "new" job for the caller and sets it to assigned. Races are
+    /// resolved in the database: the second driver gets a 409, not a stolen job.</summary>
+    Task<ApiResponse<DriverJobResponse>> AcceptJobAsync(int userId, Guid jobId, CancellationToken ct = default);
+
+    // ── Lifecycle, one call per step. Each rejects the move unless the job is
+    // currently in the status that step starts from.
+    /// <summary>assigned → in-progress (driver sets off).</summary>
+    Task<ApiResponse<DriverJobResponse>> StartJobAsync(int userId, Guid jobId, CancellationToken ct = default);
+
+    /// <summary>in-progress → arrived (driver is at the pickup point).</summary>
+    Task<ApiResponse<DriverJobResponse>> ArrivedAsync(int userId, Guid jobId, CancellationToken ct = default);
+
+    /// <summary>arrived → in-transit (guest aboard; stamps ActualPickupTime).</summary>
+    Task<ApiResponse<DriverJobResponse>> StartTripAsync(int userId, Guid jobId, CancellationToken ct = default);
+
+    /// <summary>in-transit → completed (stamps ActualDropOffTime).</summary>
+    Task<ApiResponse<DriverJobResponse>> CompleteAsync(int userId, Guid jobId, CancellationToken ct = default);
 }

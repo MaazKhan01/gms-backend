@@ -58,6 +58,21 @@ public class VipAppService(
         return mins < 60 ? $"{mins}m" : mins % 60 == 0 ? $"{mins / 60}h" : $"{mins / 60}h {mins % 60}m";
     }
 
+    // A person holds one Guest row per event (same email), so "all events" means
+    // all their sibling rows; eventId narrows to the one. Null = the caller isn't
+    // a known guest at all.
+    private async Task<List<int>> ResolveGuestIdsAsync(int guestId, Guid? eventId, CancellationToken ct)
+    {
+        var guest = await GetGuestAsync(guestId, ct);
+        if (guest is null) return null;
+
+        return await _unitOfWork.Guests.QueryNoTracking()
+            .Where(g => g.Email == guest.Email)
+            .Where(g => eventId == null || g.Event.PublicId == eventId.Value)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+    }
+
     private Task<Guest> GetGuestAsync(int guestId, CancellationToken ct)
         => _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
 
@@ -385,21 +400,55 @@ public class VipAppService(
     }
 
     // ============================================================
+    // Itinerary dates — which days this guest has anything on
+    // ============================================================
+    public async Task<ApiResponse<List<DateOnly>>> GetItineraryDatesAsync(
+        int guestId, Guid? eventId = null, CancellationToken ct = default)
+    {
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<List<DateOnly>>.NotFoundResponse("Guest not found");
+
+        // Three narrow queries, each DISTINCT in SQL and pulling back dates only —
+        // no entities, no includes. That's what keeps this cheap enough to call
+        // on every calendar render.
+        // .Date, not DateOnly.FromDateTime — it's the translation SQL Server has
+        // always had (CAST AS date), so the DISTINCT happens server-side.
+        var flightDates = await _unitOfWork.FlightLegs.QueryNoTracking()
+            .Where(l => guestIds.Contains(l.Flight.GuestId) && l.StartTime != null)
+            .Select(l => l.StartTime.Value.Date)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var transportDates = await _unitOfWork.Transports.QueryNoTracking()
+            .Where(t => guestIds.Contains(t.GuestId) && t.PickupTime != null)
+            .Select(t => t.PickupTime.Value.Date)
+            .Distinct()
+            .ToListAsync(ct);
+
+        // A stay covers every night between the two ends, so this one has to be
+        // expanded here — SQL has no cheap way to generate the range.
+        var stays = await _unitOfWork.Accommodations.QueryNoTracking()
+            .Where(a => guestIds.Contains(a.GuestId) && a.CheckIn != null)
+            .Select(a => new { From = a.CheckIn.Value, To = a.CheckOut })
+            .ToListAsync(ct);
+
+        var dates = new HashSet<DateOnly>(flightDates.Select(DateOnly.FromDateTime));
+        dates.UnionWith(transportDates.Select(DateOnly.FromDateTime));
+        foreach (var s in stays)
+            for (var d = s.From; d <= (s.To ?? s.From); d = d.AddDays(1))
+                dates.Add(d);
+
+        return ApiResponse<List<DateOnly>>.SuccessResponse(dates.Order().ToList());
+    }
+
+    // ============================================================
     // Itinerary — flights / transport / accommodation / sessions in one call
     // ============================================================
     public async Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(
         int guestId, Guid? eventId = null, DateOnly? date = null, CancellationToken ct = default)
     {
-        // A person holds one Guest row per event (same email), so "all events"
-        // means all their sibling rows; eventId narrows to the one.
-        var guest = await GetGuestAsync(guestId, ct);
-        if (guest is null) return ApiResponse<ItinerarySummaryResponse>.NotFoundResponse("Guest not found");
-
-        var guestIds = await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => g.Email == guest.Email)
-            .Where(g => eventId == null || g.Event.PublicId == eventId.Value)
-            .Select(g => g.Id)
-            .ToListAsync(ct);
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<ItinerarySummaryResponse>.NotFoundResponse("Guest not found");
 
         // date == null → the whole itinerary. Otherwise only what falls on that
         // day; a hotel stay counts if the date lands anywhere inside it.
@@ -497,13 +546,16 @@ public class VipAppService(
     // ============================================================
     // Travel
     // ============================================================
-    public async Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<List<FlightLegResponse>>.NotFoundResponse("Guest not found");
+
         var flights = await _unitOfWork.Flights.Query()
             .Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
-            .Where(f => f.GuestId == guestId).ToListAsync(ct);
+            .Where(f => guestIds.Contains(f.GuestId)).ToListAsync(ct);
 
         var data = flights.SelectMany(f => f.Legs.Select(l => new FlightLegResponse
         {
@@ -523,12 +575,15 @@ public class VipAppService(
         return ApiResponse<List<FlightLegResponse>>.SuccessResponse(data);
     }
 
-    public async Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("Guest not found");
+
         var acc = await _unitOfWork.Accommodations.Query()
             .Include(a => a.Hotel).Include(a => a.RoomType)
             .OrderBy(a => a.CheckIn)
-            .FirstOrDefaultAsync(a => a.GuestId == guestId, ct);
+            .FirstOrDefaultAsync(a => guestIds.Contains(a.GuestId), ct);
         if (acc is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("No accommodation found");
 
         var data = new AccommodationResponse
@@ -543,13 +598,95 @@ public class VipAppService(
         return ApiResponse<AccommodationResponse>.SuccessResponse(data);
     }
 
-    public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<TransportationResponse>> RequestTransportAsync(
+        int guestId, TransportRequest request, CancellationToken ct)
     {
+        try
+        {
+            if (request is null)
+                return ApiResponse<TransportationResponse>.ErrorResponse("Request body is required");
+
+            var guest = await GetGuestAsync(guestId, ct);
+            if (guest is null) return ApiResponse<TransportationResponse>.NotFoundResponse("Guest not found");
+
+            var pickupId = await ResolveLocationIdAsync(request.PickupLocationId, ct);
+            if (pickupId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid pickup location");
+
+            var dropoffId = await ResolveLocationIdAsync(request.DropoffLocationId, ct);
+            if (dropoffId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid drop-off location");
+
+            int? vehicleId = null;
+            if (request.VehicleId is { } vid && vid != Guid.Empty)
+            {
+                vehicleId = (await _unitOfWork.Vehicles.Query()
+                    .Where(v => v.PublicId == vid).Select(v => (int?)v.Id).FirstOrDefaultAsync(ct));
+                if (vehicleId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid vehicle");
+            }
+
+            if (request.PickupTime != null && request.DropoffTime != null && request.DropoffTime < request.PickupTime)
+                return ApiResponse<TransportationResponse>.ErrorResponse("Drop-off time cannot be before pickup time");
+
+            var transport = new Transport
+            {
+                GuestId = guest.Id,
+                PickupLocationId = pickupId,
+                DropoffLocationId = dropoffId,
+                VehicleId = vehicleId,
+                PickupTime = request.PickupTime,
+                DropoffTime = request.DropoffTime,
+                // No driver yet — "new" is the pool drivers accept from.
+                TripStatus = TransportStatuses.New,
+            };
+
+            await _unitOfWork.Transports.AddAsync(transport, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            var created = await _unitOfWork.Transports.QueryNoTracking()
+                .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+                .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
+                .FirstOrDefaultAsync(t => t.Id == transport.Id, ct);
+
+            return ApiResponse<TransportationResponse>.SuccessResponse(
+                MapTransport(created), "Transport requested");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Transport request failed for guest {GuestId}", guestId);
+            return ApiResponse<TransportationResponse>.ServerErrorResponse("Could not create the transport request");
+        }
+    }
+
+    private Task<int?> ResolveLocationIdAsync(Guid publicId, CancellationToken ct)
+        => _unitOfWork.Locations.Query()
+            .Where(l => l.PublicId == publicId)
+            .Select(l => (int?)l.Id)
+            .FirstOrDefaultAsync(ct);
+
+    private static TransportationResponse MapTransport(Transport t) => new()
+    {
+        Id = t.PublicId,
+        FromAddress = t.PickupLocation?.Address,
+        ToAddress = t.DropoffLocation?.Address,
+        PickupTime = t.PickupTime,
+        EstimatedArrival = t.DropoffTime,
+        VehicleType = t.Vehicle?.VehicleType?.Name,
+        TripStatus = t.TripStatus,
+        Driver = t.Driver?.User is not { } drv ? null : new DriverResponse
+        {
+            Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur", Phone = drv.Phone
+        },
+    };
+
+    public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, Guid? eventId, CancellationToken ct)
+    {
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<TransportationResponse>.NotFoundResponse("Guest not found");
+
         var trips = await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
             .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
-            .Where(t => t.GuestId == guestId).ToListAsync(ct);
+            .Where(t => guestIds.Contains(t.GuestId)).ToListAsync(ct);
 
         var primary = trips.FirstOrDefault();
         if (primary is null) return ApiResponse<TransportationResponse>.NotFoundResponse("No transportation found");

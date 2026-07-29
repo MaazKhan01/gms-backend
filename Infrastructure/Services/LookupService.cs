@@ -28,10 +28,12 @@ public class LookupService : ILookupService
     public ApiResponse<List<LookupEnumOption>> GetTransportStatuses()
         => ApiResponse<List<LookupEnumOption>>.SuccessResponse(new List<LookupEnumOption>
         {
+            new(TransportStatuses.New,        "New",         "جديد"),
             new(TransportStatuses.Pending,    "Pending",     "قيد الانتظار"),
             new(TransportStatuses.Assigned,   "Assigned",    "تم التعيين"),
-            new(TransportStatuses.Arrived,    "Arrived",     "وصل"),
             new(TransportStatuses.InProgress, "In Progress", "قيد التنفيذ"),
+            new(TransportStatuses.Arrived,    "Arrived",     "وصل"),
+            new(TransportStatuses.InTransit,  "In Transit",  "في الطريق"),
             new(TransportStatuses.Completed,  "Completed",   "مكتمل"),
         });
 }

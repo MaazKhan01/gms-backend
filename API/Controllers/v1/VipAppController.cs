@@ -61,6 +61,12 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
         => ToResponse(await _vip.GetAgendaAsync(GuestId, ct));
 
     // ---------------- Itinerary ----------------
+    // Dates only — the days this guest has a flight, stay or transfer on. Feed
+    // any of them back as /itinerary?date=. eventId optional.
+    [HttpGet("itinerary/dates")]
+    public async Task<IActionResult> GetItineraryDates([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetItineraryDatesAsync(GuestId, eventId, ct));
+
     // Flights / transport / accommodation / sessions in one call. eventId and
     // date are both optional — omit either to skip that filter.
     [HttpGet("itinerary")]
@@ -68,17 +74,24 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
         => ToResponse(await _vip.GetItineraryAsync(GuestId, eventId, date, ct));
 
     // ---------------- Travel ----------------
+    // eventId optional on all three — omit it for every event the guest is on.
     [HttpGet("flights")]
-    public async Task<IActionResult> GetFlights(CancellationToken ct)
-        => ToResponse(await _vip.GetFlightsAsync(GuestId, ct));
+    public async Task<IActionResult> GetFlights([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetFlightsAsync(GuestId, eventId, ct));
 
     [HttpGet("accommodation")]
-    public async Task<IActionResult> GetAccommodation(CancellationToken ct)
-        => ToResponse(await _vip.GetAccommodationAsync(GuestId, ct));
+    public async Task<IActionResult> GetAccommodation([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetAccommodationAsync(GuestId, eventId, ct));
 
     [HttpGet("transportation")]
-    public async Task<IActionResult> GetTransportation(CancellationToken ct)
-        => ToResponse(await _vip.GetTransportationAsync(GuestId, ct));
+    public async Task<IActionResult> GetTransportation([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetTransportationAsync(GuestId, eventId, ct));
+
+    // Guest books a car: pickup/drop-off location, vehicle, times. Created with
+    // status "new" and no driver until a driver accepts it.
+    [HttpPost("transport-requests")]
+    public async Task<IActionResult> RequestTransport([FromBody] TransportRequest request, CancellationToken ct)
+        => ToResponse(await _vip.RequestTransportAsync(GuestId, request, ct));
 
     // ---------------- Sessions ----------------
     [HttpGet("sessions")]

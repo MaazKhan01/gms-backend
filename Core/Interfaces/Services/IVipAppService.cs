@@ -26,15 +26,24 @@ public interface IVipAppService
     // ---- Agenda (upcoming actions: flight / check-in / transport) ----
     Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, CancellationToken ct);
 
+    /// <summary>Just the dates this guest has a flight, stay or transfer on —
+    /// what /itinerary?date= expects. Dates only, deliberately cheap.</summary>
+    /// <param name="eventId">Only this event. Null = every event the guest is on.</param>
+    Task<ApiResponse<List<DateOnly>>> GetItineraryDatesAsync(int guestId, Guid? eventId = null, CancellationToken ct = default);
+
     /// <summary>The guest's flights / transport / accommodation / sessions in one call.</summary>
     /// <param name="eventId">Only this event. Null = every event the guest is on.</param>
     /// <param name="date">Only what falls on this date. Null = the whole itinerary.</param>
     Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(int guestId, Guid? eventId = null, DateOnly? date = null, CancellationToken ct = default);
 
-    // ---- Travel ----
-    Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct);
-    Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, CancellationToken ct);
-    Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, CancellationToken ct);
+    // ---- Travel ---- (eventId null on any of these = every event the guest is on)
+    Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct);
+    Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, Guid? eventId, CancellationToken ct);
+    Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, Guid? eventId, CancellationToken ct);
+
+    /// <summary>Guest requests a car — created with status "new" and no driver,
+    /// waiting for a driver to accept it.</summary>
+    Task<ApiResponse<TransportationResponse>> RequestTransportAsync(int guestId, TransportRequest request, CancellationToken ct);
 
     // ---- Sessions ----
     Task<ApiResponse<List<GuestSessionResponse>>> GetSessionsAsync(int guestId, CancellationToken ct);

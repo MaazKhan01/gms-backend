@@ -25,7 +25,9 @@ public class MappingProfile : Profile
         CreateMap<User, UserResponse>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
             .ForMember(dest => dest.Role, opt => opt.MapFrom(src => src.Role != null ? src.Role.Code : null))
-            .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role != null ? src.Role.Name : null));
+            .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role != null ? src.Role.Name : null))
+            // Not src.RoleId — that's the internal int; the DTO carries public ids.
+            .ForMember(dest => dest.RoleId, opt => opt.MapFrom(src => src.Role != null ? src.Role.PublicId : (Guid?)null));
 
         CreateMap<CreateUserRequest, User>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())

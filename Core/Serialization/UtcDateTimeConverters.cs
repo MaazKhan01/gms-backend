@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -15,11 +16,21 @@ namespace Core.Serialization;
 // — applied only on the way out; reads are untouched.
 public class UtcDateTimeConverter : JsonConverter<DateTime>
 {
+    // One shape for every timestamp the API writes: 2026-12-16T00:00:00Z.
+    // Seconds precision, nothing after them — the default writer would append
+    // fractional seconds whenever a value happened to carry them, so the same
+    // field came back in two different shapes depending on the row.
+    internal const string Format = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
+    internal static string ToUtcString(DateTime value)
+        => (value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc))
+            .ToString(Format, CultureInfo.InvariantCulture);
+
     public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => reader.GetDateTime();
 
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
-        => writer.WriteStringValue(value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc));
+        => writer.WriteStringValue(ToUtcString(value));
 }
 
 public class UtcNullableDateTimeConverter : JsonConverter<DateTime?>
@@ -30,6 +41,6 @@ public class UtcNullableDateTimeConverter : JsonConverter<DateTime?>
     public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
     {
         if (value is null) { writer.WriteNullValue(); return; }
-        writer.WriteStringValue(value.Value.Kind == DateTimeKind.Utc ? value.Value : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc));
+        writer.WriteStringValue(UtcDateTimeConverter.ToUtcString(value.Value));
     }
 }

@@ -5,11 +5,13 @@ using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Constants;
+using Core.Helpers;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.TransportApp;
 using DomainPersistence.Entities;
+using DomainPersistence.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -83,7 +85,7 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
     // driver can't be in two cars at once.
     private static void MarkStartable(List<DriverJobResponse> jobs)
     {
-        if (jobs.Any(j => j.Status == TransportStatuses.InProgress || j.Status == TransportStatuses.Arrived))
+        if (jobs.Any(j => TransportStatuses.Active.Contains(j.Status)))
             return;
 
         // The list is already ordered earliest pickup first (nulls last).
@@ -119,9 +121,43 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
             .Select(ProjectProfile)
             .FirstOrDefaultAsync(ct);
 
-        return profile == null
-            ? ApiResponse<DriverProfileResponse>.NotFoundResponse("User not found")
-            : ApiResponse<DriverProfileResponse>.SuccessResponse(profile);
+        if (profile == null)
+            return ApiResponse<DriverProfileResponse>.NotFoundResponse("User not found");
+
+        (profile.CountryCode, profile.PhoneNumber) = PhoneParts.Split(profile.PhoneNumber);
+
+        return ApiResponse<DriverProfileResponse>.SuccessResponse(profile);
+    }
+
+    public async Task<ApiResponse<DriverProfileResponse>> ToggleOnlineAsync(int userId, CancellationToken ct = default)
+    {
+        try
+        {
+            var profile = await _unitOfWork.DriverProfiles.Query()
+                .FirstOrDefaultAsync(d => d.UserId == userId, ct);
+            if (profile == null)
+                return ApiResponse<DriverProfileResponse>.NotFoundResponse("No driver profile for this user");
+
+            // Fixed drivers work their assigned jobs either way, so going
+            // online/offline isn't theirs to decide.
+            if (profile.DriverType != DriverType.Open)
+                return ApiResponse<DriverProfileResponse>.ErrorResponse("Only open drivers can go online or offline");
+
+            profile.IsOnline = !profile.IsOnline;
+            profile.SetUpdateAudit(userId);
+            _unitOfWork.DriverProfiles.Update(profile);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            var result = await GetProfileAsync(userId, ct);
+            if (result.Success)
+                result.Message = profile.IsOnline ? "You are now online" : "You are now offline";
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error toggling online state for user {UserId}", userId);
+            return ApiResponse<DriverProfileResponse>.ServerErrorResponse("An error occurred while updating the online status");
+        }
     }
 
     public async Task<ApiResponse<DriverProfileResponse>> UpdateProfileAsync(
@@ -142,7 +178,15 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
             // assignment and the rest stay admin-only.
             if (!string.IsNullOrWhiteSpace(request.FirstName)) user.FirstName = request.FirstName.Trim();
             if (!string.IsNullOrWhiteSpace(request.LastName)) user.LastName = request.LastName.Trim();
-            if (!string.IsNullOrWhiteSpace(request.Phone)) user.Phone = request.Phone.Trim();
+            // Two fields in, one column out. Either half omitted keeps the half
+            // already on file, so sending just a new number doesn't drop the code.
+            if (!string.IsNullOrWhiteSpace(request.CountryCode) || !string.IsNullOrWhiteSpace(request.PhoneNumber))
+            {
+                var (currentCode, currentNumber) = PhoneParts.Split(user.Phone);
+                user.Phone = PhoneParts.Join(
+                    string.IsNullOrWhiteSpace(request.CountryCode) ? currentCode : request.CountryCode,
+                    string.IsNullOrWhiteSpace(request.PhoneNumber) ? currentNumber : request.PhoneNumber);
+            }
 
             user.SetUpdateAudit(userId);
             _unitOfWork.Users.Update(user);
@@ -212,11 +256,10 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
         if (driverId == null)
             return ApiResponse<List<DriverJobResponse>>.NotFoundResponse("No driver profile for this user");
 
-        // Jobs the driver is currently on: arrived at pickup or guest on board.
+        // Jobs the driver is currently on: en route, at pickup, or guest aboard.
         // Most recently touched first — that's what "recent activity" means here.
         var jobs = await ScopedJobs(driverId, eventId)
-            .Where(t => t.TripStatus == TransportStatuses.InProgress
-                     || t.TripStatus == TransportStatuses.Arrived)
+            .Where(t => TransportStatuses.Active.Contains(t.TripStatus))
             .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
             .Select(Project)
             .ToListAsync(ct);
@@ -227,6 +270,66 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
     // Anything later than this past its planned time counts as a delay. ponytail:
     // fixed grace, move it to config if ops start arguing about the number.
     private const int OnTimeGraceMinutes = 5;
+
+    public async Task<ApiResponse<DriverJobDetailResponse>> GetJobDetailAsync(
+        int userId, Guid jobId, CancellationToken ct = default)
+    {
+        var driverId = await ResolveDriverIdAsync(userId, ct);
+        if (driverId == null)
+            return ApiResponse<DriverJobDetailResponse>.NotFoundResponse("No driver profile for this user");
+
+        // Scoped to this driver's own jobs — someone else's id is a 404, not a peek.
+        var job = await ScopedJobs(driverId, null)
+            .Where(t => t.PublicId == jobId)
+            .Select(t => new DriverJobDetailResponse
+            {
+                Id = t.PublicId,
+                JobNumber = "VIP-" + t.Id,
+                Status = t.TripStatus,
+                EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
+                EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,
+                GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+                GuestTier = t.Guest.Tier,
+                GuestType = t.Guest.GuestType,
+                GuestOrganization = t.Guest.Organization,
+                GuestEmail = t.Guest.Email,
+                GuestPhotoUrl = t.Guest.PhotoUrl,
+                Pickup = t.PickupLocation == null ? null : new JobLocationResponse
+                {
+                    Id = t.PickupLocation.PublicId,
+                    Address = t.PickupLocation.Address,
+                    Type = t.PickupLocation.Type,
+                    Latitude = t.PickupLocation.Latitude,
+                    Longitude = t.PickupLocation.Longitude,
+                },
+                Dropoff = t.DropoffLocation == null ? null : new JobLocationResponse
+                {
+                    Id = t.DropoffLocation.PublicId,
+                    Address = t.DropoffLocation.Address,
+                    Type = t.DropoffLocation.Type,
+                    Latitude = t.DropoffLocation.Latitude,
+                    Longitude = t.DropoffLocation.Longitude,
+                },
+                PickupTime = t.PickupTime,
+                DropoffTime = t.DropoffTime,
+                ActualPickupTime = t.ActualPickupTime,
+                ActualDropOffTime = t.ActualDropOffTime,
+                VehicleNumber = t.Vehicle == null ? null : t.Vehicle.VehicleNumber,
+                VehicleModel = t.Vehicle == null ? null : t.Vehicle.VehicleModel,
+                VehicleType = t.Vehicle == null || t.Vehicle.VehicleType == null ? null : t.Vehicle.VehicleType.Name,
+                VehicleImage = t.Vehicle == null ? null : t.Vehicle.VehicleImage,
+                VehicleCapacity = t.Vehicle == null ? null : t.Vehicle.Capacity,
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (job == null)
+            return ApiResponse<DriverJobDetailResponse>.NotFoundResponse("Job not found");
+
+        // Same rule the status endpoint enforces, so the app knows which button to show.
+        job.NextStatus = TransportStatuses.NextFor(job.Status);
+
+        return ApiResponse<DriverJobDetailResponse>.SuccessResponse(job);
+    }
 
     public async Task<ApiResponse<DriverSummaryResponse>> GetSummaryAsync(
         int userId, Guid? eventId = null, CancellationToken ct = default)
@@ -316,8 +419,105 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
         return ApiResponse<List<DriverEventResponse>>.SuccessResponse(events);
     }
 
-    public async Task<ApiResponse<DriverJobResponse>> UpdateJobStatusAsync(
-        int userId, Guid jobId, UpdateJobStatusRequest request, CancellationToken ct = default)
+    // ── Open pool: guest-requested jobs nobody has claimed yet ────────────────
+
+    public async Task<ApiResponse<List<DriverJobResponse>>> GetAvailableJobsAsync(
+        int userId, Guid? eventId = null, CancellationToken ct = default)
+    {
+        var driver = await ResolveDriverAsync(userId, ct);
+        if (driver == null)
+            return ApiResponse<List<DriverJobResponse>>.NotFoundResponse("No driver profile for this user");
+        if (driver.Type != DriverType.Open)
+            return ApiResponse<List<DriverJobResponse>>.ForbiddenResponse("Only open drivers can see requested jobs");
+
+        // Not ScopedJobs — this pool is deliberately everyone's until claimed.
+        var query = _unitOfWork.Transports.QueryNoTracking()
+            .Where(t => t.TripStatus == TransportStatuses.New && t.DriverId == null);
+
+        if (eventId != null)
+            query = query.Where(t => t.Guest.Event.PublicId == eventId.Value);
+
+        var jobs = await query
+            .OrderBy(t => t.PickupTime == null)
+            .ThenBy(t => t.PickupTime)
+            .Select(Project)
+            .ToListAsync(ct);
+
+        return ApiResponse<List<DriverJobResponse>>.SuccessResponse(jobs);
+    }
+
+    public async Task<ApiResponse<DriverJobResponse>> AcceptJobAsync(
+        int userId, Guid jobId, CancellationToken ct = default)
+    {
+        try
+        {
+            var driver = await ResolveDriverAsync(userId, ct);
+            if (driver == null)
+                return ApiResponse<DriverJobResponse>.NotFoundResponse("No driver profile for this user");
+            // Same gate as the pool listing — a Fixed driver can't claim from it.
+            if (driver.Type != DriverType.Open)
+                return ApiResponse<DriverJobResponse>.ForbiddenResponse("Only open drivers can accept requested jobs");
+
+            var driverId = driver.Id;
+
+            // The claim is a single conditional UPDATE — the DriverId == null and
+            // status == "new" tests are part of the WHERE, so two drivers tapping
+            // Accept at the same moment can't both win: SQL Server serialises the
+            // row write and the loser updates 0 rows. Nothing here reads-then-writes.
+            var claimed = await _unitOfWork.Transports.Query()
+                .Where(t => t.PublicId == jobId
+                         && t.TripStatus == TransportStatuses.New
+                         && t.DriverId == null)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(t => t.DriverId, driverId)
+                    .SetProperty(t => t.TripStatus, TransportStatuses.Assigned)
+                    .SetProperty(t => t.UpdatedBy, userId)
+                    .SetProperty(t => t.UpdatedAt, DateTime.UtcNow), ct);
+
+            if (claimed == 0)
+            {
+                // Either it never existed, or somebody else got there first.
+                var exists = await _unitOfWork.Transports.QueryNoTracking()
+                    .AnyAsync(t => t.PublicId == jobId, ct);
+
+                return exists
+                    ? ApiResponse<DriverJobResponse>.ConflictResponse("This job has already been taken")
+                    : ApiResponse<DriverJobResponse>.NotFoundResponse("Job not found");
+            }
+
+            var job = await _unitOfWork.Transports.QueryNoTracking()
+                .Where(t => t.PublicId == jobId)
+                .Select(Project)
+                .FirstOrDefaultAsync(ct);
+
+            return ApiResponse<DriverJobResponse>.SuccessResponse(job, "Job accepted");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error accepting job {JobId} for user {UserId}", jobId, userId);
+            return ApiResponse<DriverJobResponse>.ServerErrorResponse("An error occurred while accepting the job");
+        }
+    }
+
+    // ── Lifecycle: one endpoint per step, each asserting the status it expects ──
+    // assigned → in-progress → arrived → in-transit → completed
+
+    public Task<ApiResponse<DriverJobResponse>> StartJobAsync(int userId, Guid jobId, CancellationToken ct = default)
+        => AdvanceAsync(userId, jobId, TransportStatuses.Assigned, TransportStatuses.InProgress, ct);
+
+    public Task<ApiResponse<DriverJobResponse>> ArrivedAsync(int userId, Guid jobId, CancellationToken ct = default)
+        => AdvanceAsync(userId, jobId, TransportStatuses.InProgress, TransportStatuses.Arrived, ct);
+
+    public Task<ApiResponse<DriverJobResponse>> StartTripAsync(int userId, Guid jobId, CancellationToken ct = default)
+        => AdvanceAsync(userId, jobId, TransportStatuses.Arrived, TransportStatuses.InTransit, ct);
+
+    public Task<ApiResponse<DriverJobResponse>> CompleteAsync(int userId, Guid jobId, CancellationToken ct = default)
+        => AdvanceAsync(userId, jobId, TransportStatuses.InTransit, TransportStatuses.Completed, ct);
+
+    // The one status move, guarded: the job must currently be `expected`, so a
+    // stale app screen can't skip a step or replay one it already did.
+    private async Task<ApiResponse<DriverJobResponse>> AdvanceAsync(
+        int userId, Guid jobId, string expected, string next, CancellationToken ct)
     {
         try
         {
@@ -330,19 +530,13 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
             if (job == null)
                 return ApiResponse<DriverJobResponse>.NotFoundResponse("Job not found");
 
-            // Only the single legal next step is accepted — no skipping ahead and
-            // no going back, so a stale app screen can't rewrite history.
-            var next = TransportStatuses.NextFor(job.TripStatus);
-            var requested = request?.Status?.Trim();
-            if (string.IsNullOrEmpty(requested))
-                return ApiResponse<DriverJobResponse>.ErrorResponse("Status is required");
-            if (next == null)
-                return ApiResponse<DriverJobResponse>.ErrorResponse($"A job that is '{job.TripStatus}' cannot be advanced");
-            if (!string.Equals(requested, next, StringComparison.OrdinalIgnoreCase))
-                return ApiResponse<DriverJobResponse>.ErrorResponse($"Next status for this job is '{next}'");
+            if (!string.Equals(job.TripStatus, expected, StringComparison.OrdinalIgnoreCase))
+                return ApiResponse<DriverJobResponse>.ErrorResponse(
+                    $"This job is '{job.TripStatus}' — it must be '{expected}' to become '{next}'");
 
             job.TripStatus = next;
-            if (next == TransportStatuses.InProgress) job.ActualPickupTime = DateTime.UtcNow;
+            // Guest aboard / dropped off are the two moments worth stamping.
+            if (next == TransportStatuses.InTransit) job.ActualPickupTime = DateTime.UtcNow;
             if (next == TransportStatuses.Completed) job.ActualDropOffTime = DateTime.UtcNow;
 
             job.SetUpdateAudit(userId);
@@ -358,7 +552,7 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating driver job {JobId}", jobId);
+            _logger.LogError(ex, "Error moving driver job {JobId} to {Status}", jobId, next);
             return ApiResponse<DriverJobResponse>.ServerErrorResponse("An error occurred while updating the job");
         }
     }
@@ -375,13 +569,16 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
         FirstName = u.FirstName,
         LastName = u.LastName,
         FullName = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
-        Phone = u.Phone,
+        // Carries the raw stored value out of SQL; SplitPhone below turns it into
+        // CountryCode + PhoneNumber (PhoneParts can't be translated to SQL).
+        PhoneNumber = u.Phone,
         IsActive = u.IsActive,
         Role = u.Role == null ? null : u.Role.Name,
         DriverProfileId = u.DriverProfile == null ? null : u.DriverProfile.PublicId,
         DriverType = u.DriverProfile == null || u.DriverProfile.DriverType == null
             ? null
             : u.DriverProfile.DriverType.ToString(),
+        IsOnline = u.DriverProfile != null && u.DriverProfile.IsOnline,
         LicenseNumber = u.DriverProfile == null ? null : u.DriverProfile.LicenseNumber,
         LicenseExpiry = u.DriverProfile == null ? null : u.DriverProfile.LicenseExpiry,
         NationalityId = u.DriverProfile == null || u.DriverProfile.Nationality == null
@@ -399,6 +596,16 @@ public class TransportAppService(IUnitOfWork _unitOfWork, ILogger<TransportAppSe
         var q = _unitOfWork.Transports.Query().Where(t => t.DriverId == driverId);
         return eventId == null ? q : q.Where(t => t.Guest.Event.PublicId == eventId.Value);
     }
+
+    // The caller's driver profile in the two shapes the open-job pool needs:
+    // which row, and whether they're a Fixed or Open driver.
+    private sealed record DriverRef(int Id, DriverType? Type, bool IsOnline);
+
+    private Task<DriverRef> ResolveDriverAsync(int userId, CancellationToken ct)
+        => _unitOfWork.DriverProfiles.QueryNoTracking()
+            .Where(d => d.UserId == userId)
+            .Select(d => new DriverRef(d.Id, d.DriverType, d.IsOnline))
+            .FirstOrDefaultAsync(ct);
 
     // The caller's DriverProfile.Id, or null when they aren't a driver.
     private async Task<int?> ResolveDriverIdAsync(int userId, CancellationToken ct)

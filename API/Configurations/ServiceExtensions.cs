@@ -17,6 +17,7 @@ using Core.Interfaces;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.Mappings;
+using Core.Serialization;
 using DomainPersistence.Entities;
 using Infrastructure.Auth;
 using Infrastructure.Database.Repositories;
@@ -86,7 +87,13 @@ public static class ServiceExtensions
 
         // Notification services
         services.AddScoped<INotificationService, NotificationService>();
-        services.AddSignalR();
+        // Same UTC timestamp format as the REST responses — hub payloads would
+        // otherwise write dates through SignalR's own serializer.
+        services.AddSignalR().AddJsonProtocol(o =>
+        {
+            o.PayloadSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+            o.PayloadSerializerOptions.Converters.Add(new UtcNullableDateTimeConverter());
+        });
         services.AddScoped<IRealTimeAlertService, RealTimeAlertService>();
         services.AddScoped<INotificationManagerService, NotificationManagerService>();
 

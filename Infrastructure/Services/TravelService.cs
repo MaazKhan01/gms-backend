@@ -4,6 +4,7 @@ using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Travel;
 using DomainPersistence.Entities;
+using DomainPersistence.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -61,10 +62,14 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     // Sourced from Users (not just DriverProfiles) so a driver who's been
     // deactivated or reassigned to a different role drops out of the dropdown
     // immediately, even though their DriverProfile row is left in place.
+    //
+    // Fixed drivers only: an Open driver isn't dispatch's to assign — they claim
+    // guest requests themselves from the driver app's job pool.
     public async Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default)
     {
         var data = await _unitOfWork.Users.Query()
-            .Where(u => u.IsActive && u.Role.Code == Roles.DRIVER && u.DriverProfile != null)
+            .Where(u => u.IsActive && u.Role.Code == Roles.DRIVER && u.DriverProfile != null
+                     && u.DriverProfile.DriverType == DriverType.Fixed)
             .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
             .Select(u => new IdNameDto
             {

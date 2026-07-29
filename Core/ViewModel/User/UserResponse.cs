@@ -13,6 +13,8 @@ public class UserResponse
     public string Phone { get; set; }
     public string Role { get; set; }
     public string RoleName { get; set; }
+    /// <summary>The role's public id — what the edit form posts back.</summary>
+    public Guid? RoleId { get; set; }
     public bool IsActive { get; set; }
     public List<string> Permissions { get; set; }
     public DateTime? CreatedAt { get; set; }

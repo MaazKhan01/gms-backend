@@ -114,6 +114,18 @@ public class TransportationResponse
     public List<JourneyResponse> OtherJourneys { get; set; } = new();
 }
 
+/// <summary>Guest asking for a car. Lands as a Transport with status "new" and no
+/// driver, until a driver accepts it from the driver app.</summary>
+public class TransportRequest
+{
+    public Guid PickupLocationId { get; set; }
+    public Guid DropoffLocationId { get; set; }
+    /// <summary>Chosen vehicle (GET /v1/vehicles). Optional — dispatch can fill it later.</summary>
+    public Guid? VehicleId { get; set; }
+    public DateTime? PickupTime { get; set; }
+    public DateTime? DropoffTime { get; set; }
+}
+
 public class JourneyResponse
 {
     public Guid Id { get; set; }

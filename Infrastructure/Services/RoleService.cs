@@ -124,8 +124,9 @@ public class RoleService : IRoleService
     {
         try
         {
+            // No permission join — the list is for role pickers and the roles
+            // table; per-role permissions come from GET /roles/{id}.
             var roles = await _unitOfWork.Roles.Query()
-                .Include(r => r.RolePermissions).ThenInclude(rp => rp.Permission)
                 .OrderBy(r => r.Name)
                 .ToListAsync(ct);
 
@@ -138,7 +139,11 @@ public class RoleService : IRoleService
 
             var response = _mapper.Map<List<RoleResponse>>(roles);
             for (int i = 0; i < roles.Count; i++)
+            {
                 response[i].UserCount = userCounts.FirstOrDefault(x => x.RoleId == roles[i].Id)?.Count ?? 0;
+                // Nulled, not empty: the DTO omits it when null.
+                response[i].Permissions = null;
+            }
 
             return ApiResponse<List<RoleResponse>>.SuccessResponse(response, $"Retrieved {roles.Count} roles");
         }
