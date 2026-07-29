@@ -36,6 +36,8 @@ public static class DataSeeder
 
         await GrantAllPermissionsAsync(db, adminRole, ct);
         await SeedDefinedRolesAsync(db, ct);
+        await SaveRolePermissionsAsync(db, logger, ct);
+
         await SeedNationalitiesAsync(db, ct);
         await SeedVenueRefDataAsync(db, ct);
         await EnsureAdminUserAsync(db, config, adminRole, logger, ct);
@@ -106,6 +108,47 @@ public static class DataSeeder
             });
         }
     }
+
+    // Flush pending RolePermission inserts. Two seeder runs racing against the same
+    // fresh DB (e.g. dotnet watch double-start, two app instances) can both decide the
+    // same (RoleId, PermissionId) pair is missing and both insert it. On that unique-key
+    // hit, drop the rows that already made it into the DB and retry once — the desired
+    // end state (role has the permission) is reached either way.
+    private static async Task SaveRolePermissionsAsync(ApplicationDBContext db, ILogger logger, CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (DbUpdateException ex) when (attempt == 0 && IsRolePermissionDuplicateKey(ex))
+            {
+                var existingPairs = (await db.RolePermissions.AsNoTracking()
+                        .Select(rp => new { rp.RoleId, rp.PermissionId })
+                        .ToListAsync(ct))
+                    .Select(x => (x.RoleId, x.PermissionId))
+                    .ToHashSet();
+
+                foreach (var entry in db.ChangeTracker.Entries<RolePermission>()
+                             .Where(e => e.State == EntityState.Added)
+                             .ToList())
+                {
+                    if (existingPairs.Contains((entry.Entity.RoleId, entry.Entity.PermissionId)))
+                        entry.State = EntityState.Detached;
+                }
+
+                logger?.LogWarning(ex,
+                    "Duplicate RolePermission row(s) hit during seeding (likely concurrent seeding runs) — skipping already-linked pairs and retrying.");
+            }
+        }
+    }
+
+    private static bool IsRolePermissionDuplicateKey(DbUpdateException ex)
+        => ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx
+           && (sqlEx.Number == 2601 || sqlEx.Number == 2627)
+           && ex.Entries.Any(e => e.Entity is RolePermission);
 
     // Build a code -> int id map from persisted permissions.
     private static Dictionary<string, int> PermissionMap(ApplicationDBContext db)
@@ -204,6 +247,7 @@ public static class DataSeeder
         }
     };
 
+        var skippedRows = 0;
         foreach (var user in users)
         {
             var exists = await db.Users
@@ -219,11 +263,12 @@ public static class DataSeeder
             }
             else
             {
+                skippedRows += 1;
                 logger?.LogInformation("User '{Email}' already exists. Skipping.", user.Email);
             }
         }
-
-        await db.SaveChangesAsync(ct);
+        if (skippedRows != users.Count())
+            await db.SaveChangesAsync( ct);
     }
 
     private static async Task SeedNationalitiesAsync(ApplicationDBContext db, CancellationToken ct)
