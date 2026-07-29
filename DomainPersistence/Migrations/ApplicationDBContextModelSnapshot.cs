@@ -1611,7 +1611,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId", "Read", "CreatedAt");
 
-                    b.ToTable("Notifications");
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Organization", b =>
@@ -1748,7 +1748,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("OtpVerifications");
+                    b.ToTable("OtpVerifications", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Permission", b =>
@@ -1813,7 +1813,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Permissions");
+                    b.ToTable("Permissions", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.RideRequest", b =>
@@ -1964,7 +1964,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("Roles");
+                    b.ToTable("Roles", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.RolePermission", b =>
@@ -2019,7 +2019,7 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RolePermissions");
+                    b.ToTable("RolePermissions", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.SeatAssign", b =>
@@ -2541,7 +2541,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("SystemErrorLogs");
+                    b.ToTable("SystemErrorLogs", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Transport", b =>
@@ -2855,7 +2855,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserLoginLogs");
+                    b.ToTable("UserLoginLogs", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.UserModuleGrant", b =>
@@ -2945,7 +2945,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserRefreshTokens");
+                    b.ToTable("UserRefreshTokens", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Vehicle", b =>
