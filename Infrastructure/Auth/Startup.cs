@@ -1,10 +1,12 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Text;
+using System.Threading.Tasks;
 using Core.Middlewares;
 
 namespace Infrastructure.Auth
@@ -39,6 +41,20 @@ namespace Infrastructure.Auth
                     ValidateAudience = !string.IsNullOrEmpty(jwtSection["Audience"]),
                     ValidAudience = jwtSection["Audience"],
                     ClockSkew = TimeSpan.Zero
+                };
+                // Browsers can't set an Authorization header on the WebSocket/SSE
+                // handshake SignalR uses, so the JS client sends the token as
+                // ?access_token=... instead — only honored for the hub path.
+                o.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = ctx =>
+                    {
+                        var accessToken = ctx.Request.Query["access_token"];
+                        if (!string.IsNullOrEmpty(accessToken) &&
+                            ctx.HttpContext.Request.Path.StartsWithSegments("/realtimehub"))
+                            ctx.Token = accessToken;
+                        return Task.CompletedTask;
+                    }
                 };
             });
 

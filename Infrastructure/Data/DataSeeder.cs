@@ -161,6 +161,13 @@ public static class DataSeeder
         ILogger logger,
         CancellationToken ct)
     {
+
+        var guestRole = await db.Roles.FirstOrDefaultAsync(r => r.Code == Roles.GUEST, ct);
+        if (guestRole == null)
+            logger?.LogWarning("No '{Code}' role found — seeding guest1/guest2 with the standard User role instead.", Roles.GUEST);
+        var guestRoleId = guestRole?.Id
+            ?? (await db.Roles.FirstOrDefaultAsync(r => r.Code == Roles.USER, ct))?.Id;
+
         var users = new List<User>
     {
         new User
@@ -182,7 +189,7 @@ public static class DataSeeder
             FirstName = "John",
             LastName = "Guest",
             IsActive = true,
-            RoleId = 2,
+            RoleId = guestRoleId,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Guest@123!")
         },
         new User
@@ -192,7 +199,7 @@ public static class DataSeeder
             FirstName = "Jane",
             LastName = "Guest",
             IsActive = true,
-            RoleId = 2,
+            RoleId = guestRoleId,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Guest@123!")
         }
     };
