@@ -26,10 +26,18 @@ public static class TransportStatuses
     public const string Cancelled = "cancelled";
 
     /// <summary>Every valid status — used to reject junk status filters.</summary>
-    public static readonly string[] All = { New, Pending, Assigned, InProgress, Arrived, InTransit, Completed };
+    public static readonly string[] All =
+        { New, Pending, Assigned, InProgress, Arrived, InTransit, Completed, Cancelled };
 
-    /// <summary>Statuses where the driver is already busy on a job.</summary>
+    /// <summary>Driver is out on this job right now.</summary>
     public static readonly string[] Active = { InProgress, Arrived, InTransit };
+
+    /// <summary>Booked but not started: waiting on a driver, or waiting to set off.</summary>
+    public static readonly string[] Waiting = { New, Pending, Assigned };
+
+    /// <summary>Everything still open — neither completed nor cancelled. This is
+    /// the set conflict checks and "still to do" counts run over.</summary>
+    public static readonly string[] Live = { New, Pending, Assigned, InProgress, Arrived, InTransit };
 
     /// <summary>The status a driver may move a job to, given its current one.</summary>
     public static string NextFor(string current) => current switch

@@ -636,6 +636,8 @@ public class VipAppService(
                 DropoffTime = request.DropoffTime,
                 // No driver yet — "new" is the pool drivers accept from.
                 TripStatus = TransportStatuses.New,
+                // Mirrors "scheduled" set by TransportationScheduleService.
+                RideSource = "on-demand",
             };
 
             await _unitOfWork.Transports.AddAsync(transport, ct);

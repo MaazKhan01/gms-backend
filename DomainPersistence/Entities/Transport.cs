@@ -17,10 +17,9 @@ public class Transport : Entity
 
     public string Notes { get; set; }
 
-    // "scheduled" (admin-created) | "on-demand" (guest-requested, see RideRequest).
+    // "scheduled" (admin-created) | "on-demand" (guest-requested from the VIP app,
+    // lands as TripStatus "new" until a driver accepts it).
     public string RideSource { get; set; }
-    // Set only when this ride originated from an accepted on-demand RideRequest.
-    public int? RideRequestId { get; set; }
 
     // Future pricing — nullable, no payment integration yet.
     public decimal? BaseFare { get; set; }
@@ -34,5 +33,4 @@ public class Transport : Entity
     public virtual Location DropoffLocation { get; set; }
     public virtual Vehicle Vehicle { get; set; }
     public virtual DriverProfile Driver { get; set; }
-    public virtual RideRequest RideRequest { get; set; }
 }

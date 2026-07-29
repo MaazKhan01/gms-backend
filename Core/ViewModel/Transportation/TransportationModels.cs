@@ -21,11 +21,6 @@ public class AssignDriversRequest
     public List<Guid> DriverIds { get; set; } = new();
 }
 
-public class SetAvailabilityRequest
-{
-    public bool IsAvailable { get; set; }
-}
-
 public class AssignedDriverDto
 {
     public Guid DriverId { get; set; }

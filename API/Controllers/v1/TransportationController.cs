@@ -12,11 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers.v1;
 
-// Admin side of the transportation module (Day 1) — pre-scheduled rides and
-// the eligible-driver pool per guest. Guest on-demand requests (Day 2) live at
-// api/v1/ride-requests (RideRequestController); driver accept/availability
-// live on the existing TransportAppController alongside the rest of the
-// driver app surface.
+// Admin side of the transportation module — pre-scheduled rides and the
+// eligible-driver pool per guest. Guest on-demand requests are POST
+// api/v1/vip-app/transport-requests (they land as a Transport with status
+// "new"); drivers see and claim them on TransportAppController.
 [Route("api/v1/transportation")]
 [Authorize]
 [ApiVersion("1.0")]

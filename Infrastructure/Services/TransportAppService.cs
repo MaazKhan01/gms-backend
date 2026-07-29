@@ -21,7 +21,7 @@ namespace Infrastructure.Services;
 // Driver app. Every query is scoped to the caller's own DriverProfile — a driver
 // can only ever see or touch transfers assigned to them.
 public class TransportAppService(
-    IUnitOfWork _unitOfWork, IRideRequestService _rideRequests,
+    IUnitOfWork _unitOfWork,
     IRealTimeAlertService _realTimeAlerts, ILogger<TransportAppService> _logger) : ITransportAppService
 {
     public async Task<ApiResponse<DriverStatsResponse>> GetStatsAsync(
@@ -56,9 +56,10 @@ public class TransportAppService(
         {
             Today = todayByStatus.Sum(x => x.Count),
             Completed = CountOf(TransportStatuses.Completed),
-            InProgress = CountOf(TransportStatuses.Assigned),
-            // Anything the driver still has to start, whenever its pickup falls.
-            Pending = CountOf(TransportStatuses.Assigned, TransportStatuses.Arrived, TransportStatuses.Pending),
+            // Out on a job right now: en route, at pickup, or guest aboard.
+            InProgress = CountOf(TransportStatuses.Active),
+            // Booked but not set off yet, whenever its pickup falls.
+            Pending = CountOf(TransportStatuses.Waiting),
         });
     }
 
@@ -72,7 +73,7 @@ public class TransportAppService(
         // Everything still open, earliest pickup first. Jobs with no pickup time
         // sort last rather than disappearing.
         var jobs = await ScopedJobs(driverId, eventId)
-            .Where(t => t.TripStatus == TransportStatuses.Assigned)
+            .Where(t => TransportStatuses.Live.Contains(t.TripStatus))
             .OrderBy(t => t.PickupTime == null)
             .ThenBy(t => t.PickupTime)
             .Select(Project)
@@ -103,12 +104,12 @@ public class TransportAppService(
         if (driverId == null)
             return ApiResponse<List<DriverJobResponse>>.NotFoundResponse("No driver profile for this user");
 
-        // Same set the stats endpoint counts as "Pending" — assigned to this driver
-        // but the guest isn't on board yet.
+        // Not picked up yet: booked-but-not-started plus the two on-the-way steps.
+        // Everything except in-transit (guest aboard) and the terminal statuses.
         var jobs = await ScopedJobs(driverId, eventId)
-            .Where(t => t.TripStatus == TransportStatuses.Assigned
-                     || t.TripStatus == TransportStatuses.Arrived
-                     || t.TripStatus == TransportStatuses.Pending)
+            .Where(t => TransportStatuses.Waiting.Contains(t.TripStatus)
+                     || t.TripStatus == TransportStatuses.InProgress
+                     || t.TripStatus == TransportStatuses.Arrived)
             .OrderBy(t => t.PickupTime == null)
             .ThenBy(t => t.PickupTime)
             .Select(Project)
@@ -572,38 +573,6 @@ public class TransportAppService(
             _logger.LogError(ex, "Error moving driver job {JobId} to {Status}", jobId, next);
             return ApiResponse<DriverJobResponse>.ServerErrorResponse("An error occurred while updating the job");
         }
-    }
-
-    public async Task<ApiResponse<bool>> ToggleAvailabilityAsync(int userId, bool isAvailable, CancellationToken ct = default)
-    {
-        var driver = await _unitOfWork.DriverProfiles.Query().FirstOrDefaultAsync(d => d.UserId == userId, ct);
-        if (driver == null) return ApiResponse<bool>.NotFoundResponse("No driver profile for this user");
-
-        driver.IsAvailable = isAvailable;
-        driver.AvailabilityChangedAt = DateTime.UtcNow;
-        driver.SetUpdateAudit(userId);
-        _unitOfWork.DriverProfiles.Update(driver);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        return ApiResponse<bool>.SuccessResponse(true, isAvailable
-            ? "You are now available for ride requests"
-            : "You are now unavailable for ride requests");
-    }
-
-    public async Task<ApiResponse<List<RideRequestRow>>> GetOpenRideRequestsAsync(int userId, CancellationToken ct = default)
-    {
-        var driverId = await ResolveDriverIdAsync(userId, ct);
-        if (driverId == null) return ApiResponse<List<RideRequestRow>>.NotFoundResponse("No driver profile for this user");
-
-        return await _rideRequests.GetOpenAsync(ct);
-    }
-
-    public async Task<ApiResponse<RideRequestRow>> AcceptRideRequestAsync(int userId, Guid rideRequestId, CancellationToken ct = default)
-    {
-        var driverId = await ResolveDriverIdAsync(userId, ct);
-        if (driverId == null) return ApiResponse<RideRequestRow>.NotFoundResponse("No driver profile for this user");
-
-        return await _rideRequests.AcceptAsync(driverId.Value, rideRequestId, ct);
     }
 
     private IQueryable<User> UserWithDriverProfile()

@@ -7,9 +7,9 @@ using Core.ViewModel.Transportation;
 
 namespace Core.Interfaces.Services;
 
-// Admin side of the transportation module (Day 1) — pre-scheduled rides and
-// the eligible-driver pool per guest. Guest on-demand requests (Day 2) are
-// IRideRequestService.
+// Admin side of the transportation module — pre-scheduled rides and the
+// eligible-driver pool per guest. Guest on-demand requests go through
+// IVipAppService.RequestTransportAsync ("new" status, claimed by a driver).
 public interface ITransportationScheduleService
 {
     Task<ApiResponse<ScheduleRow>> CreateScheduleAsync(CreateScheduleRequest request, int userId, CancellationToken ct = default);

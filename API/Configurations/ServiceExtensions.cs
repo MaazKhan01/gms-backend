@@ -87,7 +87,6 @@ public static class ServiceExtensions
         services.AddScoped<IConflictWindowPolicy, ZeroBufferConflictWindowPolicy>();
         services.AddScoped<ITransportationConflictValidator, TransportationConflictValidator>();
         services.AddScoped<ITransportationScheduleService, TransportationScheduleService>();
-        services.AddScoped<IRideRequestService, RideRequestService>();
 
         // Notification services
         services.AddScoped<INotificationService, NotificationService>();

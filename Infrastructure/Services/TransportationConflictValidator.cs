@@ -26,22 +26,18 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
         var dayStart = candidateTime.Date;
         var dayEnd = dayStart.AddDays(1);
 
-        var scheduledTimes = await _unitOfWork.Transports.Query()
+        // Open (Live) covers both admin-scheduled rides and guest-requested ones
+        // still waiting for a driver — a guest can't be in two cars at one time
+        // regardless of which flow booked them.
+        var bookedTimes = await _unitOfWork.Transports.Query()
             .Where(t => t.GuestId == guestId
-                && TransportStatuses.Active.Contains(t.TripStatus)
+                && TransportStatuses.Live.Contains(t.TripStatus)
                 && t.PickupTime >= dayStart && t.PickupTime < dayEnd
                 && (excludeTransportId == null || t.Id != excludeTransportId))
             .Select(t => t.PickupTime.Value)
             .ToListAsync(ct);
 
-        var requestedTimes = await _unitOfWork.RideRequests.Query()
-            .Where(r => r.GuestId == guestId
-                && RideRequestStatuses.Active.Contains(r.Status)
-                && r.RequestedTime >= dayStart && r.RequestedTime < dayEnd)
-            .Select(r => r.RequestedTime.Value)
-            .ToListAsync(ct);
-
-        return CheckOverlap(candidateTime, scheduledTimes.Concat(requestedTimes), guest: true);
+        return CheckOverlap(candidateTime, bookedTimes, guest: true);
     }
 
     public async Task<ConflictCheckResult> CheckDriverConflictAsync(
@@ -52,7 +48,7 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
 
         var scheduledTimes = await _unitOfWork.Transports.Query()
             .Where(t => t.DriverId == driverId
-                && TransportStatuses.Active.Contains(t.TripStatus)
+                && TransportStatuses.Live.Contains(t.TripStatus)
                 && t.PickupTime >= dayStart && t.PickupTime < dayEnd
                 && (excludeTransportId == null || t.Id != excludeTransportId))
             .Select(t => t.PickupTime.Value)

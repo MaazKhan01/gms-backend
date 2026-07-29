@@ -35,5 +35,6 @@ public class LookupService : ILookupService
             new(TransportStatuses.Arrived,    "Arrived",     "وصل"),
             new(TransportStatuses.InTransit,  "In Transit",  "في الطريق"),
             new(TransportStatuses.Completed,  "Completed",   "مكتمل"),
+            new(TransportStatuses.Cancelled,  "Cancelled",   "ملغي"),
         });
 }

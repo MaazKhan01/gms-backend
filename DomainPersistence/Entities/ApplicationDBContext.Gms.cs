@@ -41,7 +41,6 @@ public partial class ApplicationDBContext
     public virtual DbSet<VehicleType> VehicleTypes { get; set; }
     public virtual DbSet<Vehicle> Vehicles { get; set; }
     public virtual DbSet<DriverProfile> DriverProfiles { get; set; }
-    public virtual DbSet<RideRequest> RideRequests { get; set; }
     public virtual DbSet<TransportStatusHistory> TransportStatusHistories { get; set; }
     public virtual DbSet<GuestDriverAssignment> GuestDriverAssignments { get; set; }
     public virtual DbSet<Venue> Venues { get; set; }
@@ -603,31 +602,7 @@ public partial class ApplicationDBContext
             t.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.Vehicle).WithMany().HasForeignKey(x => x.VehicleId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
-            // At most one Transport per RideRequest (created once, on accept).
-            t.HasOne(x => x.RideRequest).WithOne(x => x.Transport)
-                .HasForeignKey<Transport>(x => x.RideRequestId).OnDelete(DeleteBehavior.Restrict);
-            t.HasIndex(x => x.RideRequestId).IsUnique().HasFilter("[RideRequestId] IS NOT NULL");
             t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
-        });
-
-        modelBuilder.Entity<RideRequest>(r =>
-        {
-            r.ToTable("RideRequests");
-            r.HasKey(x => x.Id);
-            // "Open" mirrors Core.Constants.RideRequestStatuses.Open — DomainPersistence
-            // doesn't reference Core, so the literal is duplicated here on purpose
-            // (same convention as SupportConversation.Status above).
-            r.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue("Open");
-            r.Property(x => x.Notes).HasMaxLength(1000);
-            r.Property(x => x.RowVersion).IsRowVersion();
-            r.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
-            r.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            r.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            r.HasOne(x => x.PickupLocation).WithMany().HasForeignKey(x => x.PickupLocationId).OnDelete(DeleteBehavior.Restrict);
-            r.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
-            r.HasOne(x => x.AcceptedByDriver).WithMany().HasForeignKey(x => x.AcceptedByDriverId).OnDelete(DeleteBehavior.Restrict);
-            r.HasIndex(x => new { x.GuestId, x.Status });
-            r.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<TransportStatusHistory>(h =>
@@ -682,7 +657,7 @@ public partial class ApplicationDBContext
             d.HasKey(x => x.Id);
             d.Property(x => x.LicenseNumber).HasMaxLength(50);
             d.Property(x => x.PhotoUrl).HasMaxLength(500);
-            d.Property(x => x.IsAvailable).HasDefaultValue(false);
+            d.Property(x => x.IsOnline).HasDefaultValue(false);
             d.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             d.HasOne(x => x.User).WithOne(u => u.DriverProfile).HasForeignKey<DriverProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
