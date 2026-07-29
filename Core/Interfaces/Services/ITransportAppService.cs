@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Core.ViewModel.Common;
 using Core.ViewModel.TransportApp;
+using Core.ViewModel.Transportation;
 
 namespace Core.Interfaces.Services;
 
@@ -40,4 +41,13 @@ public interface ITransportAppService
     Task<ApiResponse<List<DriverEventResponse>>> GetEventsAsync(int userId, CancellationToken ct = default);
 
     Task<ApiResponse<DriverJobResponse>> UpdateJobStatusAsync(int userId, Guid jobId, UpdateJobStatusRequest request, CancellationToken ct = default);
+
+    /// <summary>Opt in/out of on-demand ride-request broadcasts.</summary>
+    Task<ApiResponse<bool>> ToggleAvailabilityAsync(int userId, bool isAvailable, CancellationToken ct = default);
+
+    /// <summary>Every open on-demand ride request an available driver could accept.</summary>
+    Task<ApiResponse<List<RideRequestRow>>> GetOpenRideRequestsAsync(int userId, CancellationToken ct = default);
+
+    /// <summary>First driver to accept wins — see RideRequestService.AcceptAsync.</summary>
+    Task<ApiResponse<RideRequestRow>> AcceptRideRequestAsync(int userId, Guid rideRequestId, CancellationToken ct = default);
 }

@@ -15,9 +15,24 @@ public class Transport : Entity
     public DateTime? ActualPickupTime { get; set; }
     public DateTime? ActualDropOffTime { get; set; }
 
+    public string Notes { get; set; }
+
+    // "scheduled" (admin-created) | "on-demand" (guest-requested, see RideRequest).
+    public string RideSource { get; set; }
+    // Set only when this ride originated from an accepted on-demand RideRequest.
+    public int? RideRequestId { get; set; }
+
+    // Future pricing — nullable, no payment integration yet.
+    public decimal? BaseFare { get; set; }
+    public decimal? DistanceFare { get; set; }
+    public decimal? WaitingFare { get; set; }
+    public decimal? TotalFare { get; set; }
+    public string Currency { get; set; }
+
     public virtual Guest Guest { get; set; }
     public virtual Location PickupLocation { get; set; }
     public virtual Location DropoffLocation { get; set; }
     public virtual Vehicle Vehicle { get; set; }
     public virtual DriverProfile Driver { get; set; }
+    public virtual RideRequest RideRequest { get; set; }
 }

@@ -10,6 +10,10 @@ public class ApiResponse<T>
     public string Message { get; set; }
     public T Data { get; set; }
     public List<string> Errors { get; set; }
+    // Machine-readable error code (e.g. "TRANSPORTATION_CONFLICT") for callers
+    // that need to branch on the failure kind rather than parse Message. Null
+    // for every existing response — additive, nothing else sets it.
+    public string ErrorCode { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
     // Not serialized — used by BaseApiController to set HTTP status code
@@ -33,6 +37,9 @@ public class ApiResponse<T>
 
     public static ApiResponse<T> ConflictResponse(string message, List<string> errors = null)
         => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 409 };
+
+    public static ApiResponse<T> ConflictResponse(string message, string errorCode, List<string> errors = null)
+        => new() { Success = false, Message = message, ErrorCode = errorCode, Errors = errors ?? new(), StatusCode = 409 };
 
     public static ApiResponse<T> ServerErrorResponse(string message, List<string> errors = null)
         => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 500 };

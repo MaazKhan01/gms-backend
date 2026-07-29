@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.TransportApp;
+using Core.ViewModel.Transportation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -70,4 +71,19 @@ public class TransportAppController(ITransportAppService _transportApp, ICurrent
     [HttpPut("jobs/{id:guid}/status")]
     public async Task<IActionResult> UpdateJobStatus(Guid id, [FromBody] UpdateJobStatusRequest request, CancellationToken ct)
         => ToResponse(await _transportApp.UpdateJobStatusAsync(_currentUser.UserId, id, request, ct));
+
+    // ── On-demand ride requests (Day 2) ──────────────────────────────────
+    // Opt in/out of ride-request broadcasts. Off by default until toggled on.
+    [HttpPost("availability")]
+    public async Task<IActionResult> SetAvailability([FromBody] SetAvailabilityRequest request, CancellationToken ct)
+        => ToResponse(await _transportApp.ToggleAvailabilityAsync(_currentUser.UserId, request.IsAvailable, ct));
+
+    // Every open guest request — first to accept wins (see AcceptRideRequest).
+    [HttpGet("ride-requests/open")]
+    public async Task<IActionResult> GetOpenRideRequests(CancellationToken ct)
+        => ToResponse(await _transportApp.GetOpenRideRequestsAsync(_currentUser.UserId, ct));
+
+    [HttpPost("ride-requests/{id:guid}/accept")]
+    public async Task<IActionResult> AcceptRideRequest(Guid id, CancellationToken ct)
+        => ToResponse(await _transportApp.AcceptRideRequestAsync(_currentUser.UserId, id, ct));
 }

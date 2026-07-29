@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Transportation Module — QA Test Guide</title>
+<style>
+  @page { margin: 22mm 18mm; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 13px; line-height: 1.5; }
+  h1 { font-size: 24px; border-bottom: 3px solid #1e3a8a; padding-bottom: 8px; color: #1e3a8a; }
+  h2 { font-size: 17px; color: #1e3a8a; margin-top: 28px; border-bottom: 1px solid #ccc; padding-bottom: 4px; page-break-after: avoid; }
+  h3 { font-size: 14px; margin-top: 18px; color: #111; page-break-after: avoid; }
+  .meta { color: #555; font-size: 12px; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 12px; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #eef2ff; }
+  code, pre { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 10px 12px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .method { display: inline-block; font-weight: bold; padding: 2px 8px; border-radius: 4px; color: #fff; font-size: 11px; }
+  .get { background: #2563eb; } .post { background: #16a34a; } .put { background: #d97706; } .delete { background: #dc2626; }
+  .case { border: 1px solid #d0d7e2; border-radius: 8px; padding: 14px 16px; margin: 14px 0; page-break-inside: avoid; }
+  .case-title { font-weight: bold; font-size: 14px; color: #1e3a8a; }
+  .tag { display: inline-block; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 6px; font-size: 11px; margin-left: 6px; }
+  .note { background: #fffbeb; border-left: 4px solid #d97706; padding: 8px 12px; margin: 10px 0; font-size: 12px; }
+  .toc a { text-decoration: none; color: #1e3a8a; }
+  .toc li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Transportation Module — QA Test Guide</h1>
+<div class="meta">
+  Guest Transportation &amp; Driver Assignment module — Postman test guide with sample data.<br>
+  Base URL used below: <code>{{baseUrl}}</code> (Postman environment variable) → set to your API host, e.g. <code>https://localhost:7001</code>.
+</div>
+
+<h2>1. Setup — Postman Environment</h2>
+<p>Create a Postman environment with these variables. Test Case 0 (login) fills <code>token</code> automatically if you add the suggested test script; otherwise paste it manually after login.</p>
+<table>
+  <tr><th>Variable</th><th>Example value</th><th>Notes</th></tr>
+  <tr><td><code>baseUrl</code></td><td>https://localhost:7001</td><td>API host</td></tr>
+  <tr><td><code>token</code></td><td>(JWT from login)</td><td>Used as <code>Authorization: Bearer {{token}}</code> for admin calls</td></tr>
+  <tr><td><code>guestToken</code></td><td>(JWT from guest login)</td><td>Used for the guest-app ride-request endpoints</td></tr>
+  <tr><td><code>driverToken</code></td><td>(JWT from driver login)</td><td>Used for the driver-app endpoints</td></tr>
+  <tr><td><code>eventId</code></td><td>a real Event PublicId (GUID)</td><td>From <code>GET /api/v1/events</code></td></tr>
+  <tr><td><code>guestId</code></td><td>a real Guest PublicId (GUID)</td><td>From <code>GET /api/v1/guest</code></td></tr>
+  <tr><td><code>driverId</code></td><td>a real DriverProfile PublicId (GUID)</td><td>From <code>GET /api/v1/travel/drivers</code> (lookup)</td></tr>
+  <tr><td><code>rideRequestId</code></td><td>(filled after Test Case 5)</td><td>Ride request PublicId</td></tr>
+  <tr><td><code>transportId</code></td><td>(filled after Test Case 2)</td><td>Schedule PublicId</td></tr>
+</table>
+
+<div class="note">
+  Every request below needs header <code>Authorization: Bearer {{token}}</code> (or <code>guestToken</code>/<code>driverToken</code> where noted) and <code>Content-Type: application/json</code>.
+  Admin endpoints additionally require the calling user's role to hold the <code>Transportation.View</code> / <code>Transportation.Manage</code> / <code>Transportation.Assign</code> permissions (already granted to the seeded <b>Travel &amp; Logistics Manager</b> role).
+</div>
+
+<h2>2. Endpoint Reference</h2>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Who</th><th>Purpose</th></tr>
+  <tr><td>POST</td><td>/api/v1/transportation/schedule</td><td>Admin</td><td>Create a pre-scheduled ride</td></tr>
+  <tr><td>DELETE</td><td>/api/v1/transportation/schedule/{id}</td><td>Admin</td><td>Cancel a scheduled ride</td></tr>
+  <tr><td>GET</td><td>/api/v1/transportation/guest/{guestId}</td><td>Admin</td><td>Guest's full schedule</td></tr>
+  <tr><td>GET</td><td>/api/v1/transportation/event/{eventId}</td><td>Admin</td><td>Event schedule board (paged)</td></tr>
+  <tr><td>GET</td><td>/api/v1/transportation/guest/{guestId}/drivers</td><td>Admin</td><td>Guest's assigned driver pool</td></tr>
+  <tr><td>POST</td><td>/api/v1/transportation/guest/{guestId}/drivers</td><td>Admin</td><td>Assign driver(s) to a guest</td></tr>
+  <tr><td>POST</td><td>/api/v1/ride-requests</td><td>Guest</td><td>Create an on-demand ride request</td></tr>
+  <tr><td>GET</td><td>/api/v1/ride-requests/mine</td><td>Guest</td><td>Guest's own ride requests</td></tr>
+  <tr><td>DELETE</td><td>/api/v1/ride-requests/{id}</td><td>Guest</td><td>Cancel own open ride request</td></tr>
+  <tr><td>POST</td><td>/api/v1/transport-app/availability</td><td>Driver</td><td>Toggle available for broadcasts</td></tr>
+  <tr><td>GET</td><td>/api/v1/transport-app/ride-requests/open</td><td>Driver</td><td>List open ride requests</td></tr>
+  <tr><td>POST</td><td>/api/v1/transport-app/ride-requests/{id}/accept</td><td>Driver</td><td>Accept a ride request (first wins)</td></tr>
+  <tr><td>PUT</td><td>/api/v1/transport-app/jobs/{id}/status</td><td>Driver</td><td>Advance a job: assigned→arrived→in-progress→completed</td></tr>
+</table>
+
+<h2>3. Test Cases — Sample Data (7)</h2>
+
+<div class="case">
+  <span class="case-title">Test Case 1 — Create a scheduled ride (success)</span>
+  <span class="tag">Admin</span>
+  <p><span class="method post">POST</span> <code>{{baseUrl}}/api/v1/transportation/schedule</code></p>
+  <pre>{
+  "guestId": "{{guestId}}",
+  "driverId": "{{driverId}}",
+  "pickupLocationId": null,
+  "dropoffLocationId": null,
+  "scheduledTime": "2026-08-20T10:00:00",
+  "notes": "Airport pickup - Driver A"
+}</pre>
+  <p><b>Expected:</b> <code>200 OK</code>, <code>success: true</code>, <code>data.status: "assigned"</code>, <code>data.rideSource: "scheduled"</code>. Save <code>data.id</code> as <code>transportId</code>.</p>
+</div>
+
+<div class="case">
+  <span class="case-title">Test Case 2 — Guest double-booking conflict (business rule)</span>
+  <span class="tag">Admin</span>
+  <p><span class="method post">POST</span> <code>{{baseUrl}}/api/v1/transportation/schedule</code></p>
+  <p>Repeat Test Case 1's exact body but change only <code>driverId</code> to a different valid driver, keeping the <b>same guest</b> and the <b>same minute</b> (seconds may differ, e.g. <code>10:00:47</code>):</p>
+  <pre>{
+  "guestId": "{{guestId}}",
+  "driverId": "{{anotherDriverId}}",
+  "scheduledTime": "2026-08-20T10:00:47",
+  "notes": "Should be rejected - same guest, same minute"
+}</pre>
+  <p><b>Expected:</b> <code>409 Conflict</code>:</p>
+  <pre>{
+  "success": false,
+  "message": "This guest already has a transportation booking scheduled for 10:00 AM on 20-Aug-2026. Please select a different time.",
+  "errorCode": "TRANSPORTATION_CONFLICT"
+}</pre>
+  <p><b>Verify:</b> seconds are ignored — <code>10:00:00</code> and <code>10:00:47</code> must be treated as the same slot.</p>
+</div>
+
+<div class="case">
+  <span class="case-title">Test Case 3 — Driver double-booking conflict</span>
+  <span class="tag">Admin</span>
+  <p><span class="method post">POST</span> <code>{{baseUrl}}/api/v1/transportation/schedule</code></p>
+  <p>Use a <b>different guest</b> but the <b>same driver and same minute</b> as Test Case 1:</p>
+  <pre>{
+  "guestId": "{{anotherGuestId}}",
+  "driverId": "{{driverId}}",
+  "scheduledTime": "2026-08-20T10:00:00",
+  "notes": "Should be rejected - driver already booked at this time"
+}</pre>
+  <p><b>Expected:</b> <code>409 Conflict</code>:</p>
+  <pre>{
+  "success": false,
+  "message": "Driver is already assigned to another transportation schedule during the selected time.",
+  "errorCode": "TRANSPORTATION_CONFLICT"
+}</pre>
+</div>
+
+<div class="case">
+  <span class="case-title">Test Case 4 — Assign a driver pool to a guest</span>
+  <span class="tag">Admin</span>
+  <p><span class="method post">POST</span> <code>{{baseUrl}}/api/v1/transportation/guest/{{guestId}}/drivers</code></p>
+  <pre>{
+  "driverIds": ["{{driverId}}", "{{anotherDriverId}}"]
+}</pre>
+  <p><b>Expected:</b> <code>200 OK</code>, <code>data</code> is an array of the guest's eligible drivers (name + id). Re-run <code>GET</code> on the same URL to confirm it persisted.</p>
+</div>
+
+<div class="case">
+  <span class="case-title">Test Case 5 — Guest creates an on-demand ride request</span>
+  <span class="tag">Guest app (guestToken)</span>
+  <p><span class="method post">POST</span> <code>{{baseUrl}}/api/v1/ride-requests</code></p>
+  <pre>{
+  "pickupLocationId": null,
+  "dropoffLocationId": null,
+  "requestedTime": null,
+  "notes": "Need a ride from the hotel lobby now"
+}</pre>
+  <p><b>Expected:</b> <code>200 OK</code>, <code>data.status: "Open"</code>. Save <code>data.id</code> as <code>rideRequestId</code>. If the guest already has a conflicting booking at the same time, expect the same <code>409 TRANSPORTATION_CONFLICT</code> shape as Test Case 2.</p>
+</div>
+
+<div class="case">
+  <span class="case-title">Test Case 6 — Driver accepts the ride request (race test)</span>
+  <span class="tag">Driver app (driverToken)</span>
+  <p>First, toggle availability on: <span class="method post">POST</span> <code>{{baseUrl}}/api/v1/transport-app/availability</code> → <code>{ "isAvailable": true }</code>.</p>
+  <p>Then confirm it's visible: <span class="method get">GET</span> <code>{{baseUrl}}/api/v1/transport-app/ride-requests/open</code> should list <code>rideRequestId</code> from Test Case 5.</p>
+  <p><span class="method post">POST</span> <code>{{baseUrl}}/api/v1/transport-app/ride-requests/{{rideRequestId}}/accept</code> (empty body)</p>
+  <p><b>Expected (1st call):</b> <code>200 OK</code>, <code>data.status: "Accepted"</code>, <code>data.transportId</code> populated.</p>
+  <p><b>Concurrency check:</b> send the <i>same</i> accept request again (same or a second driver token) immediately after.</p>
+  <p><b>Expected (2nd call):</b> <code>409 Conflict</code>:</p>
+  <pre>{
+  "success": false,
+  "message": "This ride request is no longer available.",
+  "errorCode": "TRANSPORTATION_CONFLICT"
+}</pre>
+  <p>For a true race test in Postman: use the Collection Runner or two open tabs and fire both accept requests within the same second against the same <code>rideRequestId</code> — exactly one must succeed.</p>
+</div>
+
+<div class="case">
+  <span class="case-title">Test Case 7 — Cancel a scheduled ride</span>
+  <span class="tag">Admin</span>
+  <p><span class="method delete">DELETE</span> <code>{{baseUrl}}/api/v1/transportation/schedule/{{transportId}}</code></p>
+  <p><b>Expected:</b> <code>200 OK</code>, <code>message: "Schedule cancelled"</code>. Re-running the same DELETE returns <code>200 OK</code> with <code>"Schedule already cancelled"</code> (idempotent) rather than an error.</p>
+</div>
+
+<h2>4. Additional checks for QA</h2>
+<ul>
+  <li>Driver job status progression still works unchanged: <code>PUT /api/v1/transport-app/jobs/{id}/status</code> with body <code>{ "status": "arrived" }</code>, then <code>"in-progress"</code>, then <code>"completed"</code> — each must be the single next legal step (sending anything else returns a 200 with <code>success: false</code> and an explanatory message, not a 500).</li>
+  <li>A guest with <b>no</b> existing booking at a given time must succeed with no conflict.</li>
+  <li>Cancelled schedules (Test Case 7) must <b>not</b> block a new booking at the same date/time for the same guest — cancelled bookings are excluded from the conflict check.</li>
+  <li>A driver who never calls the availability toggle should <b>not</b> receive new-ride-request notifications (defaults to unavailable).</li>
+</ul>
+
+</body>
+</html>

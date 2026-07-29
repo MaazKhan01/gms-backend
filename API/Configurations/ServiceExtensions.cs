@@ -83,6 +83,10 @@ public static class ServiceExtensions
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IVipAppService, VipAppService>();
         services.AddScoped<ISupportChatService, SupportChatService>();
+        services.AddScoped<IConflictWindowPolicy, ZeroBufferConflictWindowPolicy>();
+        services.AddScoped<ITransportationConflictValidator, TransportationConflictValidator>();
+        services.AddScoped<ITransportationScheduleService, TransportationScheduleService>();
+        services.AddScoped<IRideRequestService, RideRequestService>();
 
         // Notification services
         services.AddScoped<INotificationService, NotificationService>();
