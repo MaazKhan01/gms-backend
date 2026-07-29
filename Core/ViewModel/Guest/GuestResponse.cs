@@ -13,6 +13,7 @@ public class GuestResponse
     public Guid EventId { get; set; }
     public string GuestType { get; set; }
     public string Organization { get; set; }
+    public Guid? OrganizationId { get; set; }
     public Guid? NationalityId { get; set; }
     public string NationalityName { get; set; }
     public string NationalityCode { get; set; }

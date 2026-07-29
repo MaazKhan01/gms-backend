@@ -99,7 +99,9 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.NationalityCode,
                 opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Code : null))
             .ForMember(dest => dest.NationalityFlag,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Flag : null));
+                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Flag : null))
+            .ForMember(dest => dest.OrganizationId,
+                opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null));
 
         // Nationality mappings
         CreateMap<Nationality, NationalityResponse>()

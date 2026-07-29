@@ -102,6 +102,7 @@ public class GuestService(
             var guest = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
+                .Include(g => g.OrganizationRef)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.PublicId == id, ct);
 
@@ -316,6 +317,7 @@ public class GuestService(
 
             var query = _unitOfWork.Guests.Query()
                 .Include(g => g.Nationality)
+                .Include(g => g.OrganizationRef)
                 .Include(g => g.Event)
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Where(g => g.EventId == ev.Id);
@@ -417,6 +419,7 @@ public class GuestService(
             var guest = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions)
                 .Include(g => g.Nationality)
+                .Include(g => g.OrganizationRef)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.PublicId == request.Id.Value, ct);
 
@@ -435,12 +438,14 @@ public class GuestService(
             }
 
             var nationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct);
+            var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
 
             guest.FirstName     = request.FirstName?.Trim() ?? guest.FirstName;
             guest.LastName      = request.LastName?.Trim()  ?? guest.LastName;
             guest.Email         = request.Email?.ToLower().Trim();
             guest.GuestType     = request.GuestType ?? guest.GuestType;
-            guest.Organization  = request.Organization;
+            guest.Organization  = organization?.Name ?? request.Organization;
+            guest.OrganizationId = organization?.Id;
             guest.NationalityId = nationalityId;
             guest.Tier          = request.Tier ?? guest.Tier;
             guest.ArrivalDate   = request.ArrivalDate;
@@ -468,6 +473,7 @@ public class GuestService(
             var updated = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
+                .Include(g => g.OrganizationRef)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
@@ -505,6 +511,7 @@ public class GuestService(
                     return ApiResponse<GuestResponse>.ConflictResponse("A guest with this email already exists for this event");
             }
 
+            var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
             var guest = new Guest
             {
                 FirstName     = request.FirstName.Trim(),
@@ -512,7 +519,8 @@ public class GuestService(
                 Email         = request.Email?.ToLower().Trim(),
                 EventId       = ev.Id,
                 GuestType     = request.GuestType ?? GuestTypes.Delegate,
-                Organization  = request.Organization,
+                Organization  = organization?.Name ?? request.Organization,
+                OrganizationId = organization?.Id,
                 NationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct),
                 Tier          = request.Tier,
                 ArrivalDate   = request.ArrivalDate,
@@ -556,6 +564,7 @@ public class GuestService(
             var created = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
+                .Include(g => g.OrganizationRef)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
@@ -614,6 +623,16 @@ public class GuestService(
         if (publicId == null || publicId == Guid.Empty) return null;
         var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(publicId.Value, ct);
         return nat?.Id;
+    }
+
+    // Resolve a public organization Guid to the entity itself — the caller
+    // needs both its internal id (FK) and its Name (kept in sync on the
+    // legacy free-text Organization column for every existing string-based
+    // consumer — search, CSV export, travel rows, dashboard).
+    private async Task<Organization> ResolveOrganizationAsync(Guid? publicId, CancellationToken ct)
+    {
+        if (publicId == null || publicId == Guid.Empty) return null;
+        return await _unitOfWork.Organizations.GetByPublicIdAsync(publicId.Value, ct);
     }
 
     // CSV import has no Guids to work with — match the Nationality column

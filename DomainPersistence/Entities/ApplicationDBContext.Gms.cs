@@ -133,6 +133,10 @@ public partial class ApplicationDBContext
                 .WithMany(x => x.Guests)
                 .HasForeignKey(x => x.NationalityId)
                 .OnDelete(DeleteBehavior.SetNull);
+            g.HasOne(x => x.OrganizationRef)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
             g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
