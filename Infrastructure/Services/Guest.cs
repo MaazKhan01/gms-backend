@@ -168,6 +168,15 @@ public class GuestService(
             if (!guests.Any())
                 return ApiResponse<bool>.NotFoundResponse("No matching guests found");
 
+            // Same Restrict-FK concern as DeleteGuestByIdAsync — free any seats
+            // held by these guests before removing them.
+            var guestIds = guests.Select(g => g.Id).ToList();
+            var seatAssigns = await _unitOfWork.SeatAssigns.Query()
+                .Where(sa => guestIds.Contains(sa.GuestId))
+                .ToListAsync(ct);
+            if (seatAssigns.Count > 0)
+                _unitOfWork.SeatAssigns.RemoveRange(seatAssigns);
+
             _unitOfWork.Guests.RemoveRange(guests);
             await _unitOfWork.SaveChangesAsync(ct);
             return ApiResponse<bool>.SuccessResponse(true);
@@ -378,6 +387,14 @@ public class GuestService(
             if (guest == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest Not Found");
 
+            // SeatAssign.GuestId is a Restrict FK — free any seat(s) this guest holds
+            // first so the delete doesn't fail, and the seat becomes assignable again.
+            var seatAssigns = await _unitOfWork.SeatAssigns.Query()
+                .Where(sa => sa.GuestId == guest.Id)
+                .ToListAsync(ct);
+            if (seatAssigns.Count > 0)
+                _unitOfWork.SeatAssigns.RemoveRange(seatAssigns);
+
             _unitOfWork.Guests.Remove(guest);
             await _unitOfWork.SaveChangesAsync(ct);
 
@@ -518,7 +535,23 @@ public class GuestService(
             }
 
             if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
+            {
                 await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
+            }
+            else if (!request.InvitationTemplateId.HasValue)
+            {
+                // No template chosen at creation — no invite is going out, so there's
+                // nothing for the guest to accept. Mark them accepted right away
+                // instead of leaving them stuck at "not sent" (which would also block
+                // accreditation — see AccreditationView's invitationStatus check).
+                await _unitOfWork.Invitations.AddAsync(new Invitation
+                {
+                    GuestId = guest.Id,
+                    InvitationStatus = GuestInvitationStatus.Accepted,
+                    AccreditationStatus = GuestAccreditationStatus.NotIssued,
+                }, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
 
             var created = await _unitOfWork.Guests.Query()
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
