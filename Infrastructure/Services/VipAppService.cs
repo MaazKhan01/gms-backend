@@ -375,6 +375,98 @@ public class VipAppService(
     }
 
     // ============================================================
+    // Itinerary — flights / transport / accommodation / sessions in one call
+    // ============================================================
+    public async Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(
+        int guestId, DateOnly? date = null, CancellationToken ct = default)
+    {
+        // date == null → the whole itinerary. Otherwise only what falls on that
+        // day; a hotel stay counts if the date lands anywhere inside it.
+        var from = date?.ToDateTime(TimeOnly.MinValue);
+        var to = from?.AddDays(1);
+
+        var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
+            .Include(l => l.FromAirport).Include(l => l.ToAirport)
+            .Include(l => l.Flight).ThenInclude(f => f.FlightClass)
+            .Where(l => l.Flight.GuestId == guestId)
+            .Where(l => date == null || (l.StartTime >= from && l.StartTime < to))
+            .OrderBy(l => l.StartTime)
+            .ToListAsync(ct);
+
+        var trips = await _unitOfWork.Transports.QueryNoTracking()
+            .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
+            .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
+            .Include(t => t.Driver).ThenInclude(d => d.User)
+            .Where(t => t.GuestId == guestId)
+            .Where(t => date == null || (t.PickupTime >= from && t.PickupTime < to))
+            .OrderBy(t => t.PickupTime == null).ThenBy(t => t.PickupTime)
+            .ToListAsync(ct);
+
+        var accs = await _unitOfWork.Accommodations.QueryNoTracking()
+            .Include(a => a.Hotel).Include(a => a.RoomType)
+            .Where(a => a.GuestId == guestId)
+            // Inclusive of both ends — the guest is in the hotel on check-out day.
+            .Where(a => date == null
+                     || ((a.CheckIn == null || a.CheckIn <= date) && (a.CheckOut == null || a.CheckOut >= date)))
+            .OrderBy(a => a.CheckIn)
+            .ToListAsync(ct);
+
+        var picks = await _unitOfWork.GuestSessions.QueryNoTracking()
+            .Where(gs => gs.GuestId == guestId)
+            .ToDictionaryAsync(gs => gs.SessionId, gs => gs.Status, ct);
+
+        var sessions = await _unitOfWork.Sessions.QueryNoTracking()
+            .Include(s => s.Event)
+            .Where(s => picks.Keys.Contains(s.Id))
+            .Where(s => date == null || s.Date == date)
+            .OrderBy(s => s.Date).ThenBy(s => s.Time)
+            .ToListAsync(ct);
+
+        var data = new ItinerarySummaryResponse
+        {
+            Flights = legs.Select(l => new FlightLegResponse
+            {
+                Id = l.PublicId,
+                DepartureCode = l.FromAirport?.Code, DepartureAirport = l.FromAirport?.City,
+                ArrivalCode = l.ToAirport?.Code, ArrivalAirport = l.ToAirport?.City,
+                DateTime = l.StartTime, FlightNumber = l.FlightNumber,
+                Class = l.Flight?.FlightClass?.Name, Status = l.Flight?.Status, Seat = l.Flight?.Seat
+            }).ToList(),
+
+            // One entry per trip, so OtherJourneys stays empty in this shape —
+            // the whole list is already here.
+            Transports = trips.Select(t => new TransportationResponse
+            {
+                Id = t.PublicId,
+                FromAddress = t.PickupLocation?.Address,
+                ToAddress = t.DropoffLocation?.Address,
+                PickupTime = t.PickupTime,
+                EstimatedArrival = t.DropoffTime,
+                VehicleType = t.Vehicle?.VehicleType?.Name,
+                TripStatus = t.TripStatus,
+                Driver = t.Driver?.User is not { } drv ? null : new DriverResponse
+                {
+                    Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur", Phone = drv.Phone
+                }
+            }).ToList(),
+
+            Accommodations = accs.Select(a => new AccommodationResponse
+            {
+                Id = a.PublicId,
+                HotelName = a.Hotel?.Name,
+                Address = a.Hotel?.Address,
+                CheckIn = ToDt(a.CheckIn),
+                CheckOut = ToDt(a.CheckOut),
+                RoomType = a.RoomType?.Name,
+            }).ToList(),
+
+            Sessions = sessions.Select(s => MapSession(s, picks[s.Id] ?? "selected")).ToList(),
+        };
+
+        return ApiResponse<ItinerarySummaryResponse>.SuccessResponse(data);
+    }
+
+    // ============================================================
     // Travel
     // ============================================================
     public async Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, CancellationToken ct)

@@ -60,6 +60,13 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     public async Task<IActionResult> GetAgenda(CancellationToken ct)
         => ToResponse(await _vip.GetAgendaAsync(GuestId, ct));
 
+    // ---------------- Itinerary ----------------
+    // Flights / transport / accommodation / sessions in one call. date optional:
+    // send it for a single day, omit it for the whole itinerary.
+    [HttpGet("itinerary")]
+    public async Task<IActionResult> GetItinerary([FromQuery] DateOnly? date, CancellationToken ct)
+        => ToResponse(await _vip.GetItineraryAsync(GuestId, date, ct));
+
     // ---------------- Travel ----------------
     [HttpGet("flights")]
     public async Task<IActionResult> GetFlights(CancellationToken ct)

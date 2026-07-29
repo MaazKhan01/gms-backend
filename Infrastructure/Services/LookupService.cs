@@ -23,4 +23,15 @@ public class LookupService : ILookupService
             new((int)DriverType.Fixed, "Fixed", "ثابت"),
             new((int)DriverType.Open,  "Open",  "مفتوح"),
         });
+
+    // Code order = lifecycle order: pending → assigned → arrived → in-progress → completed.
+    public ApiResponse<List<LookupEnumOption>> GetTransportStatuses()
+        => ApiResponse<List<LookupEnumOption>>.SuccessResponse(new List<LookupEnumOption>
+        {
+            new(TransportStatuses.Pending,    "Pending",     "قيد الانتظار"),
+            new(TransportStatuses.Assigned,   "Assigned",    "تم التعيين"),
+            new(TransportStatuses.Arrived,    "Arrived",     "وصل"),
+            new(TransportStatuses.InProgress, "In Progress", "قيد التنفيذ"),
+            new(TransportStatuses.Completed,  "Completed",   "مكتمل"),
+        });
 }

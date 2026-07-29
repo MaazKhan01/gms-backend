@@ -61,6 +61,17 @@ public class AgendaCardResponse
     public Guid? RefId { get; set; }
 }
 
+// ---------------- Itinerary ----------------
+/// <summary>Everything on the guest's itinerary in one call. Empty list where
+/// nothing is booked — never null.</summary>
+public class ItinerarySummaryResponse
+{
+    public List<FlightLegResponse> Flights { get; set; } = new();
+    public List<TransportationResponse> Transports { get; set; } = new();
+    public List<AccommodationResponse> Accommodations { get; set; } = new();
+    public List<GuestSessionResponse> Sessions { get; set; } = new();
+}
+
 // ---------------- Travel ----------------
 public class FlightLegResponse
 {

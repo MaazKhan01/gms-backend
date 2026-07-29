@@ -24,6 +24,11 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public IActionResult GetDriverTypes()
         => ToResponse(_lookupService.GetDriverTypes());
 
+    // Transfer lifecycle statuses — the values the transport-app job filters take.
+    [HttpGet("enums/transport-statuses")]
+    public IActionResult GetTransportStatuses()
+        => ToResponse(_lookupService.GetTransportStatuses());
+
     // ── Travel lookups — separate GET per lookup, each reads its own table ────
     [HttpGet("flight-types")]
     public async Task<IActionResult> GetFlightTypes(CancellationToken ct)

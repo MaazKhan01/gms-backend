@@ -11,4 +11,7 @@ public interface ILookupService
 
     /// <summary>Driver engagement types (fixed / open) — no DB access.</summary>
     ApiResponse<List<EnumIntOption>> GetDriverTypes();
+
+    /// <summary>Transfer lifecycle statuses (Transports.TripStatus) — no DB access.</summary>
+    ApiResponse<List<LookupEnumOption>> GetTransportStatuses();
 }
