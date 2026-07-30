@@ -274,7 +274,10 @@ public class VipAppService(
             ValidateAudience = false,
             ClockSkew = TimeSpan.Zero
         };
-        return new JwtSecurityTokenHandler().ValidateToken(token, parameters, out _);
+        // MapInboundClaims off: the default map rewrites "sub" to
+        // ClaimTypes.NameIdentifier, so callers reading the raw "sub" claim got null.
+        return new JwtSecurityTokenHandler { MapInboundClaims = false }
+            .ValidateToken(token, parameters, out _);
     }
 
     // ============================================================
