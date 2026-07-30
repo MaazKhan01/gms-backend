@@ -9,6 +9,12 @@ namespace DomainPersistence.Entities
     public class SeatProperties : Entity
     {
         public string Code { get; set; }
+        // A manager-typed display override for this seat's number/label. The
+        // actual `Code` (derived from the seat's grid position) never changes
+        // when this is set — it's still needed to identify the physical seat
+        // (e.g. when the seat is later removed) even after its displayed
+        // number has been customized.
+        public string? Placeholder { get; set; }
         public int? Index { get; set; }
         public string? Color { get; set; }
         public string? Status { get; set; }

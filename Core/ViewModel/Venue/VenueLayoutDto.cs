@@ -33,6 +33,7 @@ namespace Core.ViewModel.Venue
         public double? StageH { get; set; }
         public string? Color { get; set; }
         public List<SeatPropertyDto>? Seats { get; set; }
+        public List<string>? RemovedSeats { get; set; }
     }
 
     public class SeatPropertyDto
@@ -40,6 +41,7 @@ namespace Core.ViewModel.Venue
         public Guid Id { get; set; }
 
         public string Code { get; set; }
+        public string? Placeholder { get; set; }
         public int? Index { get; set; }
         public string? Color { get; set; }
         public string? Status { get; set; }

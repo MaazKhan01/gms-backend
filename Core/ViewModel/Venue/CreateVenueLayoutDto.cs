@@ -30,11 +30,13 @@ namespace Core.ViewModel.Venue
         public double? StageH { get; set; }
         public string? Color { get; set; }
         public List<CreateSeatPropertyDto>? Seats { get; set; }
+        public List<string>? RemovedSeats { get; set; }
     }
 
     public class CreateSeatPropertyDto
     {
         public string Code { get; set; }
+        public string? Placeholder { get; set; }
         public int? Index { get; set; }
         public string? Color { get; set; }
         public string? Status { get; set; }

@@ -618,6 +618,7 @@ namespace Infrastructure.Services
                             StageH = p.StageH,
                             Color = p.Color,
                             Seats = GenerateSeats(p),
+                            RemovedSeats = p.RemovedSeats ?? new(),
                         }).ToList(),
                     }).ToList();
                 box.VenueLayouts = layouts ?? new List<VenueLayout>();
@@ -693,20 +694,27 @@ namespace Infrastructure.Services
         }
 
         // Build the seat list for a prop.
-        // - Explicit seats from the client win (re-indexed in order).
+        // - Explicit seats from the client win. Index is trusted as-is (the flat
+        //   grid position, 0-based) rather than re-sequenced — the client already
+        //   omits removed seats, so re-sequencing here would shift every
+        //   following seat's index and desync it from the editor's own
+        //   position-based indexing (seatMeta/seatIds/RemovedSeats matching).
         // - Otherwise auto-generate: total = rows × seatsPerRow (rows defaults to 1),
         //   with codes like "A1, A2 … B1" (row letter from RowNames or A,B,C…; plain
         //   number when there's a single row). Index is 0-based = draw/order sequence.
+        //   Any position whose generated code is in RemovedSeats is skipped, same as
+        //   the client already does for the explicit-seats path.
         private static List<SeatProperties> GenerateSeats(CreateVenueLayoutPropDto p)
         {
             if (p.Seats is { Count: > 0 })
             {
                 return p.Seats
                     .OrderBy(s => s.Index ?? 0)
-                    .Select((s, i) => new SeatProperties
+                    .Select(s => new SeatProperties
                     {
-                        Code = string.IsNullOrWhiteSpace(s.Code) ? $"{i + 1}" : s.Code,
-                        Index = i,
+                        Code = string.IsNullOrWhiteSpace(s.Code) ? $"{(s.Index ?? 0) + 1}" : s.Code,
+                        Placeholder = s.Placeholder,
+                        Index = s.Index,
                         Color = s.Color ?? p.Color,
                         Status = s.Status,
                         IsDisabled = s.IsDisabled,
@@ -719,6 +727,7 @@ namespace Infrastructure.Services
             if (perRow <= 0) return new();
 
             var rows = (p.Row is > 0) ? p.Row.Value : 1;
+            var removed = p.RemovedSeats is { Count: > 0 } ? new HashSet<string>(p.RemovedSeats) : null;
             var seats = new List<SeatProperties>(rows * perRow);
 
             for (var i = 0; i < rows * perRow; i++)
@@ -729,6 +738,7 @@ namespace Infrastructure.Services
                     ? p.RowNames[rowIdx]
                     : ((char)('A' + rowIdx)).ToString();
                 var code = rows > 1 ? $"{rowName}{colIdx + 1}" : $"{colIdx + 1}";
+                if (removed != null && removed.Contains(code)) continue;
 
                 seats.Add(new SeatProperties
                 {
