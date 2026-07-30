@@ -170,8 +170,8 @@ SELECT g.UserId, gd.Token, gd.Platform, 1, 1, gd.LastSeenAt, gd.LastSeenAt, gd.C
 FROM GuestDevices gd
 INNER JOIN Guests g ON g.Id = gd.GuestId;
 
-INSERT INTO Notifications (UserId, Title, Message, Type, Read, RedirectUrl, Data, CreatedBy, CreatedAt, UpdatedBy, UpdatedAt, IsDeleted, DeletedBy, DeletedAt, PublicId)
-SELECT g.UserId, gn.Title, gn.Message, gn.Type, gn.Read, gn.RedirectUrl, gn.Data, gn.CreatedBy, gn.CreatedAt, gn.UpdatedBy, gn.UpdatedAt, gn.IsDeleted, gn.DeletedBy, gn.DeletedAt, NEWID()
+INSERT INTO Notifications (UserId, Title, Message, Type, [Read], RedirectUrl, Data, CreatedBy, CreatedAt, UpdatedBy, UpdatedAt, IsDeleted, DeletedBy, DeletedAt, PublicId)
+SELECT g.UserId, gn.Title, gn.Message, gn.Type, gn.[Read], gn.RedirectUrl, gn.Data, gn.CreatedBy, gn.CreatedAt, gn.UpdatedBy, gn.UpdatedAt, gn.IsDeleted, gn.DeletedBy, gn.DeletedAt, NEWID()
 FROM GuestNotifications gn
 INNER JOIN Guests g ON g.Id = gn.GuestId;
 
