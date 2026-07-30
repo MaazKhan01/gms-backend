@@ -689,31 +689,30 @@ namespace Infrastructure.Services
                 .ToList();
 
             var existingLayouts = existingBox.VenueLayouts ?? new List<VenueLayout>();
-            var existingByCode = new Dictionary<string, VenueLayout>();
-            foreach (var l in existingLayouts)
-            {
-                var code = l.VenueLayoutProps?.FirstOrDefault()?.Code;
-                if (!string.IsNullOrEmpty(code)) existingByCode[code] = l;
-            }
+            // Keyed by the layout's own real PublicId — NOT VenueLayoutProp.Code.
+            // Code just echoes whatever id the client happened to send on the
+           
+            var existingById = existingLayouts
+                .Where(l => l.PublicId != Guid.Empty)
+                .ToDictionary(l => l.PublicId);
 
             var matchedLayoutIds = new HashSet<int>();
-            // (existingLayout, existingProp, desired seat set) for every table that
-            // survives — computed up front so the assignment check below can see
-            // every seat that would be removed, across the whole box, in one pass.
-            var updates = new List<(VenueLayout Layout, VenueLayoutProp Prop, List<SeatSpec> Desired)>();
+            // (existingLayout, existingProp, incoming dto, desired seat set) for every
+            var updates = new List<(VenueLayout Layout, VenueLayoutProp Prop, CreateVenueLayoutDto Incoming, List<SeatSpec> Desired)>();
             var candidateRemovedSeats = new List<SeatProperties>();
 
             foreach (var incoming in incomingLayouts)
             {
-                var incomingProp = incoming.Props.First();
-                if (!string.IsNullOrEmpty(incomingProp.Code) && existingByCode.TryGetValue(incomingProp.Code, out var existingLayout))
+                if (incoming.Id.HasValue && incoming.Id.Value != Guid.Empty && existingById.TryGetValue(incoming.Id.Value, out var existingLayout))
                 {
                     matchedLayoutIds.Add(existingLayout.Id);
-                    var prop = existingLayout.VenueLayoutProps.First(p => p.Code == incomingProp.Code);
+                    var incomingProp = incoming.Props.First();
+                    // A layout normally carries exactly one prop (see toLayoutDto) —
+                    var prop = existingLayout.VenueLayoutProps.First();
                     var desired = ResolveDesiredSeats(incomingProp);
                     var desiredCodes = desired.Select(s => s.Code).ToHashSet();
                     candidateRemovedSeats.AddRange((prop.Seats ?? new List<SeatProperties>()).Where(s => !desiredCodes.Contains(s.Code)));
-                    updates.Add((existingLayout, prop, desired));
+                    updates.Add((existingLayout, prop, incoming, desired));
                 }
             }
             // Whole tables the client no longer has at all.
@@ -756,9 +755,8 @@ namespace Infrastructure.Services
                 _unitOfWork.VenueLayouts.RemoveRange(droppedLayouts);
             }
 
-            foreach (var (layout, prop, desired) in updates)
+            foreach (var (layout, prop, incoming, desired) in updates)
             {
-                var incoming = incomingLayouts.First(l => l.Props.First().Code == prop.Code);
                 var incomingProp = incoming.Props.First();
 
                 layout.Type = incoming.Type.Trim();
@@ -821,7 +819,7 @@ namespace Infrastructure.Services
 
             // Incoming tables with no existing match at all — brand new inserts.
             var newLayouts = incomingLayouts
-                .Where(l => string.IsNullOrEmpty(l.Props.First().Code) || !existingByCode.ContainsKey(l.Props.First().Code))
+                .Where(l => !l.Id.HasValue || l.Id.Value == Guid.Empty || !existingById.ContainsKey(l.Id.Value))
                 .Select(l => new VenueLayout
                 {
                     Type = l.Type.Trim(),

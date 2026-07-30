@@ -1,11 +1,11 @@
+using System;
 using System.Collections.Generic;
 
 namespace Core.ViewModel.Venue
 {
-    // Request-side DTOs (no Id — the server generates ids). Kept separate from the
-    // Id-bearing response DTOs so an empty "id" in the payload can't break binding.
     public class CreateVenueLayoutDto
     {
+        public Guid? Id { get; set; }
         public string Type { get; set; }
         public double X { get; set; }
         public double Y { get; set; }
