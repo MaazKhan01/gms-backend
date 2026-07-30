@@ -285,13 +285,18 @@ public class UserService(
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
-            SendInviteEmail(user, role.Name);
+            var emailSent = await TrySendInviteEmailAsync(user, role.Name, ct);
 
             var created = await _unitOfWork.Users.Query()
                 .Include(u => u.Role)
                 .FirstOrDefaultAsync(u => u.Id == user.Id, ct);
 
-            return ApiResponse<UserResponse>.SuccessResponse(_mapper.Map<UserResponse>(created), "Invite sent");
+            var response = _mapper.Map<UserResponse>(created);
+            response.InviteEmailSent = emailSent;
+            var message = emailSent
+                ? "Invite sent"
+                : "User created, but the invite email could not be sent — use Resend Invite to try again.";
+            return ApiResponse<UserResponse>.SuccessResponse(response, message);
         }
         catch (Exception ex)
         {
@@ -359,9 +364,11 @@ public class UserService(
             _unitOfWork.Users.Update(user);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            SendInviteEmail(user, user.Role?.Name);
+            var emailSent = await TrySendInviteEmailAsync(user, user.Role?.Name, ct);
 
-            return ApiResponse<bool>.SuccessResponse(true, "Invite resent");
+            return emailSent
+                ? ApiResponse<bool>.SuccessResponse(true, "Invite resent")
+                : ApiResponse<bool>.ServerErrorResponse("Could not send the invite email — check the server logs for details.");
         }
         catch (Exception ex)
         {
@@ -441,15 +448,25 @@ public class UserService(
         }
     }
 
-    private void SendInviteEmail(User user, string roleName)
+    // Awaited, not a detached Task.Run — a fire-and-forget task here outlives
+    // the request's DI scope (IEmailService is Scoped) and isn't tied to the
+    // request lifetime at all, so on a process recycle/idle-shutdown it can be
+    // abandoned mid-send with no exception ever thrown and nothing logged.
+    // Awaiting it keeps the send inside the request, and any failure is both
+    // logged at Error level and reflected in the response message so it's
+    // never silently lost.
+    private async Task<bool> TrySendInviteEmailAsync(User user, string roleName, CancellationToken ct)
     {
         var acceptUrl = $"{FrontendUrl}/?screen=userInvite&token={user.InviteToken}";
-        var email = user.Email;
-        var firstName = user.FirstName;
-        _ = Task.Run(async () =>
+        try
         {
-            try { await _emailService.SendUserInviteAsync(email, firstName, roleName, acceptUrl); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Could not send invite email to {Email}", email); }
-        });
+            await _emailService.SendUserInviteAsync(user.Email, user.FirstName, roleName, acceptUrl, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not send invite email to {Email}", user.Email);
+            return false;
+        }
     }
 }

@@ -19,4 +19,7 @@ public class UserResponse
     public List<string> Permissions { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    // Only meaningful right after InviteUserAsync — true elsewhere/by default,
+    // since most callers of this DTO don't just send an invite.
+    public bool InviteEmailSent { get; set; } = true;
 }

@@ -19,6 +19,14 @@ public class GuestPagedRequest : PagedRequest
 {
     public string Tier { get; set; }
     public string InvitationStatus { get; set; }
+    // Comma-separated, e.g. "sent,opened,accepted" — lets the Guests filter
+    // panel select more than one status at once. Independent of the single
+    // InvitationStatus above (kept for other/older callers).
+    public string InvitationStatuses { get; set; }
+    public Guid? OrganizationId { get; set; }
+    public Guid? NationalityId { get; set; }
+    // "not_required" | "pending" (required, not yet issued) | "issued"
+    public string AccreditationStatus { get; set; }
 }
 
  public class NotificationPagedRequest : PagedRequest

@@ -350,6 +350,51 @@ public class GuestService(
                         .Any(i => i.GuestId == g.Id && i.InvitationStatus == status));
             }
 
+            // Multi-select variant used by the Guests filter panel — same rules
+            // as above, OR'd across every selected status.
+            if (!string.IsNullOrWhiteSpace(request.InvitationStatuses))
+            {
+                var statuses = request.InvitationStatuses
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList();
+                if (statuses.Count > 0)
+                {
+                    var includesNotSent = statuses.Contains(GuestInvitationStatus.NotSent);
+                    var otherStatuses = statuses.Where(s => s != GuestInvitationStatus.NotSent).ToList();
+                    query = query.Where(g =>
+                        (includesNotSent && !_unitOfWork.Invitations.Query()
+                            .Any(i => i.GuestId == g.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
+                        || (otherStatuses.Count > 0 && _unitOfWork.Invitations.Query()
+                            .Any(i => i.GuestId == g.Id && otherStatuses.Contains(i.InvitationStatus))));
+                }
+            }
+
+            if (request.OrganizationId.HasValue && request.OrganizationId != Guid.Empty)
+            {
+                var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.OrganizationId.Value, ct);
+                query = query.Where(g => org != null && g.OrganizationId == org.Id);
+            }
+
+            if (request.NationalityId.HasValue && request.NationalityId != Guid.Empty)
+            {
+                var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(request.NationalityId.Value, ct);
+                query = query.Where(g => nat != null && g.NationalityId == nat.Id);
+            }
+
+            // Accreditation: "not_required" (flag off) / "pending" (flag on, not
+            // yet issued) / "issued" (flag on, Invitation.AccreditationStatus == Issued).
+            if (!string.IsNullOrWhiteSpace(request.AccreditationStatus))
+            {
+                if (request.AccreditationStatus == "not_required")
+                    query = query.Where(g => !g.AccreditationRequired);
+                else if (request.AccreditationStatus == GuestAccreditationStatus.Issued)
+                    query = query.Where(g => g.AccreditationRequired && _unitOfWork.Invitations.Query()
+                        .Any(i => i.GuestId == g.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
+                else if (request.AccreditationStatus == "pending")
+                    query = query.Where(g => g.AccreditationRequired && !_unitOfWork.Invitations.Query()
+                        .Any(i => i.GuestId == g.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
+            }
+
             // Downstream pickers (seating/meetings/travel) pass excludeDeclined=true
             // so a guest who rejected their invitation can't be assigned anywhere.
             if (request.ExcludeDeclined)
