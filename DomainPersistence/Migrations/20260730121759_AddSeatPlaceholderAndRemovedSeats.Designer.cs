@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    [Migration("20260730085013_FilterUserEmailUniqueIndexByIsDeleted")]
-    partial class FilterUserEmailUniqueIndexByIsDeleted
+    [Migration("20260730121759_AddSeatPlaceholderAndRemovedSeats")]
+    partial class AddSeatPlaceholderAndRemovedSeats
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -2054,6 +2054,9 @@ namespace DomainPersistence.Migrations
                     b.Property<bool>("IsDisabled")
                         .HasColumnType("bit");
 
+                    b.Property<string>("Placeholder")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
@@ -3326,6 +3329,9 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("RemovedSeats")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("Row")
                         .HasColumnType("int");

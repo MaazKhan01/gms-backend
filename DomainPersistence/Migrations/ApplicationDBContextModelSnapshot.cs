@@ -2051,6 +2051,9 @@ namespace DomainPersistence.Migrations
                     b.Property<bool>("IsDisabled")
                         .HasColumnType("bit");
 
+                    b.Property<string>("Placeholder")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
@@ -2711,7 +2714,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique()
-                        .HasFilter("([IsDeleted] IS NULL OR [IsDeleted] = 0)");
+                        .HasFilter("[IsDeleted] = 0");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -3323,6 +3326,9 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("RemovedSeats")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("Row")
                         .HasColumnType("int");

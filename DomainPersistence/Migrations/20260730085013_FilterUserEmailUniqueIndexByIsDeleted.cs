@@ -19,7 +19,7 @@ namespace DomainPersistence.Migrations
                 table: "Users",
                 column: "Email",
                 unique: true,
-                filter: "([IsDeleted] IS NULL OR [IsDeleted] = 0)");
+                filter: "[IsDeleted] = 0");
         }
 
         /// <inheritdoc />

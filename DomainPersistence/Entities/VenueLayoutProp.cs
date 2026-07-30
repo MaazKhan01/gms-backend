@@ -16,6 +16,11 @@ namespace DomainPersistence.Entities
         public int? Row { get; set; }
         public int? SeatsQuantity { get; set; }
         public List<string>? RowNames { get; set; } = [];
+        // Codes (e.g. "C8") of seats hidden from this prop's grid — kept
+        // separate from the Seats collection itself: a removed seat simply has
+        // no SeatProperties row, so on load this is what tells the editor to
+        // render blank space at that grid position instead of a seat.
+        public List<string>? RemovedSeats { get; set; } = [];
         public int? PitchW { get; set; } = 0;
         public int? PitchH { get; set; } = 0;
         public double? StageW { get; set; } = 0;
