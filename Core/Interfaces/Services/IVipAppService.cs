@@ -24,7 +24,7 @@ public interface IVipAppService
     Task<ApiResponse<bool>> SubmitSelectionAsync(int guestId, Guid eventId, SessionSelectionRequest request, CancellationToken ct);
 
     // ---- Agenda (upcoming actions: flight / check-in / transport) ----
-    Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, CancellationToken ct);
+    Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, Guid? eventId = null, CancellationToken ct = default);
 
     /// <summary>Just the dates this guest has a flight, stay or transfer on —
     /// what /itinerary?date= expects. Dates only, deliberately cheap.</summary>
@@ -37,7 +37,7 @@ public interface IVipAppService
     Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(int guestId, Guid? eventId = null, DateOnly? date = null, CancellationToken ct = default);
 
     // ---- Travel ---- (eventId null on any of these = every event the guest is on)
-    Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct);
+    Task<ApiResponse<List<FlightBookingResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct);
     Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, Guid? eventId, CancellationToken ct);
     Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, Guid? eventId, CancellationToken ct);
 
@@ -46,7 +46,7 @@ public interface IVipAppService
     Task<ApiResponse<TransportationResponse>> RequestTransportAsync(int guestId, TransportRequest request, CancellationToken ct);
 
     // ---- Sessions ----
-    Task<ApiResponse<List<GuestSessionResponse>>> GetSessionsAsync(int guestId, CancellationToken ct);
+    Task<ApiResponse<List<GuestSessionResponse>>> GetSessionsAsync(int guestId, Guid? eventId = null, CancellationToken ct = default);
     Task<ApiResponse<SessionDetailResponse>> GetSessionDetailAsync(int guestId, Guid sessionId, CancellationToken ct);
 
     // ---- Preferences ----

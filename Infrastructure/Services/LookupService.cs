@@ -24,6 +24,16 @@ public class LookupService : ILookupService
             new((int)DriverType.Open,  "Open",  "مفتوح"),
         });
 
+    // Directions a flight booking can take. "return" is a single booking with two
+    // legs (outbound + inbound); the other two carry one leg.
+    public ApiResponse<List<LookupEnumOption>> GetFlightTypes()
+        => ApiResponse<List<LookupEnumOption>>.SuccessResponse(new List<LookupEnumOption>
+        {
+            new(nameof(FlightType.Inbound).ToLowerInvariant(),  "Inbound",  "قادمة"),
+            new(nameof(FlightType.Outbound).ToLowerInvariant(), "Outbound", "مغادرة"),
+            new(nameof(FlightType.Return).ToLowerInvariant(),   "Return",   "ذهاب وعودة"),
+        });
+
     // Code order = lifecycle order: pending → assigned → arrived → in-progress → completed.
     public ApiResponse<List<LookupEnumOption>> GetTransportStatuses()
         => ApiResponse<List<LookupEnumOption>>.SuccessResponse(new List<LookupEnumOption>

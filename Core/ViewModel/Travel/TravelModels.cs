@@ -7,12 +7,12 @@ namespace Core.ViewModel.Travel;
 // ---- Dropdown lookup DTOs (one GET endpoint per list) ----
 public class IdNameDto { public Guid Id { get; set; } public string Name { get; set; } }
 public class AirportDto { public Guid Id { get; set; } public string Code { get; set; } public string City { get; set; } public string Country { get; set; } public string Continent { get; set; } public Guid? LocationId { get; set; } }
-public class HotelDto { public Guid Id { get; set; } public string Name { get; set; } public string Address { get; set; } public Guid? LocationId { get; set; } }
+public class HotelDto { public Guid Id { get; set; } public string Name { get; set; } public string Address { get; set; } public string ImageUrl { get; set; } public Guid? LocationId { get; set; } }
 public class LocationDto { public Guid Id { get; set; } public string Address { get; set; } public string Type { get; set; } public string Longitude { get; set; } public string Latitude { get; set; } }
 
 // ---- Create wizard-dropdown lookup records (admin-managed) ----
 public class CreateNamedLookupRequest { public string Name { get; set; } }
-public class CreateHotelRequest { public string Name { get; set; } public string Address { get; set; } public Guid? LocationId { get; set; } }
+public class CreateHotelRequest { public string Name { get; set; } public string Address { get; set; } public string ImageUrl { get; set; } public Guid? LocationId { get; set; } }
 public class CreateAirportRequest { public string Code { get; set; } public string City { get; set; } public string Country { get; set; } public string Continent { get; set; } public Guid? LocationId { get; set; } }
 // Same shape for create and edit.
 public class LocationRequest { public string Address { get; set; } public string Type { get; set; } public string Longitude { get; set; } public string Latitude { get; set; } }
@@ -33,14 +33,24 @@ public class GuestTravelRequest
 public class FlightInput
 {
     public Guid? Id { get; set; }
-    public Guid FlightTypeId { get; set; }
+    /// <summary>DomainPersistence.Enums.FlightType code: "inbound", "outbound"
+    /// or "return". Return carries two legs; the other two carry one.</summary>
+    public string FlightType { get; set; }
     public Guid? FlightClassId { get; set; }
     public string Status { get; set; }
     public string Seat { get; set; }
     // Booking-level depart/land times, stored on Flights (not on the leg).
     public DateTime? DepartureTime { get; set; }
     public DateTime? ArrivalTime { get; set; }
-    // single leg (MVP)
+
+    /// <summary>Segments, in travel order. A leg's Id is set only when editing
+    /// one that already exists; legs left out of the list are deleted.</summary>
+    public List<FlightLegInput> Legs { get; set; } = [];
+}
+
+public class FlightLegInput
+{
+    public Guid? Id { get; set; }
     public string FlightNumber { get; set; }
     public Guid? FromAirportId { get; set; }
     public Guid? ToAirportId { get; set; }
@@ -142,7 +152,8 @@ public class ArrivalDepartureFlight
 {
     public Guid Id { get; set; }
     public string FlightNumber { get; set; }
-    /// <summary>The raw FlightType name, so the UI can show "Return" as-is.</summary>
+    /// <summary>"inbound" / "outbound" / "return" — a return booking is listed
+    /// under both directions.</summary>
     public string FlightType { get; set; }
     public string DepartureCode { get; set; }
     public string DepartureCity { get; set; }
@@ -151,6 +162,10 @@ public class ArrivalDepartureFlight
     public DateTime? DepartureTime { get; set; }
     public DateTime? ArrivalTime { get; set; }
     public int LegCount { get; set; }
+
+    /// <summary>Every segment, in travel order — a return booking's arrival leg
+    /// and departure leg are both here.</summary>
+    public List<FlightLegRow> Legs { get; set; } = [];
 }
 
 public class FlightLegRow
@@ -175,6 +190,7 @@ public class EventAccommodationRow
     public string Organization { get; set; }
     public string Tier { get; set; }
     public string Hotel { get; set; }
+    public string HotelImageUrl { get; set; }
     public string RoomType { get; set; }
     public DateOnly? CheckIn { get; set; }
     public DateOnly? CheckOut { get; set; }

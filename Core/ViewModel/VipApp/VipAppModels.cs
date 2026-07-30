@@ -73,6 +73,22 @@ public class ItinerarySummaryResponse
 }
 
 // ---------------- Travel ----------------
+/// <summary>One flight booking with its segments. A "return" booking holds two
+/// legs (outbound + inbound); "inbound"/"outbound" hold one.</summary>
+public class FlightBookingResponse
+{
+    public Guid Id { get; set; }
+    public string FlightType { get; set; }  // inbound / outbound / return
+    public string Class { get; set; }
+    public string Status { get; set; }      // Confirmed / Pending
+    public string Seat { get; set; }
+    public DateTime? DepartureTime { get; set; }
+    public DateTime? ArrivalTime { get; set; }
+    /// <summary>Whole booking, first leg's departure to last leg's arrival.</summary>
+    public string Duration { get; set; }
+    public List<FlightLegResponse> Legs { get; set; } = new();
+}
+
 public class FlightLegResponse
 {
     public Guid Id { get; set; }
@@ -95,6 +111,7 @@ public class AccommodationResponse
 {
     public Guid Id { get; set; }
     public string HotelName { get; set; }
+    public string HotelImageUrl { get; set; }
     public string Address { get; set; }
     public DateTime? CheckIn { get; set; }
     public DateTime? CheckOut { get; set; }
@@ -110,8 +127,20 @@ public class TransportationResponse
     public DateTime? EstimatedArrival { get; set; }
     public string VehicleType { get; set; }
     public string TripStatus { get; set; }  // On Time
+    /// <summary>The concrete car assigned, when dispatch has picked one. Null
+    /// until then — VehicleType above is the category either way.</summary>
+    public VehicleResponse Vehicle { get; set; }
     public DriverResponse Driver { get; set; }
-    public List<JourneyResponse> OtherJourneys { get; set; } = new();
+}
+
+public class VehicleResponse
+{
+    public Guid Id { get; set; }
+    public string Model { get; set; }
+    public string Number { get; set; }      // plate
+    public string Type { get; set; }        // VehicleType category name
+    public string ImageUrl { get; set; }
+    public int? Capacity { get; set; }
 }
 
 /// <summary>Guest asking for a car. Lands as a Transport with status "new" and no
@@ -124,13 +153,6 @@ public class TransportRequest
     public Guid? VehicleId { get; set; }
     public DateTime? PickupTime { get; set; }
     public DateTime? DropoffTime { get; set; }
-}
-
-public class JourneyResponse
-{
-    public Guid Id { get; set; }
-    public string Label { get; set; }       // Hotel → Stadium
-    public DateTime? When { get; set; }
 }
 
 public class DriverResponse
