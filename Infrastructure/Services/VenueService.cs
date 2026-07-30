@@ -671,20 +671,22 @@ namespace Infrastructure.Services
         //     are updated in place (keeping their real id, so any SeatAssign
         //     referencing them stays valid), missing codes are removed, new codes
         //     are added;
-        //   - a VenueLayout with no incoming match at all (the client dropped the
-        //     whole table) is removed entirely;
+        //   - a VenueLayout or VenueBlock with no incoming match at all (the client
+        //     removed the whole table from the canvas) is removed entirely;
         //   - an incoming table with no existing match (as either a layout or a
         //     block) is inserted fresh, as a plain VenueLayout.
         // Blocks matter here because the editor folds them into the same flat
         // `tables` array as ordinary layout elements once loaded (see
         // boxToTables/toLayoutDto on the frontend) — every save sends them back
-        // as VenueLayouts (request.VenueBlocks is always empty). Without matching
-        // against existingBox.Blocks too, an existing block would never be found,
-        // so every save would insert a brand-new VenueLayout duplicate of it
-        // alongside the untouched original VenueBlock.
-        // An existing block that ISN'T matched by anything incoming is left alone
-        // (not deleted) — conservative, since request.VenueBlocks being empty is
-        // the normal case and isn't a reliable signal that the user removed it.
+        // as VenueLayouts (request.VenueBlocks is always empty, and is NOT the
+        // signal for "the user removed this block" — incomingLayouts, the actual
+        // flattened tables payload, is). Without matching against
+        // existingBox.Blocks too, an existing block would never be found, so
+        // every save would insert a brand-new VenueLayout duplicate of it
+        // alongside the untouched original VenueBlock; and without dropping an
+        // unmatched one, removing a block from the canvas would never stick —
+        // boxToTables rebuilds `tables` from every block still in the DB on the
+        // next load, so it would just reappear.
         // Returns a conflict response if a seat that's actually being removed is
         // assigned to a guest; null otherwise (and mutates `existingBox`, tracked
         // by EF, ready for SaveChangesAsync).
@@ -739,11 +741,13 @@ namespace Infrastructure.Services
                     blockUpdates.Add((existingBlock, prop, incoming, desired));
                 }
             }
-            // Whole layout tables the client no longer has at all. Blocks are never
-            // auto-dropped this way — see the method comment above.
+            // Whole tables the client no longer has at all — layouts and blocks alike.
             var droppedLayouts = existingLayouts.Where(l => !matchedLayoutIds.Contains(l.Id)).ToList();
+            var droppedBlocks = existingBlocks.Where(b => !matchedBlockIds.Contains(b.Id)).ToList();
             foreach (var l in droppedLayouts)
                 candidateRemovedSeats.AddRange(l.VenueLayoutProps.SelectMany(p => p.Seats ?? new List<SeatProperties>()));
+            foreach (var b in droppedBlocks)
+                candidateRemovedSeats.AddRange(b.Props.SelectMany(p => p.Seats ?? new List<SeatProperties>()));
 
             if (candidateRemovedSeats.Count > 0)
             {
@@ -778,6 +782,14 @@ namespace Infrastructure.Services
                 if (droppedSeats.Count > 0) _unitOfWork.SeatProperties.RemoveRange(droppedSeats);
                 if (droppedProps.Count > 0) _unitOfWork.VenueLayoutProps.RemoveRange(droppedProps);
                 _unitOfWork.VenueLayouts.RemoveRange(droppedLayouts);
+            }
+            if (droppedBlocks.Count > 0)
+            {
+                var droppedProps = droppedBlocks.SelectMany(b => b.Props).ToList();
+                var droppedSeats = droppedProps.SelectMany(p => p.Seats ?? new List<SeatProperties>()).ToList();
+                if (droppedSeats.Count > 0) _unitOfWork.SeatProperties.RemoveRange(droppedSeats);
+                if (droppedProps.Count > 0) _unitOfWork.VenueLayoutProps.RemoveRange(droppedProps);
+                _unitOfWork.VenueBlocks.RemoveRange(droppedBlocks);
             }
 
             // Shared by both the layout and block update loops below — matches this
