@@ -178,12 +178,24 @@ migration's `Down()` comment.
   before logging out) — no endpoint change to `AuthController`/`VipAppController`
   was needed or made for this.
 
-## 6. Driver <-> Guest chat (Task 6) — one new endpoint
+## 6. Driver <-> Guest chat (Task 6) — `ChatController`
 
-`POST /api/v1/support-chat/driver-guest/messages` (`SupportChatController`,
-`[Authorize]` only — any driver or guest token). Body: `SendDriverGuestMessageRequest`
-(`RecipientUserId?`, `RecipientRole?`, `Body`, `AttachmentUrl?`, `AttachmentType?`).
-Response: the existing `SupportMessageResponse`.
+Its own controller (`API/Controllers/v1/ChatController.cs`, route `api/v1/chat`),
+separate from `SupportChatController` — the two conversation types never appear
+in each other's endpoints.
+
+`POST /api/v1/chat/messages` (`[Authorize]` only — any driver or guest token).
+Body: `SendDriverGuestMessageRequest` (`RecipientUserId?`, `RecipientRole?`,
+`Body`, `AttachmentUrl?`, `AttachmentType?`). Response: the existing
+`SupportMessageResponse`.
+
+`GET /api/v1/chat/threads/{conversationId:guid}/messages?pageNumber=&pageSize=`
+— the whole thread for either participant, paged (default 50), oldest-first
+within the page. Each message carries `isMine` (`SenderUserId == callerUserId`)
+so both sides render sent vs received off the same payload; `fromGuest` alone
+can't, since both participants read the same rows. Non-participants get 403,
+and an `AdminSupport` conversationId gets 404 — this endpoint only serves
+`DriverGuest`.
 
 - **Start/reuse**: `SupportChatService.GetOrCreateConversationAsync` looks up
   `(UserId=guestUserId, Type=DriverGuest, OtherUserId=driverUserId)`; creates
@@ -206,10 +218,12 @@ Response: the existing `SupportMessageResponse`.
   (a unique-constraint violation on the losing insert, not a race that
   produces two threads).
 
-Not included, by the letter of "create ONE new endpoint": listing/history for
-`DriverGuest` conversations. A driver or guest can send into a thread via this
-endpoint, but there's no dedicated list/inbox endpoint for it yet — worth a
-follow-up if the driver app needs to show past conversations.
+Still not included: a **list** of a caller's `DriverGuest` conversations (an
+inbox). Reading a thread requires knowing its `conversationId`, which the client
+gets from the send response or the new-message notification payload
+(`data.conversationId`). Also not included: marking a `DriverGuest` thread read
+— `UnreadByGuestCount`/`UnreadByAdminCount` are bumped on send but nothing
+clears them for this type.
 
 ## 7. Endpoints affected
 
@@ -219,7 +233,8 @@ No endpoint was renamed and no request/response contract changed shape.
 |---|---|
 | `POST /api/v1/support-chat/my/messages`, `GET my/conversations`, `GET my/messages`, `POST my/messages/read` | Internal only — now `Type=AdminSupport` filtered |
 | `GET /api/v1/support-chat/conversations`, `GET .../messages`, `POST .../messages`, `POST conversations/by-guest/{guestId}/messages`, `POST .../read`, `.../close`, `.../reopen` | Internal only |
-| `POST /api/v1/support-chat/driver-guest/messages` | **New** (Task 6) |
+| `POST /api/v1/chat/messages` | **New** (Task 6) — was `POST /api/v1/support-chat/driver-guest/messages`, moved to `ChatController` |
+| `GET /api/v1/chat/threads/{conversationId}/messages` | **New** — full driver↔guest thread with per-message `isMine` |
 | `GET/PUT /api/v1/notifications/*` (staff) | Unaffected |
 | `GET/PUT /api/v1/notifications/guest/*` | Internal only — reads/writes `Notifications` now |
 | `POST /api/v1/notifications/guest/devices` | Internal only — writes `Devices` now |
@@ -238,10 +253,11 @@ No endpoint was renamed and no request/response contract changed shape.
 - The `guest` role has zero permissions and `PortalAccess=false` — a guest
   token gaining a valid `ICurrentUser` resolution does not grant it access to
   any `[HasPermission]`-gated route.
-- `driver-guest/messages` is `[Authorize]`-only (no permission check, by
-  design — drivers/guests hold no portal permissions) but the service itself
-  rejects any sender whose role isn't `driver`/`guest`, and every recipient
-  lookup re-validates role and `IsActive`.
+- `api/v1/chat/*` is `[Authorize]`-only (no permission check, by design —
+  drivers/guests hold no portal permissions) but the service itself rejects any
+  sender whose role isn't `driver`/`guest`, every recipient lookup re-validates
+  role and `IsActive`, and the thread read is gated on the caller being one of
+  the conversation's two participants (`UserId` or `OtherUserId`).
 - **Pre-existing, unrelated to this change, worth flagging**: `API/appsettings.json`
   and `appsettings.Development.json` contain a live-looking SQL Server
   connection string with a plaintext password, committed to the repo. Not
@@ -308,14 +324,17 @@ No endpoint was renamed and no request/response contract changed shape.
 - [ ] Force an FCM `Unregistered` response (e.g. uninstall the app / use a
       stale token) -> confirm the `Devices` row flips `IsActive=false` and
       is skipped on the next send.
-- [ ] Guest with one assigned driver sends `driver-guest/messages` with
+- [ ] Guest with one assigned driver sends `POST /chat/messages` with
       `recipientRole="driver"` -> conversation created; second message ->
       same conversation reused, no duplicate.
+- [ ] Both sides `GET /chat/threads/{conversationId}/messages` -> same message
+      list, `isMine` inverted between the two callers. A third user's token ->
+      403. An `AdminSupport` conversationId -> 404.
 - [ ] Guest with zero or multiple assigned drivers gets the expected error
       message for `recipientRole` targeting.
 - [ ] Driver sends to a specific guest via `recipientUserId` -> conversation
       created/reused symmetrically; guest receives it in real time.
-- [ ] Attempt `driver-guest/messages` with a staff (non-driver, non-guest)
+- [ ] Attempt `POST /chat/messages` with a staff (non-driver, non-guest)
       token -> 403.
 - [ ] `RoleDefinitions`/`DataSeeder` run on a fresh database -> `guest` and
       `driver` roles both end up with `PortalAccess=false`.

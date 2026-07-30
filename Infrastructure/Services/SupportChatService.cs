@@ -506,6 +506,46 @@ public class SupportChatService(
         return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, senderName), "Message sent");
     }
 
+    public async Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetDriverGuestThreadAsync(
+        int callerUserId, Guid conversationId, PagedRequest request, CancellationToken ct = default)
+    {
+        var conversation = await _unitOfWork.SupportConversations.QueryNoTracking()
+            .FirstOrDefaultAsync(c => c.PublicId == conversationId && c.Type == SupportChatTypes.DriverGuest, ct);
+        if (conversation is null)
+            return ApiResponse<PaginatedResponse<SupportMessageResponse>>.NotFoundResponse("Conversation not found");
+
+        // Only the two participants — the guest (UserId) and the driver
+        // (OtherUserId) — can read the thread. No admin path: DriverGuest threads
+        // are deliberately absent from the admin inbox.
+        if (callerUserId != conversation.UserId && callerUserId != conversation.OtherUserId)
+            return ApiResponse<PaginatedResponse<SupportMessageResponse>>.ForbiddenResponse("You are not part of this conversation");
+
+        var page = request?.PageNumber > 0 ? request.PageNumber : 1;
+        var size = request?.PageSize > 0 ? request.PageSize : 50;
+
+        var query = _unitOfWork.SupportMessages.QueryNoTracking()
+            .Include(m => m.SenderUser)
+            .Include(m => m.Conversation)
+            .Where(m => m.ConversationId == conversation.Id);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(m => m.SentAt)
+            .Skip((page - 1) * size).Take(size)
+            .ToListAsync(ct);
+        items.Reverse(); // oldest-first within the returned window, like a chat feed
+
+        var data = items.Select(m =>
+        {
+            var dto = MapMessage(m);
+            dto.IsMine = m.SenderUserId == callerUserId;
+            return dto;
+        }).ToList();
+
+        return ApiResponse<PaginatedResponse<SupportMessageResponse>>.SuccessResponse(
+            new PaginatedResponse<SupportMessageResponse>(data, total, page, size));
+    }
+
     // ============================================================
     // Helpers
     // ============================================================
@@ -646,12 +686,11 @@ public class SupportChatService(
         Id = m.PublicId,
         ConversationId = m.Conversation.PublicId,
         Body = m.Body,
-        FromGuest = m.FromGuest,
         SentAt = m.SentAt,
         IsRead = m.IsRead,
         ReadAt = m.ReadAt,
         AttachmentUrl = m.AttachmentUrl,
         AttachmentType = m.AttachmentType,
         SenderName = senderName ?? (m.SenderUser != null ? $"{m.SenderUser.FirstName} {m.SenderUser.LastName}".Trim() : null)
-    };
+    }; 
 }

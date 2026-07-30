@@ -217,13 +217,18 @@ public class SupportMessageResponse
     public Guid Id { get; set; }
     public Guid ConversationId { get; set; }
     public string Body { get; set; }
-    public bool FromGuest { get; set; }
     public DateTime SentAt { get; set; }
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
     public string AttachmentUrl { get; set; }
     public string AttachmentType { get; set; }
     public string SenderName { get; set; } // populated for admin-sent messages
+
+    // Sent-vs-received from the caller's own point of view. Only set by the
+    // driver<->guest thread endpoint (ChatController), where both participants
+    // read the same thread; FromGuest alone can't tell them apart. Always false
+    // on the admin/guest support endpoints, which each only ever serve one side.
+    public bool IsMine { get; set; }
 }
 
 // Plain class (not a positional record) so every field is independently

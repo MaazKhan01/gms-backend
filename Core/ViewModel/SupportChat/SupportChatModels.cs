@@ -44,10 +44,10 @@ public class SupportConversationPagedRequest : PagedRequest
 }
 
 // ============================================================================
-// Driver <-> Guest chat — one new endpoint (SupportChatController.SendDriverGuestMessage)
-// reusing the same SupportConversation/SupportMessage tables (Type = DriverGuest).
-// Caller identity (which side is sending) comes from the auth context (ICurrentUser
-// for a driver token, ICurrentGuest for a guest token) — never from the request body.
+// Driver <-> Guest chat — served by ChatController (api/v1/chat), reusing the
+// same SupportConversation/SupportMessage tables (Type = DriverGuest).
+// Caller identity (which side is sending) comes from the auth context
+// (ICurrentUser, for both a driver and a guest token) — never from the request body.
 // ============================================================================
 public class SendDriverGuestMessageRequest
 {

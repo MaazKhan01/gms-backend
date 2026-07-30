@@ -34,9 +34,15 @@ public interface ISupportChatService
     Task<ApiResponse<bool>> CloseAsync(Guid conversationId, CancellationToken ct = default);
     Task<ApiResponse<bool>> ReopenAsync(Guid conversationId, CancellationToken ct = default);
 
-    // ---- Driver <-> Guest (called from SupportChatController; senderUserId/
-    // senderRole are resolved by the controller from ICurrentUser/ICurrentGuest,
-    // never trusted from the request body) ----
+    // ---- Driver <-> Guest (called from ChatController; callerUserId/senderRole
+    // are resolved by the controller from ICurrentUser, never trusted from the
+    // request body) ----
     Task<ApiResponse<SupportMessageResponse>> SendDriverGuestMessageAsync(
         int senderUserId, string senderRole, SendDriverGuestMessageRequest request, CancellationToken ct = default);
+
+    // The whole thread, both directions, for either participant. Each message
+    // carries IsMine so the client can render sent vs received without knowing
+    // which side of the conversation it is.
+    Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetDriverGuestThreadAsync(
+        int callerUserId, Guid conversationId, PagedRequest request, CancellationToken ct = default);
 }
