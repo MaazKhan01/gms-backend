@@ -728,8 +728,11 @@ namespace Infrastructure.Services
                     .Select(s => s.Id)
                     .ToHashSet();
                 var ids = candidateRemovedSeats.Select(s => s.Id).ToList();
+                // Excludes assignments belonging to a since-deleted guest — those are
+                // stale (deleting a guest should free their seat) and must never block
+                // a save just because the cleanup didn't happen for some other reason.
                 var seatAssignIds = (await _unitOfWork.SeatAssigns.Query()
-                    .Where(sa => ids.Contains(sa.SeatId))
+                    .Where(sa => ids.Contains(sa.SeatId) && sa.Guest.IsDeleted != true)
                     .Select(sa => sa.SeatId)
                     .ToListAsync(ct)).ToHashSet();
                 var assigned = candidateRemovedSeats
@@ -871,7 +874,11 @@ namespace Infrastructure.Services
                 return true;
 
             var seatIds = seats.Select(s => s.Id).ToList();
-            return await _unitOfWork.SeatAssigns.Query().AnyAsync(sa => seatIds.Contains(sa.SeatId), ct);
+            // Excludes assignments belonging to a since-deleted guest — stale rows
+            // that should have been freed when the guest was deleted (see
+            // GuestService.DeleteGuestByIdAsync) must never block this on their own.
+            return await _unitOfWork.SeatAssigns.Query()
+                .AnyAsync(sa => seatIds.Contains(sa.SeatId) && sa.Guest.IsDeleted != true, ct);
         }
 
         // Mark an entire box subtree (blocks/layouts → props → seats) for removal.
