@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    [Migration("20260730125545_MergeGuestIntoUserAndUnifyNotifications")]
+    [Migration("20260730155739_MergeGuestIntoUserAndUnifyNotifications")]
     partial class MergeGuestIntoUserAndUnifyNotifications
     {
         /// <inheritdoc />
@@ -116,6 +116,10 @@ namespace DomainPersistence.Migrations
 
                     b.Property<int?>("DeletedBy")
                         .HasColumnType("int");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<bool?>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -730,7 +734,7 @@ namespace DomainPersistence.Migrations
                     b.Property<int?>("FlightClassId")
                         .HasColumnType("int");
 
-                    b.Property<int>("FlightTypeId")
+                    b.Property<int>("FlightType")
                         .HasColumnType("int");
 
                     b.Property<int>("GuestId")
@@ -761,8 +765,6 @@ namespace DomainPersistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("FlightClassId");
-
-                    b.HasIndex("FlightTypeId");
 
                     b.HasIndex("GuestId");
 
@@ -892,57 +894,6 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("ToAirportId");
 
                     b.ToTable("FlightLegs", (string)null);
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.FlightType", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.ToTable("FlightTypes", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Guest", b =>
@@ -2016,6 +1967,9 @@ namespace DomainPersistence.Migrations
                     b.Property<bool>("IsDisabled")
                         .HasColumnType("bit");
 
+                    b.Property<string>("Placeholder")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
@@ -2693,7 +2647,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
+                        .HasFilter("[IsDeleted] = 0 AND [Email] IS NOT NULL");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -3306,6 +3260,9 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
 
+                    b.Property<string>("RemovedSeats")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int?>("Row")
                         .HasColumnType("int");
 
@@ -3506,12 +3463,6 @@ namespace DomainPersistence.Migrations
                         .HasForeignKey("FlightClassId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("DomainPersistence.Entities.FlightType", "FlightType")
-                        .WithMany()
-                        .HasForeignKey("FlightTypeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany()
                         .HasForeignKey("GuestId")
@@ -3519,8 +3470,6 @@ namespace DomainPersistence.Migrations
                         .IsRequired();
 
                     b.Navigation("FlightClass");
-
-                    b.Navigation("FlightType");
 
                     b.Navigation("Guest");
                 });

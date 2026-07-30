@@ -44,7 +44,12 @@ public partial class ApplicationDBContext : DbContext
             // SQL Server filtered-index predicates don't support OR, only AND —
             // "= 0" alone is safe here since EF always sends the DB default (0),
             // never NULL, when IsDeleted isn't explicitly set on insert.
-            entity.HasIndex(e => e.Email).IsUnique().HasFilter("[IsDeleted] = 0");
+            // "AND [Email] IS NOT NULL" is required too: a plain unique index in
+            // SQL Server treats multiple NULLs as duplicates (unlike ANSI), and
+            // guest-linked Users (see Guest.UserId) always have Email = NULL by
+            // design — without this, the second active guest would violate the
+            // index.
+            entity.HasIndex(e => e.Email).IsUnique().HasFilter("[IsDeleted] = 0 AND [Email] IS NOT NULL");
             entity.HasIndex(e => e.UserName).IsUnique().HasFilter("[UserName] IS NOT NULL");
             entity.Property(e => e.UserName).HasMaxLength(100);
             entity.Property(e => e.Email).HasMaxLength(255);

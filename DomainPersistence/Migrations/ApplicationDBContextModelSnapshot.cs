@@ -2644,7 +2644,7 @@ namespace DomainPersistence.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
+                        .HasFilter("[IsDeleted] = 0 AND [Email] IS NOT NULL");
 
                     b.HasIndex("PublicId")
                         .IsUnique();

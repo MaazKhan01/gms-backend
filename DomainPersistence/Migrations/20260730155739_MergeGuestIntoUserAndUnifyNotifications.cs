@@ -192,12 +192,15 @@ INNER JOIN Guests g ON g.Id = sm.UserId;
             migrationBuilder.DropTable(
                 name: "GuestNotifications");
 
+            // "AND [Email] IS NOT NULL" added — guest-linked Users (just backfilled
+            // above) always have Email = NULL, and a plain SQL Server unique index
+            // treats multiple NULLs as duplicates unless excluded by the filter.
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Email",
                 table: "Users",
                 column: "Email",
                 unique: true,
-                filter: "[IsDeleted] = 0");
+                filter: "[IsDeleted] = 0 AND [Email] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SupportConversations_OtherUserId",
@@ -295,7 +298,8 @@ INNER JOIN Guests g ON g.Id = sm.UserId;
         //     longer "at most one row per guest"). Down() is therefore only safe
         //     to run before the driver<->guest chat endpoint has been used.
         // The Users rows Up() created for each Guest are also left in place
-        // rather than deleted, since other data may reference them by then.
+        // rather than deleted, since other data may reference them by then — see
+        // the IX_Users_Email filter below, adjusted for exactly that reason.
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(
@@ -443,12 +447,17 @@ INNER JOIN Guests g ON g.UserId = sm.UserId;
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            // Not restored to the pre-migration filter verbatim: Down() deliberately
+            // leaves the Users rows Up() created for each Guest in place (see the
+            // Down() remarks above), and those still have Email = NULL — the old
+            // filter (with no "[Email] IS NOT NULL" exclusion) would immediately
+            // fail to recreate for the same reason Up()'s IX_Users_Email needed it.
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Email",
                 table: "Users",
                 column: "Email",
                 unique: true,
-                filter: "([IsDeleted] IS NULL OR [IsDeleted] = 0)");
+                filter: "([IsDeleted] IS NULL OR [IsDeleted] = 0) AND [Email] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SupportConversations_GuestId",
