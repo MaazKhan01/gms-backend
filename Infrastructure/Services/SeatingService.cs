@@ -37,16 +37,6 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             if (guest == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest not found.");
 
-            // A seat can only go to a guest who has actually confirmed they're
-            // coming, and — if their tier requires it — has been accredited.
-            // Mirrors the same gate AccreditationView enforces before issuing.
-            var invitation = await _unitOfWork.Invitations.Query()
-                .FirstOrDefaultAsync(i => i.GuestId == guest.Id, ct);
-            if (invitation?.InvitationStatus != GuestInvitationStatus.Accepted)
-                return ApiResponse<bool>.ConflictResponse("This guest hasn't accepted their invitation yet — a seat can't be assigned until they do.");
-            if (guest.AccreditationRequired && invitation.AccreditationStatus != GuestAccreditationStatus.Issued)
-                return ApiResponse<bool>.ConflictResponse("This guest's accreditation hasn't been issued yet — a seat can't be assigned until it is.");
-
             // Resolve the event's public id to its internal id.
             var eventEntity = await _unitOfWork.Events.Query()
                 .FirstOrDefaultAsync(e => e.PublicId == request.EventId.Value, ct);

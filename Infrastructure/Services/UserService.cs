@@ -240,7 +240,10 @@ public class UserService(
 
             var email = request.Email.Trim().ToLowerInvariant();
 
-            if (await _unitOfWork.Users.Query().IgnoreQueryFilters().AnyAsync(u => u.Email == email, ct))
+            // Deleted users are soft-deleted (still queryable — Users has no
+            // IsDeleted query filter), so exclude them here or their email would
+            // stay blocked forever. Mirrors the DB's filtered unique index below.
+            if (await _unitOfWork.Users.Query().AnyAsync(u => u.Email == email && u.IsDeleted != true, ct))
                 return ApiResponse<UserResponse>.ConflictResponse("An account with this email already exists");
 
             var role = await _unitOfWork.Roles.Query().FirstOrDefaultAsync(r => r.PublicId == request.RoleId, ct);

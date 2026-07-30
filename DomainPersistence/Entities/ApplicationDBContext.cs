@@ -37,7 +37,14 @@ public partial class ApplicationDBContext : DbContext
         {
             entity.ToTable("Users");
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.Email).IsUnique();
+            // Filtered, not a plain unique index — Users has no IsDeleted query
+            // filter (soft-deleted rows stay queryable), so an unfiltered unique
+            // index would keep a deleted user's email permanently unusable. This
+            // scopes uniqueness to active rows only, so it's free again once deleted.
+            // SQL Server filtered-index predicates don't support OR, only AND —
+            // "= 0" alone is safe here since EF always sends the DB default (0),
+            // never NULL, when IsDeleted isn't explicitly set on insert.
+            entity.HasIndex(e => e.Email).IsUnique().HasFilter("[IsDeleted] = 0");
             entity.HasIndex(e => e.UserName).IsUnique().HasFilter("[UserName] IS NOT NULL");
             entity.Property(e => e.UserName).HasMaxLength(100);
             entity.Property(e => e.Email).HasMaxLength(255);

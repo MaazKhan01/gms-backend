@@ -47,8 +47,10 @@ public class AccountRequestService(
                 return ApiResponse<AccountRequestResponse>.ErrorResponse("That role cannot be requested");
         }
 
-        // Reject if a user already exists (ignore soft-delete filter to catch all).
-        if (await _unitOfWork.Users.Query().IgnoreQueryFilters().AnyAsync(u => u.Email == email, ct))
+        // Deleted users are soft-deleted but still queryable (Users has no
+        // IsDeleted query filter) — exclude them, or a deleted account's email
+        // would stay permanently blocked from ever signing up again.
+        if (await _unitOfWork.Users.Query().AnyAsync(u => u.Email == email && u.IsDeleted != true, ct))
             return ApiResponse<AccountRequestResponse>.ConflictResponse("An account with this email already exists");
 
         // Reject if there's already a pending request.
@@ -124,8 +126,9 @@ public class AccountRequestService(
         if (roleId is null || !await _unitOfWork.Roles.AnyAsync(r => r.Id == roleId.Value, ct))
             return ApiResponse<AccountRequestResponse>.ErrorResponse("A valid roleId is required to approve");
 
-        // Guard against a duplicate user created between request and approval.
-        if (await _unitOfWork.Users.Query().IgnoreQueryFilters().AnyAsync(u => u.Email == req.Email, ct))
+        // Guard against a duplicate user created between request and approval —
+        // excluding soft-deleted ones, same reasoning as CreateAsync above.
+        if (await _unitOfWork.Users.Query().AnyAsync(u => u.Email == req.Email && u.IsDeleted != true, ct))
             return ApiResponse<AccountRequestResponse>.ConflictResponse("A user with this email already exists");
 
         var user = new User

@@ -142,7 +142,10 @@ public class SupportChatService(
         var page = request?.PageNumber > 0 ? request.PageNumber : 1;
         var size = request?.PageSize > 0 ? request.PageSize : 20;
 
-        var query = _unitOfWork.SupportConversations.QueryNoTracking().Include(c => c.Guest).AsQueryable();
+        var query = _unitOfWork.SupportConversations.QueryNoTracking()
+            .Include(c => c.Guest).ThenInclude(g => g.OrganizationRef)
+            .Include(c => c.Guest).ThenInclude(g => g.Nationality)
+            .AsQueryable();
 
         if (request?.OnlyUnread == true)
             query = query.Where(c => c.UnreadByAdminCount > 0);
@@ -154,6 +157,24 @@ public class SupportChatService(
             query = query.Where(c =>
                 (c.Guest.FirstName + " " + c.Guest.LastName).Contains(request.SearchTerm) ||
                 (c.Guest.Email != null && c.Guest.Email.Contains(request.SearchTerm)));
+
+        if (!string.IsNullOrWhiteSpace(request?.Tier))
+        {
+            var tier = request.Tier.ToLower();
+            query = query.Where(c => c.Guest.Tier.ToLower() == tier);
+        }
+
+        if (request?.OrganizationId.HasValue == true && request.OrganizationId != Guid.Empty)
+        {
+            var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.OrganizationId.Value, ct);
+            query = query.Where(c => org != null && c.Guest.OrganizationId == org.Id);
+        }
+
+        if (request?.NationalityId.HasValue == true && request.NationalityId != Guid.Empty)
+        {
+            var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(request.NationalityId.Value, ct);
+            query = query.Where(c => nat != null && c.Guest.NationalityId == nat.Id);
+        }
 
         var total = await query.CountAsync(ct);
 
@@ -426,7 +447,10 @@ public class SupportChatService(
         LastMessagePreview = c.LastMessagePreview,
         LastMessageAt = c.LastMessageAt,
         LastMessageFromGuest = c.LastMessageFromGuest,
-        UnreadCount = unreadCount
+        UnreadCount = unreadCount,
+        OrganizationName = c.Guest.OrganizationRef?.Name ?? c.Guest.Organization,
+        NationalityName = c.Guest.Nationality?.Name,
+        Tier = c.Guest.Tier
     };
 
     private static SupportMessageResponse MapMessage(SupportMessage m, string senderName = null) => new()
