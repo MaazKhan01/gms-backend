@@ -362,14 +362,19 @@ public class VipAppService(
     // ============================================================
     // Agenda — upcoming guest actions (flight / check-in / pickup)
     // ============================================================
-    public async Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<List<AgendaCardResponse>>> GetAgendaAsync(
+        int guestId, Guid? eventId = null, CancellationToken ct = default)
     {
+        // Same email can be a guest on several events — eventId narrows to one.
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<List<AgendaCardResponse>>.NotFoundResponse("Guest not found");
+
         var now = DateTime.UtcNow;
         var cards = new List<AgendaCardResponse>();
 
         var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
             .Include(l => l.FromAirport).Include(l => l.ToAirport)
-            .Where(l => l.Flight.GuestId == guestId && l.StartTime > now).ToListAsync(ct);
+            .Where(l => guestIds.Contains(l.Flight.GuestId) && l.StartTime > now).ToListAsync(ct);
         cards.AddRange(legs.Select(l => new AgendaCardResponse
         {
             Flag = "UPCOMING FLIGHT", Kind = "flight", RefId = l.PublicId,
@@ -379,7 +384,7 @@ public class VipAppService(
         }));
 
         var accs = await _unitOfWork.Accommodations.QueryNoTracking()
-            .Include(a => a.Hotel).Where(a => a.GuestId == guestId && a.CheckIn != null).ToListAsync(ct);
+            .Include(a => a.Hotel).Where(a => guestIds.Contains(a.GuestId) && a.CheckIn != null).ToListAsync(ct);
         cards.AddRange(accs
             .Select(a => new { a, when = ToDt(a.CheckIn) })
             .Where(x => x.when > now)
@@ -391,7 +396,7 @@ public class VipAppService(
 
         var trips = await _unitOfWork.Transports.QueryNoTracking()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
-            .Where(t => t.GuestId == guestId && t.PickupTime > now).ToListAsync(ct);
+            .Where(t => guestIds.Contains(t.GuestId) && t.PickupTime > now).ToListAsync(ct);
         cards.AddRange(trips.Select(t => new AgendaCardResponse
         {
             Flag = "UPCOMING PICKUP", Kind = "transport", RefId = t.PublicId,
@@ -513,27 +518,14 @@ public class VipAppService(
                 Duration = FormatDuration(l.StartTime ?? l.Flight?.DepartureTime, l.EndTime ?? l.Flight?.ArrivalTime)
             }).ToList(),
 
-            // One entry per trip, so OtherJourneys stays empty in this shape —
-            // the whole list is already here.
-            Transports = trips.Select(t => new TransportationResponse
-            {
-                Id = t.PublicId,
-                FromAddress = t.PickupLocation?.Address,
-                ToAddress = t.DropoffLocation?.Address,
-                PickupTime = t.PickupTime,
-                EstimatedArrival = t.DropoffTime,
-                VehicleType = t.Vehicle?.VehicleType?.Name,
-                TripStatus = t.TripStatus,
-                Driver = t.Driver?.User is not { } drv ? null : new DriverResponse
-                {
-                    Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur", Phone = drv.Phone
-                }
-            }).ToList(),
+            // One entry per trip — the whole list is already here.
+            Transports = trips.Select(MapTransport).ToList(),
 
             Accommodations = accs.Select(a => new AccommodationResponse
             {
                 Id = a.PublicId,
                 HotelName = a.Hotel?.Name,
+                HotelImageUrl = a.Hotel?.ImageUrl,
                 Address = a.Hotel?.Address,
                 CheckIn = ToDt(a.CheckIn),
                 CheckOut = ToDt(a.CheckOut),
@@ -549,10 +541,12 @@ public class VipAppService(
     // ============================================================
     // Travel
     // ============================================================
-    public async Task<ApiResponse<List<FlightLegResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct)
+    // One entry per booking, legs nested inside it — a return booking is a single
+    // entry with its outbound and inbound segments, not two unrelated rows.
+    public async Task<ApiResponse<List<FlightBookingResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
         var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<List<FlightLegResponse>>.NotFoundResponse("Guest not found");
+        if (guestIds is null) return ApiResponse<List<FlightBookingResponse>>.NotFoundResponse("Guest not found");
 
         var flights = await _unitOfWork.Flights.Query()
             .Include(f => f.FlightClass)
@@ -560,22 +554,41 @@ public class VipAppService(
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
             .Where(f => guestIds.Contains(f.GuestId)).ToListAsync(ct);
 
-        var data = flights.SelectMany(f => f.Legs.Select(l => new FlightLegResponse
+        var data = flights.Select(f =>
         {
-            Id = l.PublicId,
-            DepartureCode = l.FromAirport?.Code, DepartureAirport = l.FromAirport?.City,
-            ArrivalCode = l.ToAirport?.Code, ArrivalAirport = l.ToAirport?.City,
-            DateTime = l.StartTime,
-            DepartureTime = f.DepartureTime, ArrivalTime = f.ArrivalTime,
-            FlightNumber = l.FlightNumber,
-            Class = f.FlightClass?.Name,
-            Status = f.Status, Seat = f.Seat,
-            // Leg times first — they're the segment being shown. Booking-level
-            // depart/land times fill in when the leg has none.
-            Duration = FormatDuration(l.StartTime ?? f.DepartureTime, l.EndTime ?? f.ArrivalTime)
-        })).OrderBy(x => x.DateTime).ToList();
+            var legs = f.Legs.OrderBy(l => l.StartTime).ThenBy(l => l.Id).ToList();
+            var first = legs.FirstOrDefault();
+            var last = legs.LastOrDefault();
 
-        return ApiResponse<List<FlightLegResponse>>.SuccessResponse(data);
+            return new FlightBookingResponse
+            {
+                Id = f.PublicId,
+                FlightType = f.FlightType.ToString().ToLowerInvariant(),
+                Class = f.FlightClass?.Name,
+                Status = f.Status,
+                Seat = f.Seat,
+                DepartureTime = f.DepartureTime ?? first?.StartTime,
+                ArrivalTime = f.ArrivalTime ?? last?.EndTime,
+                Duration = FormatDuration(first?.StartTime ?? f.DepartureTime, last?.EndTime ?? f.ArrivalTime),
+                Legs = legs.Select(l => new FlightLegResponse
+                {
+                    Id = l.PublicId,
+                    DepartureCode = l.FromAirport?.Code, DepartureAirport = l.FromAirport?.City,
+                    ArrivalCode = l.ToAirport?.Code, ArrivalAirport = l.ToAirport?.City,
+                    DateTime = l.StartTime,
+                    DepartureTime = l.StartTime ?? f.DepartureTime,
+                    ArrivalTime = l.EndTime ?? f.ArrivalTime,
+                    FlightNumber = l.FlightNumber,
+                    Class = f.FlightClass?.Name,
+                    Status = f.Status, Seat = f.Seat,
+                    // Leg times first — they're the segment being shown. Booking-level
+                    // depart/land times fill in when the leg has none.
+                    Duration = FormatDuration(l.StartTime ?? f.DepartureTime, l.EndTime ?? f.ArrivalTime)
+                }).ToList(),
+            };
+        }).OrderBy(x => x.DepartureTime).ToList();
+
+        return ApiResponse<List<FlightBookingResponse>>.SuccessResponse(data);
     }
 
     public async Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, Guid? eventId, CancellationToken ct)
@@ -593,6 +606,7 @@ public class VipAppService(
         {
             Id = acc.PublicId,
             HotelName = acc.Hotel?.Name,
+            HotelImageUrl = acc.Hotel?.ImageUrl,
             Address = acc.Hotel?.Address,
             CheckIn = ToDt(acc.CheckIn),
             CheckOut = ToDt(acc.CheckOut),
@@ -673,9 +687,22 @@ public class VipAppService(
         FromAddress = t.PickupLocation?.Address,
         ToAddress = t.DropoffLocation?.Address,
         PickupTime = t.PickupTime,
+        // Guest app labels this "estimated arrival"; the planned drop-off time is
+        // what that means now.
         EstimatedArrival = t.DropoffTime,
+        // Kept alongside Vehicle below: the category on its own is what the older
+        // guest-app screens read.
         VehicleType = t.Vehicle?.VehicleType?.Name,
         TripStatus = t.TripStatus,
+        Vehicle = t.Vehicle is not { } veh ? null : new VehicleResponse
+        {
+            Id = veh.PublicId,
+            Model = veh.VehicleModel,
+            Number = veh.VehicleNumber,
+            Type = veh.VehicleType?.Name,
+            ImageUrl = veh.VehicleImage,
+            Capacity = veh.Capacity,
+        },
         Driver = t.Driver?.User is not { } drv ? null : new DriverResponse
         {
             Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur", Phone = drv.Phone
@@ -696,40 +723,29 @@ public class VipAppService(
         var primary = trips.FirstOrDefault();
         if (primary is null) return ApiResponse<TransportationResponse>.NotFoundResponse("No transportation found");
 
-        var data = new TransportationResponse
-        {
-            Id = primary.PublicId,
-            FromAddress = primary.PickupLocation?.Address,
-            ToAddress = primary.DropoffLocation?.Address,
-            PickupTime = primary.PickupTime,
-            // Guest app still labels this "estimated arrival"; the planned
-            // drop-off time is what that means now.
-            EstimatedArrival = primary.DropoffTime,
-            // Transport now points at a concrete Vehicle; the guest app still only
-            // shows the category, so it reads through to the vehicle's type.
-            VehicleType = primary.Vehicle?.VehicleType?.Name,
-            TripStatus = primary.TripStatus,
-            Driver = primary.Driver?.User is not { } drv ? null : new DriverResponse
-            {
-                Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur",
-                Phone = drv.Phone
-            },
-            OtherJourneys = trips.Skip(1).Select(t => new JourneyResponse
-            {
-                Id = t.PublicId, Label = $"{t.PickupLocation?.Address} → {t.DropoffLocation?.Address}"
-            }).ToList()
-        };
-        return ApiResponse<TransportationResponse>.SuccessResponse(data);
+        // Same shape as the transport-request response — one mapper, so the
+        // vehicle/driver details can't drift between the two.
+        return ApiResponse<TransportationResponse>.SuccessResponse(MapTransport(primary));
     }
 
     // ============================================================
     // Sessions
     // ============================================================
-    public async Task<ApiResponse<List<GuestSessionResponse>>> GetSessionsAsync(int guestId, CancellationToken ct)
+    public async Task<ApiResponse<List<GuestSessionResponse>>> GetSessionsAsync(
+        int guestId, Guid? eventId = null, CancellationToken ct = default)
     {
-        var picks = await _unitOfWork.GuestSessions.QueryNoTracking()
-            .Where(gs => gs.GuestId == guestId)
-            .ToDictionaryAsync(gs => gs.SessionId, gs => gs.Status, ct);
+        // Same email can be a guest on several events — eventId narrows to one.
+        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
+        if (guestIds is null) return ApiResponse<List<GuestSessionResponse>>.NotFoundResponse("Guest not found");
+
+        // Grouped rather than ToDictionaryAsync: several of the guest's rows could
+        // in principle carry the same session, and a duplicate key would throw.
+        var picks = (await _unitOfWork.GuestSessions.QueryNoTracking()
+                .Where(gs => guestIds.Contains(gs.GuestId))
+                .Select(gs => new { gs.SessionId, gs.Status })
+                .ToListAsync(ct))
+            .GroupBy(gs => gs.SessionId)
+            .ToDictionary(g => g.Key, g => g.First().Status);
 
         var sessions = await _unitOfWork.Sessions.QueryNoTracking()
             .Include(s => s.Event)

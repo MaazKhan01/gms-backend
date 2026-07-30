@@ -14,4 +14,7 @@ public interface ILookupService
 
     /// <summary>Transfer lifecycle statuses (Transports.TripStatus) — no DB access.</summary>
     ApiResponse<List<LookupEnumOption>> GetTransportStatuses();
+
+    /// <summary>Flight directions (Flights.FlightType) — no DB access.</summary>
+    ApiResponse<List<LookupEnumOption>> GetFlightTypes();
 }

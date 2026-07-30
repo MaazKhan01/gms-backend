@@ -57,8 +57,9 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     // ---------------- Agenda ----------------
     // Upcoming guest actions only: flights, hotel check-in, transport pickups.
     [HttpGet("agenda")]
-    public async Task<IActionResult> GetAgenda(CancellationToken ct)
-        => ToResponse(await _vip.GetAgendaAsync(GuestId, ct));
+    // eventId optional — omit it for every event the guest is on.
+    public async Task<IActionResult> GetAgenda([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetAgendaAsync(GuestId, eventId, ct));
 
     // ---------------- Itinerary ----------------
     // Dates only — the days this guest has a flight, stay or transfer on. Feed
@@ -95,8 +96,9 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
 
     // ---------------- Sessions ----------------
     [HttpGet("sessions")]
-    public async Task<IActionResult> GetSessions(CancellationToken ct)
-        => ToResponse(await _vip.GetSessionsAsync(GuestId, ct));
+    // eventId optional — omit it for every event the guest is on.
+    public async Task<IActionResult> GetSessions([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetSessionsAsync(GuestId, eventId, ct));
 
     [HttpGet("sessions/{id:guid}")]
     public async Task<IActionResult> GetSessionDetail(Guid id, CancellationToken ct)

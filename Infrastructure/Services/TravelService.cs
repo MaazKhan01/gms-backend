@@ -14,15 +14,6 @@ namespace Infrastructure.Services;
 // admin picks which ones a guest gets. Ids in/out are public Guids.
 public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logger) : ITravelService
 {
-    public async Task<ApiResponse<List<IdNameDto>>> GetFlightTypesAsync(CancellationToken ct = default)
-    {
-        var data = await _unitOfWork.FlightTypes.Query()
-            .OrderBy(x => x.Name)
-            .Select(x => new IdNameDto { Id = x.PublicId, Name = x.Name })
-            .ToListAsync(ct);
-        return ApiResponse<List<IdNameDto>>.SuccessResponse(data);
-    }
-
     public async Task<ApiResponse<List<IdNameDto>>> GetFlightClassesAsync(CancellationToken ct = default)
     {
         var data = await _unitOfWork.FlightClasses.Query()
@@ -45,7 +36,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     {
         var data = await _unitOfWork.AccommodationHotels.Query()
             .OrderBy(x => x.Name)
-            .Select(x => new HotelDto { Id = x.PublicId, Name = x.Name, Address = x.Address, LocationId = x.Location.PublicId })
+            .Select(x => new HotelDto { Id = x.PublicId, Name = x.Name, Address = x.Address, ImageUrl = x.ImageUrl, LocationId = x.Location.PublicId })
             .ToListAsync(ct);
         return ApiResponse<List<HotelDto>>.SuccessResponse(data);
     }
@@ -118,7 +109,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         // only ever prefills/edits the most recently added one; the rest are
         // managed from Services' per-guest booking list instead.
         var flight = await _unitOfWork.Flights.Query()
-            .Include(f => f.FlightType).Include(f => f.FlightClass)
+            .Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
             .Where(f => f.GuestId == guest.Id)
@@ -126,21 +117,26 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             .FirstOrDefaultAsync(ct);
         if (flight != null)
         {
-            var leg = flight.Legs.FirstOrDefault();
             data.Flight = new FlightInput
             {
                 Id = flight.PublicId,
-                FlightTypeId = flight.FlightType?.PublicId ?? Guid.Empty,
+                FlightType = FlightTypeCode(flight.FlightType),
                 FlightClassId = flight.FlightClass?.PublicId,
                 Status = flight.Status,
                 Seat = flight.Seat,
                 DepartureTime = flight.DepartureTime,
                 ArrivalTime = flight.ArrivalTime,
-                FlightNumber = leg?.FlightNumber,
-                FromAirportId = leg?.FromAirport?.PublicId,
-                ToAirportId = leg?.ToAirport?.PublicId,
-                StartTime = leg?.StartTime,
-                EndTime = leg?.EndTime,
+                Legs = flight.Legs
+                    .OrderBy(l => l.StartTime).ThenBy(l => l.Id)
+                    .Select(l => new FlightLegInput
+                    {
+                        Id = l.PublicId,
+                        FlightNumber = l.FlightNumber,
+                        FromAirportId = l.FromAirport?.PublicId,
+                        ToAirportId = l.ToAirport?.PublicId,
+                        StartTime = l.StartTime,
+                        EndTime = l.EndTime,
+                    }).ToList(),
             };
         }
 
@@ -199,11 +195,13 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
         var total = await query.CountAsync(ct);
 
-        var data = await query
+        // FlightType is an enum column — projected raw and turned into its code
+        // in memory, since EF can't translate the mapping.
+        var rawRows = await query
             .OrderBy(f => f.Guest.FirstName).ThenBy(f => f.Guest.LastName)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(f => new EventFlightRow
+            .Select(f => new { Type = f.FlightType, Row = new EventFlightRow
             {
                 Id = f.PublicId,
                 GuestId = f.Guest.PublicId,
@@ -211,7 +209,6 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Organization = f.Guest.Organization,
                 Tier = f.Guest.Tier,
                 Status = f.Status,
-                FlightType = f.FlightType.Name,
                 FlightClass = f.FlightClass.Name,
                 Seat = f.Seat,
                 DepartureTime = f.DepartureTime,
@@ -232,8 +229,14 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                         StartTime = l.StartTime,
                         EndTime = l.EndTime,
                     }).ToList(),
-            })
+            } })
             .ToListAsync(ct);
+
+        var data = rawRows.Select(x =>
+        {
+            x.Row.FlightType = FlightTypeCode(x.Type);
+            return x.Row;
+        }).ToList();
 
         // Summary fields come from the itinerary ends: depart on the first leg, land on the last.
         foreach (var row in data)
@@ -287,6 +290,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Organization = a.Guest.Organization,
                 Tier = a.Guest.Tier,
                 Hotel = a.Hotel.Name,
+                HotelImageUrl = a.Hotel.ImageUrl,
                 RoomType = a.RoomType.Name,
                 CheckIn = a.CheckIn,
                 CheckOut = a.CheckOut,
@@ -340,10 +344,12 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             new PaginatedResponse<EventTransportRow>(data, total, request.PageNumber, request.PageSize));
     }
 
-    // FlightType rows are admin-created via /lookups/flight-types, so their names
-    // are free text. Anything that isn't "inbound" counts as outbound — that
-    // deliberately folds the seeded "Return" type in with departures.
-    private const string InboundTypeName = "inbound";
+    // Lowercase enum name — the code the API takes and returns for FlightType.
+    private static string FlightTypeCode(FlightType t) => t.ToString().ToLowerInvariant();
+
+    private static FlightType? ParseFlightType(string code)
+        => Enum.TryParse<FlightType>((code ?? string.Empty).Trim(), ignoreCase: true, out var t)
+            && Enum.IsDefined(t) ? t : null;
 
     public async Task<ApiResponse<PaginatedResponse<ArrivalDepartureRow>>> GetEventArrivalsDeparturesAsync(
         Guid eventId, ArrivalsDeparturesRequest request, CancellationToken ct = default)
@@ -374,10 +380,14 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         // flight in the requested direction — not over flights.
         var guests = _unitOfWork.Guests.Query().Where(g => g.EventId == ev.Id);
 
+        // A Return booking is both an arrival and a departure, so it belongs to
+        // either direction.
         guests = direction switch
         {
-            "inbound"  => guests.Where(g => flights.Any(f => f.GuestId == g.Id && f.FlightType.Name.ToLower() == InboundTypeName)),
-            "outbound" => guests.Where(g => flights.Any(f => f.GuestId == g.Id && f.FlightType.Name.ToLower() != InboundTypeName)),
+            "inbound"  => guests.Where(g => flights.Any(f => f.GuestId == g.Id
+                            && (f.FlightType == FlightType.Inbound || f.FlightType == FlightType.Return))),
+            "outbound" => guests.Where(g => flights.Any(f => f.GuestId == g.Id
+                            && (f.FlightType == FlightType.Outbound || f.FlightType == FlightType.Return))),
             _          => guests.Where(g => flights.Any(f => f.GuestId == g.Id)),
         };
 
@@ -421,12 +431,26 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             .Select(f => new
             {
                 GuestPublicId = f.Guest.PublicId,
-                IsInbound = f.FlightType.Name.ToLower() == InboundTypeName,
+                Type = f.FlightType,
                 Flight = new ArrivalDepartureFlight
                 {
                     Id = f.PublicId,
-                    FlightType = f.FlightType.Name,
                     LegCount = f.Legs.Count,
+                    Legs = f.Legs
+                        .OrderBy(l => l.StartTime)
+                        .Select(l => new FlightLegRow
+                        {
+                            Id = l.PublicId,
+                            FlightNumber = l.FlightNumber,
+                            DepartureCode = l.FromAirport.Code,
+                            DepartureCity = l.FromAirport.City,
+                            DepartureCountry = l.FromAirport.Country,
+                            ArrivalCode = l.ToAirport.Code,
+                            ArrivalCity = l.ToAirport.City,
+                            ArrivalCountry = l.ToAirport.Country,
+                            StartTime = l.StartTime,
+                            EndTime = l.EndTime,
+                        }).ToList(),
                     // Route + timings come from the itinerary ends: leave on the
                     // first leg, land on the last.
                     FlightNumber = f.Legs.OrderBy(l => l.StartTime).Select(l => l.FlightNumber).FirstOrDefault(),
@@ -444,16 +468,13 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         foreach (var r in rows)
         {
             if (!byGuest.TryGetValue(r.GuestPublicId, out var row)) continue;
-            // When one direction is selected the other stays empty, so the UI can
-            // drop that column entirely.
-            if (r.IsInbound)
-            {
-                if (direction != "outbound") row.Inbound.Add(r.Flight);
-            }
-            else if (direction != "inbound")
-            {
-                row.Outbound.Add(r.Flight);
-            }
+            r.Flight.FlightType = FlightTypeCode(r.Type);
+
+            // A Return booking is listed in both columns — its legs cover the
+            // arrival and the departure. When one direction is selected the other
+            // stays empty, so the UI can drop that column entirely.
+            if (r.Type != FlightType.Outbound && direction != "outbound") row.Inbound.Add(r.Flight);
+            if (r.Type != FlightType.Inbound && direction != "inbound") row.Outbound.Add(r.Flight);
         }
 
         foreach (var row in page)
@@ -480,11 +501,18 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             // adds a new one alongside whatever the guest already has.
             if (request.Flight != null)
             {
-                var typeId = await ResolveId(_unitOfWork.FlightTypes, request.Flight.FlightTypeId, ct);
-                if (typeId == null) return ApiResponse<bool>.ErrorResponse("Invalid flight type");
+                var type = ParseFlightType(request.Flight.FlightType);
+                if (type == null) return ApiResponse<bool>.ErrorResponse("Invalid flight type");
+
+                // Return is one booking with two legs (outbound + inbound); the
+                // one-way types are a single leg.
+                var legInputs = request.Flight.Legs ?? [];
+                var requiredLegs = type == FlightType.Return ? 2 : 1;
+                if (legInputs.Count != requiredLegs)
+                    return ApiResponse<bool>.ErrorResponse(
+                        $"A {FlightTypeCode(type.Value)} flight needs exactly {requiredLegs} leg(s)");
+
                 var classId = await ResolveNullableId(_unitOfWork.FlightClasses, request.Flight.FlightClassId, ct);
-                var fromAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.FromAirportId, ct);
-                var toAirportId = await ResolveNullableId(_unitOfWork.AirportData, request.Flight.ToAirportId, ct);
 
                 Flight flight = null;
                 if (request.Flight.Id is { } flightId && flightId != Guid.Empty)
@@ -492,24 +520,38 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                         .FirstOrDefaultAsync(f => f.PublicId == flightId && f.GuestId == guest.Id, ct);
 
                 var isNewFlight = flight == null;
-                if (isNewFlight)
-                {
-                    flight = new Flight { GuestId = guest.Id, Legs = new List<FlightLeg> { new() } };
-                }
+                if (isNewFlight) flight = new Flight { GuestId = guest.Id };
 
-                flight.FlightTypeId = typeId.Value;
+                flight.FlightType = type.Value;
                 flight.FlightClassId = classId;
                 flight.Status = request.Flight.Status;
                 flight.Seat = request.Flight.Seat;
                 flight.DepartureTime = request.Flight.DepartureTime;
                 flight.ArrivalTime = request.Flight.ArrivalTime;
 
-                var leg = flight.Legs.First();
-                leg.FlightNumber = request.Flight.FlightNumber;
-                leg.FromAirportId = fromAirportId;
-                leg.ToAirportId = toAirportId;
-                leg.StartTime = request.Flight.StartTime;
-                leg.EndTime = request.Flight.EndTime;
+                // Legs are matched on their public id so editing keeps the same
+                // rows (the guest app references legs by id); anything the payload
+                // left out is dropped.
+                var keptLegs = new List<FlightLeg>();
+                foreach (var li in legInputs)
+                {
+                    var leg = li.Id is { } legId && legId != Guid.Empty
+                        ? flight.Legs.FirstOrDefault(l => l.PublicId == legId)
+                        : null;
+                    if (leg == null) { leg = new FlightLeg(); flight.Legs.Add(leg); }
+
+                    leg.FlightNumber = li.FlightNumber;
+                    leg.FromAirportId = await ResolveNullableId(_unitOfWork.AirportData, li.FromAirportId, ct);
+                    leg.ToAirportId = await ResolveNullableId(_unitOfWork.AirportData, li.ToAirportId, ct);
+                    leg.StartTime = li.StartTime;
+                    leg.EndTime = li.EndTime;
+                    keptLegs.Add(leg);
+                }
+                foreach (var stale in flight.Legs.Except(keptLegs).ToList())
+                {
+                    flight.Legs.Remove(stale);
+                    _unitOfWork.FlightLegs.Remove(stale);
+                }
 
                 if (isNewFlight) await _unitOfWork.Flights.AddAsync(flight, ct);
             }
@@ -619,9 +661,6 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
     }
 
     // ── Lookup record creation ───────────────────────────────────────────────
-    public Task<ApiResponse<IdNameDto>> CreateFlightTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default)
-        => CreateNamedAsync(_unitOfWork.FlightTypes, request.Name, userId, n => new FlightType { Name = n }, ct);
-
     public Task<ApiResponse<IdNameDto>> CreateFlightClassAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default)
         => CreateNamedAsync(_unitOfWork.FlightClasses, request.Name, userId, n => new FlightClass { Name = n }, ct);
 
@@ -745,6 +784,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             {
                 Name = request.Name.Trim(),
                 Address = request.Address?.Trim() ?? string.Empty,
+                ImageUrl = request.ImageUrl?.Trim(),
                 LocationId = await ResolveNullableId(_unitOfWork.Locations, request.LocationId, ct)
             };
             hotel.SetCreationAudit(userId);
@@ -752,7 +792,11 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
             await _unitOfWork.SaveChangesAsync(ct);
 
             return ApiResponse<HotelDto>.SuccessResponse(
-                new HotelDto { Id = hotel.PublicId, Name = hotel.Name, Address = hotel.Address, LocationId = request.LocationId }, "Hotel created");
+                new HotelDto
+                {
+                    Id = hotel.PublicId, Name = hotel.Name, Address = hotel.Address,
+                    ImageUrl = hotel.ImageUrl, LocationId = request.LocationId
+                }, "Hotel created");
         }
         catch (Exception ex)
         {

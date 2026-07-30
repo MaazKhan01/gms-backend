@@ -29,11 +29,12 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public IActionResult GetTransportStatuses()
         => ToResponse(_lookupService.GetTransportStatuses());
 
-    // ── Travel lookups — separate GET per lookup, each reads its own table ────
+    // Flight directions — a code-defined enum, not a table.
     [HttpGet("flight-types")]
-    public async Task<IActionResult> GetFlightTypes(CancellationToken ct)
-        => ToResponse(await _travel.GetFlightTypesAsync(ct));
+    public IActionResult GetFlightTypes()
+        => ToResponse(_lookupService.GetFlightTypes());
 
+    // ── Travel lookups — separate GET per lookup, each reads its own table ────
     [HttpGet("flight-classes")]
     public async Task<IActionResult> GetFlightClasses(CancellationToken ct)
         => ToResponse(await _travel.GetFlightClassesAsync(ct));
@@ -63,11 +64,6 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
         => ToResponse(await _travel.GetAirportsAsync(ct));
 
     // ── Manage the wizard dropdown options ──────────────────────────────────
-    [HttpPost("flight-types")]
-    [HasPermission(PermissionCodes.TravelManage)]
-    public async Task<IActionResult> CreateFlightType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
-        => ToResponse(await _travel.CreateFlightTypeAsync(request, _currentUser.UserId, ct));
-
     [HttpPost("flight-classes")]
     [HasPermission(PermissionCodes.TravelManage)]
     public async Task<IActionResult> CreateFlightClass([FromBody] CreateNamedLookupRequest request, CancellationToken ct)

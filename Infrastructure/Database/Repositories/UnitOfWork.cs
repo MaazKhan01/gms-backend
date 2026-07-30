@@ -41,7 +41,6 @@ public class UnitOfWork : IUnitOfWork
         Meetings = new GenericRepository<Meeting>(_context);
         Locations = new GenericRepository<Location>(_context);
         Invitations = new GenericRepository<Invitation>(_context);
-        FlightTypes = new GenericRepository<FlightType>(_context);
         FlightClasses = new GenericRepository<FlightClass>(_context);
         Flights = new GenericRepository<Flight>(_context);
         FlightLegs = new GenericRepository<FlightLeg>(_context);
@@ -90,7 +89,6 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Meeting> Meetings { get; private set; }
     public IGenericRepository<Location> Locations { get; private set; }
     public IGenericRepository<Invitation> Invitations { get; private set; }
-    public IGenericRepository<FlightType> FlightTypes { get; private set; }
     public IGenericRepository<FlightClass> FlightClasses { get; private set; }
     public IGenericRepository<Flight> Flights { get; private set; }
     public IGenericRepository<FlightLeg> FlightLegs { get; private set; }

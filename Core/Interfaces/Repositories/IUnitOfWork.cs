@@ -50,7 +50,6 @@ public interface IUnitOfWork : IDisposable
     // Travel — Flights / Accommodation / Transport
     IGenericRepository<Location> Locations { get; }
     IGenericRepository<Invitation> Invitations { get; }
-    IGenericRepository<FlightType> FlightTypes { get; }
     IGenericRepository<FlightClass> FlightClasses { get; }
     IGenericRepository<Flight> Flights { get; }
     IGenericRepository<FlightLeg> FlightLegs { get; }

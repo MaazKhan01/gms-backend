@@ -5,7 +5,6 @@ namespace Core.Interfaces.Services;
 
 public interface ITravelService
 {
-    Task<ApiResponse<List<IdNameDto>>> GetFlightTypesAsync(CancellationToken ct = default);
     Task<ApiResponse<List<IdNameDto>>> GetFlightClassesAsync(CancellationToken ct = default);
     Task<ApiResponse<List<IdNameDto>>> GetRoomTypesAsync(CancellationToken ct = default);
     Task<ApiResponse<List<HotelDto>>> GetHotelsAsync(CancellationToken ct = default);
@@ -31,7 +30,6 @@ public interface ITravelService
     Task<ApiResponse<bool>> DeleteTransportAsync(Guid id, CancellationToken ct = default);
 
     // Create wizard-dropdown lookup records.
-    Task<ApiResponse<IdNameDto>> CreateFlightTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateFlightClassAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateRoomTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<HotelDto>> CreateHotelAsync(CreateHotelRequest request, int userId, CancellationToken ct = default);

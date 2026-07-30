@@ -25,7 +25,6 @@ public partial class ApplicationDBContext
     public virtual DbSet<Invitation> Invitations { get; set; }
 
     // Flights
-    public virtual DbSet<FlightType> FlightTypes { get; set; }
     public virtual DbSet<FlightClass> FlightClasses { get; set; }
     public virtual DbSet<Flight> Flights { get; set; }
     public virtual DbSet<FlightLeg> FlightLegs { get; set; }
@@ -498,15 +497,6 @@ public partial class ApplicationDBContext
         });
 
         // ── Flights ─────────────────────────────────────────────────────────
-        modelBuilder.Entity<FlightType>(ft =>
-        {
-            ft.ToTable("FlightTypes");
-            ft.HasKey(x => x.Id);
-            ft.Property(x => x.Name).IsRequired().HasMaxLength(50);
-            ft.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
-            ft.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-        });
-
         modelBuilder.Entity<FlightClass>(fc =>
         {
             fc.ToTable("FlightClasses");
@@ -523,7 +513,6 @@ public partial class ApplicationDBContext
             f.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             f.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             f.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            f.HasOne(x => x.FlightType).WithMany().HasForeignKey(x => x.FlightTypeId).OnDelete(DeleteBehavior.Restrict);
             f.HasOne(x => x.FlightClass).WithMany().HasForeignKey(x => x.FlightClassId).OnDelete(DeleteBehavior.Restrict);
             f.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
@@ -561,6 +550,7 @@ public partial class ApplicationDBContext
             h.ToTable("AccommodationHotels");
             h.HasKey(x => x.Id);
             h.Property(x => x.Name).IsRequired().HasMaxLength(300);
+            h.Property(x => x.ImageUrl).HasMaxLength(1000);
             h.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             h.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             h.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.SetNull);
