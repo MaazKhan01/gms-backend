@@ -147,6 +147,25 @@ public class NotificationsController : Controllers.BaseApiController
     public async Task<IActionResult> RegisterDevice([FromBody] RegisterDeviceRequest request, CancellationToken ct)
         => ToResponse(await _notificationService.RegisterDeviceAsync(request, ct));
 
+    // Update fields on the caller's already-registered device row (found by
+    // Token) — platform, model, OS/app version, notifications toggle. Use
+    // POST devices instead when the token itself changed.
+    [HttpPut("devices")]
+    public async Task<IActionResult> UpdateDevice([FromBody] UpdateDeviceRequest request, CancellationToken ct)
+        => ToResponse(await _notificationService.UpdateDeviceAsync(request, ct));
+
+    // Every device currently registered to the caller.
+    [HttpGet("devices")]
+    public async Task<IActionResult> GetMyDevices(CancellationToken ct)
+        => ToResponse(await _notificationService.GetMyDevicesAsync(ct));
+
+    // Existence check for one specific token — 200 + the device if this exact
+    // token is already registered to the caller, 404 otherwise. Lets a client
+    // decide whether to call POST devices at all instead of blindly upserting.
+    [HttpGet("devices/check")]
+    public async Task<IActionResult> CheckMyDevice([FromQuery] string token, CancellationToken ct)
+        => ToResponse(await _notificationService.GetMyDeviceByTokenAsync(token, ct));
+
     // Token via query string, not a route segment — FCM tokens can contain
     // characters ('/', '+') that don't round-trip safely through a URL path.
     [HttpDelete("devices")]

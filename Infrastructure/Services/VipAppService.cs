@@ -129,8 +129,20 @@ public class VipAppService(
         otp.UsedAt = DateTime.UtcNow;
 
         var auth = await IssueTokensAsync(guest, ct);
+        var device = await GetLatestDeviceAsync(guest.UserId, ct);
+        auth.FcmToken = device?.Token;
+        auth.DeviceId = device?.DeviceIdentifier;
         return ApiResponse<GuestAuthResponse>.SuccessResponse(auth, "Signed in");
     }
+
+    // Read-only — verify-otp never writes to Devices, only reports the
+    // guest's linked User's most recently active registration (see
+    // NotificationService for the register/update endpoints that write this table).
+    private Task<Device> GetLatestDeviceAsync(int userId, CancellationToken ct)
+        => _unitOfWork.Devices.Query()
+            .Where(d => d.UserId == userId && d.IsActive)
+            .OrderByDescending(d => d.LastActiveAt)
+            .FirstOrDefaultAsync(ct);
 
     public async Task<ApiResponse<GuestAuthResponse>> RefreshTokenAsync(string refreshToken, CancellationToken ct)
     {

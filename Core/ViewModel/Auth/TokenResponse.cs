@@ -9,6 +9,15 @@ public class TokenResponse
     public string AccessToken { get; set; }
     public string RefreshToken { get; set; }
     public UserInfo User { get; set; }
+
+    // Pulled from the User's Device row (see DomainPersistence.Entities.Device),
+    // not from the login request — login/verify-otp never write to Devices,
+    // only read the caller's existing registration (POST /notifications/devices
+    // registers/updates it).
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string FcmToken { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string DeviceId { get; set; }
 }
 
 public class UserInfo
