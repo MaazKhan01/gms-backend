@@ -328,6 +328,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 Vehicle = t.Vehicle == null ? null : (t.Vehicle.VehicleNumber + " · " + t.Vehicle.VehicleModel),
                 DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
                 DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
+                DriverType = t.Driver == null ? null : (int?)t.Driver.DriverType,
                 Pickup = t.PickupLocation.Address,
                 Dropoff = t.DropoffLocation.Address,
                 PickupTime = t.PickupTime,

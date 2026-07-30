@@ -191,6 +191,9 @@ public class EventTransportRow
     public string Vehicle { get; set; }
     public Guid? DriverId { get; set; }
     public string DriverName { get; set; }
+    // DomainPersistence.Enums.DriverType: 1 = Fixed, 2 = Open. Null when the
+    // driver record predates the field, or no driver is assigned yet.
+    public int? DriverType { get; set; }
     public string Pickup { get; set; }
     public string Dropoff { get; set; }
     public DateTime? PickupTime { get; set; }

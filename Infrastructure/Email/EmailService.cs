@@ -216,7 +216,7 @@ public class EmailService : IEmailService
 
     private static string Cta(string url, string label) => $@"
             <div style='margin:28px 0 20px;text-align:center;'>
-                <a href='{url}' style='display:inline-block;padding:13px 30px;background:linear-gradient(135deg,{Accent} 0%,{AccentDeep} 100%);color:#f6fdff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;font-family:Arial,sans-serif;'>{label}</a>
+                <a href='{url}' style='display:inline-block;padding:13px 30px;background: maroon;color:#f6fdff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;font-family:Arial,sans-serif;'>{label}</a>
             </div>";
 
     private static string Pill(string text) => $@"
