@@ -664,20 +664,27 @@ namespace Infrastructure.Services
             }
         }
 
-        // Reconciles an existing box's VenueLayouts (already loaded with Props →
-        // Seats) against the incoming request, in place:
-        //   - a layout whose prop.Code matches an incoming one is updated, and its
-        //     seats are diffed by Code — matched seats are updated in place
-        //     (keeping their real id, so any SeatAssign referencing them stays
-        //     valid), missing codes are removed, new codes are added;
-        //   - a layout with no incoming match at all (the client dropped the whole
-        //     table) is removed entirely;
-        //   - an incoming layout with no existing match is inserted fresh.
-        // request.VenueBlocks is intentionally left untouched here — the editor
-        // always sends it empty (blocks get folded into VenueLayouts once loaded
-        // into the canvas; see boxToTables/toLayoutDto on the frontend), so
-        // clearing existing.Blocks whenever this runs would just delete them for
-        // no reason.
+        // Reconciles an existing box's VenueLayouts AND Blocks (already loaded with
+        // Props → Seats) against the incoming request, in place:
+        //   - a table whose Id matches an existing VenueLayout OR VenueBlock's real
+        //     PublicId is updated, and its seats are diffed by Code — matched seats
+        //     are updated in place (keeping their real id, so any SeatAssign
+        //     referencing them stays valid), missing codes are removed, new codes
+        //     are added;
+        //   - a VenueLayout with no incoming match at all (the client dropped the
+        //     whole table) is removed entirely;
+        //   - an incoming table with no existing match (as either a layout or a
+        //     block) is inserted fresh, as a plain VenueLayout.
+        // Blocks matter here because the editor folds them into the same flat
+        // `tables` array as ordinary layout elements once loaded (see
+        // boxToTables/toLayoutDto on the frontend) — every save sends them back
+        // as VenueLayouts (request.VenueBlocks is always empty). Without matching
+        // against existingBox.Blocks too, an existing block would never be found,
+        // so every save would insert a brand-new VenueLayout duplicate of it
+        // alongside the untouched original VenueBlock.
+        // An existing block that ISN'T matched by anything incoming is left alone
+        // (not deleted) — conservative, since request.VenueBlocks being empty is
+        // the normal case and isn't a reliable signal that the user removed it.
         // Returns a conflict response if a seat that's actually being removed is
         // assigned to a guest; null otherwise (and mutates `existingBox`, tracked
         // by EF, ready for SaveChangesAsync).
@@ -689,33 +696,51 @@ namespace Infrastructure.Services
                 .ToList();
 
             var existingLayouts = existingBox.VenueLayouts ?? new List<VenueLayout>();
-            // Keyed by the layout's own real PublicId — NOT VenueLayoutProp.Code.
+            var existingBlocks = existingBox.Blocks ?? new List<VenueBlock>();
+            // Keyed by the table's own real PublicId — NOT VenueLayoutProp.Code.
             // Code just echoes whatever id the client happened to send on the
-           
+            // *previous* save, so under the old delete-and-recreate flow it was
+            // always one generation stale and can't be trusted as an identity key.
             var existingById = existingLayouts
                 .Where(l => l.PublicId != Guid.Empty)
                 .ToDictionary(l => l.PublicId);
+            var existingBlockById = existingBlocks
+                .Where(b => b.PublicId != Guid.Empty)
+                .ToDictionary(b => b.PublicId);
 
             var matchedLayoutIds = new HashSet<int>();
-            // (existingLayout, existingProp, incoming dto, desired seat set) for every
+            var matchedBlockIds = new HashSet<int>();
             var updates = new List<(VenueLayout Layout, VenueLayoutProp Prop, CreateVenueLayoutDto Incoming, List<SeatSpec> Desired)>();
+            var blockUpdates = new List<(VenueBlock Block, VenueLayoutProp Prop, CreateVenueLayoutDto Incoming, List<SeatSpec> Desired)>();
             var candidateRemovedSeats = new List<SeatProperties>();
 
             foreach (var incoming in incomingLayouts)
             {
-                if (incoming.Id.HasValue && incoming.Id.Value != Guid.Empty && existingById.TryGetValue(incoming.Id.Value, out var existingLayout))
+                if (!incoming.Id.HasValue || incoming.Id.Value == Guid.Empty) continue;
+                var incomingProp = incoming.Props.First();
+
+                if (existingById.TryGetValue(incoming.Id.Value, out var existingLayout))
                 {
                     matchedLayoutIds.Add(existingLayout.Id);
-                    var incomingProp = incoming.Props.First();
-                    // A layout normally carries exactly one prop (see toLayoutDto) —
+                    // A layout normally carries exactly one prop (see toLayoutDto).
                     var prop = existingLayout.VenueLayoutProps.First();
                     var desired = ResolveDesiredSeats(incomingProp);
                     var desiredCodes = desired.Select(s => s.Code).ToHashSet();
                     candidateRemovedSeats.AddRange((prop.Seats ?? new List<SeatProperties>()).Where(s => !desiredCodes.Contains(s.Code)));
                     updates.Add((existingLayout, prop, incoming, desired));
                 }
+                else if (existingBlockById.TryGetValue(incoming.Id.Value, out var existingBlock))
+                {
+                    matchedBlockIds.Add(existingBlock.Id);
+                    var prop = existingBlock.Props.First();
+                    var desired = ResolveDesiredSeats(incomingProp);
+                    var desiredCodes = desired.Select(s => s.Code).ToHashSet();
+                    candidateRemovedSeats.AddRange((prop.Seats ?? new List<SeatProperties>()).Where(s => !desiredCodes.Contains(s.Code)));
+                    blockUpdates.Add((existingBlock, prop, incoming, desired));
+                }
             }
-            // Whole tables the client no longer has at all.
+            // Whole layout tables the client no longer has at all. Blocks are never
+            // auto-dropped this way — see the method comment above.
             var droppedLayouts = existingLayouts.Where(l => !matchedLayoutIds.Contains(l.Id)).ToList();
             foreach (var l in droppedLayouts)
                 candidateRemovedSeats.AddRange(l.VenueLayoutProps.SelectMany(p => p.Seats ?? new List<SeatProperties>()));
@@ -755,30 +780,13 @@ namespace Infrastructure.Services
                 _unitOfWork.VenueLayouts.RemoveRange(droppedLayouts);
             }
 
-            foreach (var (layout, prop, incoming, desired) in updates)
+            // Shared by both the layout and block update loops below — matches this
+            // prop's existing seats against the desired set by Code, updating
+            // survivors in place (keeping their real id/SeatAssign), adding new
+            // codes, and removing whatever's no longer desired (already cleared for
+            // assignment conflicts above).
+            void ApplySeatDiff(VenueLayoutProp prop, List<SeatSpec> desired)
             {
-                var incomingProp = incoming.Props.First();
-
-                layout.Type = incoming.Type.Trim();
-                layout.X = incoming.X;
-                layout.Y = incoming.Y;
-                layout.Rotation = incoming.Rotation;
-                layout.ScaleX = incoming.ScaleX;
-                layout.ScaleY = incoming.ScaleY;
-                layout.OffsetX = incoming.OffsetX;
-                layout.OffsetY = incoming.OffsetY;
-
-                prop.Label = incomingProp.Label;
-                prop.Row = incomingProp.Row;
-                prop.SeatsQuantity = incomingProp.SeatsQuantity;
-                prop.RowNames = incomingProp.RowNames ?? new();
-                prop.PitchW = incomingProp.PitchW;
-                prop.PitchH = incomingProp.PitchH;
-                prop.StageW = incomingProp.StageW;
-                prop.StageH = incomingProp.StageH;
-                prop.Color = incomingProp.Color;
-                prop.RemovedSeats = incomingProp.RemovedSeats ?? new();
-
                 prop.Seats ??= new List<SeatProperties>();
                 var existingSeatsByCode = prop.Seats.ToDictionary(s => s.Code);
                 var desiredCodes = desired.Select(s => s.Code).ToHashSet();
@@ -817,9 +825,63 @@ namespace Infrastructure.Services
                 }
             }
 
+            foreach (var (layout, prop, incoming, desired) in updates)
+            {
+                var incomingProp = incoming.Props.First();
+
+                layout.Type = incoming.Type.Trim();
+                layout.X = incoming.X;
+                layout.Y = incoming.Y;
+                layout.Rotation = incoming.Rotation;
+                layout.ScaleX = incoming.ScaleX;
+                layout.ScaleY = incoming.ScaleY;
+                layout.OffsetX = incoming.OffsetX;
+                layout.OffsetY = incoming.OffsetY;
+
+                prop.Label = incomingProp.Label;
+                prop.Row = incomingProp.Row;
+                prop.SeatsQuantity = incomingProp.SeatsQuantity;
+                prop.RowNames = incomingProp.RowNames ?? new();
+                prop.PitchW = incomingProp.PitchW;
+                prop.PitchH = incomingProp.PitchH;
+                prop.StageW = incomingProp.StageW;
+                prop.StageH = incomingProp.StageH;
+                prop.Color = incomingProp.Color;
+                prop.RemovedSeats = incomingProp.RemovedSeats ?? new();
+
+                ApplySeatDiff(prop, desired);
+            }
+
+            foreach (var (block, prop, incoming, desired) in blockUpdates)
+            {
+                var incomingProp = incoming.Props.First();
+
+                // VenueBlock has its own X/Y/Rotation/Label (mirrored onto the prop
+                // at creation time — see AddVenueBlockAsync/CreateVenueAsync), plus
+                // Rows/SeatsPerRow duplicating the prop's Row/SeatsQuantity.
+                block.X = incoming.X;
+                block.Y = incoming.Y;
+                block.Rotation = incoming.Rotation;
+                if (!string.IsNullOrWhiteSpace(incomingProp.Label)) block.Label = incomingProp.Label.Trim();
+                if (incomingProp.Row is > 0) block.Rows = incomingProp.Row.Value;
+                if (incomingProp.SeatsQuantity is > 0) block.SeatsPerRow = incomingProp.SeatsQuantity.Value;
+
+                prop.Label = incomingProp.Label;
+                prop.Row = incomingProp.Row;
+                prop.SeatsQuantity = incomingProp.SeatsQuantity;
+                prop.RowNames = incomingProp.RowNames ?? new();
+                prop.Color = incomingProp.Color;
+                prop.RemovedSeats = incomingProp.RemovedSeats ?? new();
+
+                ApplySeatDiff(prop, desired);
+            }
+
             // Incoming tables with no existing match at all — brand new inserts.
+            // (A match against an existing block is still "no match" here, since
+            // blockUpdates already handled those in place.)
             var newLayouts = incomingLayouts
-                .Where(l => !l.Id.HasValue || l.Id.Value == Guid.Empty || !existingById.ContainsKey(l.Id.Value))
+                .Where(l => !l.Id.HasValue || l.Id.Value == Guid.Empty
+                    || (!existingById.ContainsKey(l.Id.Value) && !existingBlockById.ContainsKey(l.Id.Value)))
                 .Select(l => new VenueLayout
                 {
                     Type = l.Type.Trim(),
