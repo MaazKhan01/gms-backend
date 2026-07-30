@@ -21,8 +21,12 @@ public partial class User : Entity
 
     public virtual Role? Role { get; set; }
     public virtual DriverProfile? DriverProfile { get; set; }
+    // Present only for Users backed by a Guest (RoleId -> "guest"). Null for
+    // every other User — see Guest.UserId for the owning side of this 1:1.
+    public virtual Guest? GuestProfile { get; set; }
     public virtual ICollection<UserModuleGrant> ModuleGrants { get; set; } = new List<UserModuleGrant>();
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+    public virtual ICollection<Device> Devices { get; set; } = new List<Device>();
     public virtual ICollection<UserLoginLog> UserLoginLogs { get; set; } = new List<UserLoginLog>();
     public virtual ICollection<SystemErrorLog> SystemErrorLogs { get; set; } = new List<SystemErrorLog>();
 }

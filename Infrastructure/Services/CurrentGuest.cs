@@ -16,7 +16,7 @@ namespace Infrastructure.Services;
 // a User token too (see AuthService — it deliberately never adds it).
 public class CurrentGuest(IHttpContextAccessor _http) : ICurrentGuest
 {
-    public const string GuestIdClaim = GuestClaims.GuestId;
+    public const string GuestIdClaim = GuestClaims.UserId;
     private const string GuestRoleValue = "guest";
 
     private ClaimsPrincipal User => _http.HttpContext?.User;

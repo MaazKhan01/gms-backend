@@ -2,22 +2,13 @@ using System.Collections.Generic;
 
 namespace Core.ViewModel.Noification;
 
-public enum NotificationRecipientType
-{
-    User,  // admin/staff — DomainPersistence.Entities.User
-    Guest  // VIP app guest — DomainPersistence.Entities.Guest
-}
-
 // Provider-agnostic push payload. IPushNotificationProvider implementations
-// (manual today, Firebase later) consume this without the caller knowing which
-// transport is behind it.
+// (manual/SignalR, Firebase/FCM) consume this without the caller knowing which
+// transport is behind it. Every recipient — staff, driver, or guest — is a
+// User now, so there's no longer a separate recipient-type/id pair to carry.
 public class PushNotificationPayload
 {
-    public NotificationRecipientType RecipientType { get; set; }
-
-    // Internal id of the recipient — UserId when RecipientType == User, GuestId when Guest.
-    public int? UserId { get; set; }
-    public int? GuestId { get; set; }
+    public int UserId { get; set; }
 
     public string Title { get; set; }
     public string Body { get; set; }

@@ -68,8 +68,7 @@ public class UnitOfWork : IUnitOfWork
         GuestRefreshTokens = new GenericRepository<GuestRefreshToken>(_context);
         SupportMessages = new GenericRepository<SupportMessage>(_context);
         SupportConversations = new GenericRepository<SupportConversation>(_context);
-        GuestDevices = new GenericRepository<GuestDevice>(_context);
-        GuestNotifications = new GenericRepository<GuestNotification>(_context);
+        Devices = new GenericRepository<Device>(_context);
 
         UserLoginLogs = new GenericRepository<UserLoginLog>(_context);
         SystemErrorLogs = new GenericRepository<SystemErrorLog>(_context);
@@ -120,8 +119,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; private set; }
     public IGenericRepository<SupportMessage> SupportMessages { get; private set; }
     public IGenericRepository<SupportConversation> SupportConversations { get; private set; }
-    public IGenericRepository<GuestDevice> GuestDevices { get; private set; }
-    public IGenericRepository<GuestNotification> GuestNotifications { get; private set; }
+    public IGenericRepository<Device> Devices { get; private set; }
     public IGenericRepository<UserLoginLog> UserLoginLogs { get; private set; }
     public IGenericRepository<SystemErrorLog> SystemErrorLogs { get; private set; }
 

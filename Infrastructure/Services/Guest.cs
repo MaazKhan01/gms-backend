@@ -27,6 +27,27 @@ public class GuestService(
 {
     private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
 
+    // Auto-provisions the User row every Guest is now 1:1 with (see Guest.UserId
+    // remarks) — RoleId -> the "guest" role (PortalAccess=false, no permissions),
+    // PasswordHash left null (OTP via CurrentGuest/VipAppService remains the only
+    // way in). Email/UserName are deliberately left null: Guests.Email has no
+    // uniqueness constraint (the same person can be re-invited per event), which
+    // would collide with Users' filtered-unique Email index.
+    private async Task<User> CreateLinkedUserAsync(string firstName, string lastName, CancellationToken ct)
+    {
+        var guestRole = await _unitOfWork.Roles.FindFirstOrDefaultAsync(r => r.Code == Roles.GUEST, ct);
+        var user = new User
+        {
+            FirstName = firstName,
+            LastName = lastName,
+            IsActive = true,
+            RoleId = guestRole?.Id,
+        };
+        await _unitOfWork.Users.AddAsync(user, ct);
+        await _unitOfWork.SaveChangesAsync(ct); // need the generated Id for Guest.UserId
+        return user;
+    }
+
     // Upserts the guest's Invitation row (one per guest) with a fresh token
     // and fires the branded email. Called from Create/UpdateGuestAsync when
     // an InvitationTemplateId is supplied — including to resend.
@@ -466,6 +487,7 @@ public class GuestService(
                 .Include(g => g.Nationality)
                 .Include(g => g.OrganizationRef)
                 .Include(g => g.Event)
+                .Include(g => g.User)
                 .FirstOrDefaultAsync(g => g.PublicId == request.Id.Value, ct);
 
             if (guest == null)
@@ -488,6 +510,15 @@ public class GuestService(
             guest.FirstName     = request.FirstName?.Trim() ?? guest.FirstName;
             guest.LastName      = request.LastName?.Trim()  ?? guest.LastName;
             guest.Email         = request.Email?.ToLower().Trim();
+
+            // Keep the linked User's denormalized display name in sync — it's
+            // what admin-inbox/notification queries read for a guest's name.
+            if (guest.User != null)
+            {
+                guest.User.FirstName = guest.FirstName;
+                guest.User.LastName = guest.LastName;
+                _unitOfWork.Users.Update(guest.User);
+            }
             guest.GuestType     = request.GuestType ?? guest.GuestType;
             guest.Organization  = organization?.Name ?? request.Organization;
             guest.OrganizationId = organization?.Id;
@@ -557,6 +588,7 @@ public class GuestService(
             }
 
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
+            var user = await CreateLinkedUserAsync(request.FirstName.Trim(), request.LastName.Trim(), ct);
             var guest = new Guest
             {
                 FirstName     = request.FirstName.Trim(),
@@ -572,6 +604,7 @@ public class GuestService(
                 DepartureDate = request.DepartureDate,
                 PhotoUrl      = request.PhotoUrl,
                 AccreditationRequired = request.AccreditationRequired,
+                UserId        = user.Id,
                 CreatedAt     = DateTime.UtcNow,
                 IsDeleted     = false
             };

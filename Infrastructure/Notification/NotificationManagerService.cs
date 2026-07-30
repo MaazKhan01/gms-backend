@@ -127,6 +127,11 @@ public class NotificationManagerService(
         return await PersistAndPushAsync(recipients.Select(r => (r.Id, r.PublicId)), content, ct).ConfigureAwait(false);
     }
 
+    // Guests are Users now (Guest.UserId — see Guest entity remarks); these
+    // three methods keep their guestId-based signatures (every existing caller —
+    // SupportChatService, NotificationService's guest branches — passes a
+    // Guest.Id) but resolve down to the guest's linked User.Id and reuse the
+    // exact same persist-then-push path as every other User recipient.
     public async Task<GuestNotificationResponse> SendToGuestAsync(int guestId, NotificationContent content, CancellationToken ct = default)
     {
         var results = await SendToGuestsAsync(new[] { guestId }, content, ct).ConfigureAwait(false);
@@ -150,54 +155,32 @@ public class NotificationManagerService(
         var ids = (guestIds ?? Enumerable.Empty<int>()).Distinct().ToList();
         if (ids.Count == 0) return Array.Empty<GuestNotificationResponse>();
 
-        var dataJson = SerializeData(content.Data);
-        var entities = ids.Select(id => new GuestNotification
+        var recipients = await _unitOfWork.Guests.Query()
+            .Where(g => ids.Contains(g.Id))
+            .Select(g => new { g.UserId, g.PublicId })
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var results = await PersistAndPushAsync(
+            recipients.Select(r => (r.UserId, r.PublicId)), content, ct).ConfigureAwait(false);
+
+        // Same wire shape callers already expect (GuestNotificationResponse has
+        // no UserId field) — just re-projected from the now-shared Notification rows.
+        return results.Select(r => new GuestNotificationResponse
         {
-            GuestId = id,
-            Title = content.Title ?? string.Empty,
-            Message = content.Message,
-            Type = content.Type,
-            RedirectUrl = content.RedirectUrl,
-            Data = dataJson,
-            Read = false
+            Id = r.Id,
+            Title = r.Title,
+            Message = r.Message,
+            Type = r.Type,
+            Read = r.Read == true,
+            CreatedAt = r.CreatedAt ?? default,
+            RedirectUrl = r.RedirectUrl,
+            Data = r.Data
         }).ToList();
-
-        await _unitOfWork.GuestNotifications.AddRangeAsync(entities, ct).ConfigureAwait(false);
-        await _unitOfWork.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        var responses = entities.Select(n => new GuestNotificationResponse
-        {
-            Id = n.PublicId,
-            Title = n.Title,
-            Message = n.Message,
-            Type = n.Type,
-            Read = n.Read,
-            CreatedAt = n.CreatedAt,
-            RedirectUrl = n.RedirectUrl,
-            Data = n.Data
-        }).ToList();
-
-        for (var i = 0; i < entities.Count; i++)
-        {
-            var entity = entities[i];
-            var response = responses[i];
-            await DispatchToProvidersAsync(new PushNotificationPayload
-            {
-                RecipientType = NotificationRecipientType.Guest,
-                GuestId = entity.GuestId,
-                Title = entity.Title,
-                Body = entity.Message,
-                Topic = content.Topic ?? RealtimeTopics.NotificationNew,
-                Data = content.Data,
-                Payload = response
-            }, $"guest {entity.GuestId}", ct).ConfigureAwait(false);
-        }
-
-        return responses;
     }
 
     // ------------------------------------------------------------------
-    // Shared persist-then-push for User recipients.
+    // Shared persist-then-push for every User recipient — staff, driver, or
+    // guest (recipients carries the User.Id/User.PublicId pair either way).
     // ------------------------------------------------------------------
     private async Task<IReadOnlyList<NotificationResponse>> PersistAndPushAsync(
         IEnumerable<(int Id, Guid PublicId)> recipients, NotificationContent content, CancellationToken ct)
@@ -244,7 +227,6 @@ public class NotificationManagerService(
             var response = responses[i];
             await DispatchToProvidersAsync(new PushNotificationPayload
             {
-                RecipientType = NotificationRecipientType.User,
                 UserId = entity.UserId,
                 Title = entity.Title,
                 Body = entity.Message,

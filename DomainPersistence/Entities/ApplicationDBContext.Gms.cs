@@ -55,8 +55,9 @@ public partial class ApplicationDBContext
     public virtual DbSet<GuestRefreshToken> GuestRefreshTokens { get; set; }
     public virtual DbSet<SupportMessage> SupportMessages { get; set; }
     public virtual DbSet<SupportConversation> SupportConversations { get; set; }
-    public virtual DbSet<GuestDevice> GuestDevices { get; set; }
-    public virtual DbSet<GuestNotification> GuestNotifications { get; set; }
+
+    // Push notification devices — shared by every User (staff, driver, guest).
+    public virtual DbSet<Device> Devices { get; set; }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
@@ -136,6 +137,12 @@ public partial class ApplicationDBContext
                 .WithMany()
                 .HasForeignKey(x => x.OrganizationId)
                 .OnDelete(DeleteBehavior.SetNull);
+            // 1:1, same convention as DriverProfile <-> User below: EF creates the
+            // unique index on Guests.UserId for us from WithOne.
+            g.HasOne(x => x.User)
+                .WithOne(u => u.GuestProfile)
+                .HasForeignKey<Guest>(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
             g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -415,20 +422,21 @@ public partial class ApplicationDBContext
             m.Property(x => x.AttachmentType).HasMaxLength(100);
             m.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             m.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            m.HasIndex(x => new { x.GuestId, x.SentAt });
+            m.HasIndex(x => new { x.UserId, x.SentAt });
             m.HasIndex(x => new { x.ConversationId, x.SentAt });
-            m.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            // Restrict, not SetNull/Cascade: Guests -> SupportConversations (Cascade) ->
+            m.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            // Restrict, not SetNull/Cascade: Users -> SupportConversations (Cascade) ->
             // SupportMessages.ConversationId would otherwise be a second cascade path
-            // alongside the direct Guests -> SupportMessages.GuestId cascade above — the
-            // same multiple-cascade-path problem as the Users FKs below. The direct
-            // GuestId cascade already cleans up a guest's messages on delete regardless.
+            // alongside the direct Users -> SupportMessages.UserId cascade above — the
+            // same multiple-cascade-path problem as SenderUserId below. The direct
+            // UserId cascade already cleans up a guest's messages on delete regardless.
             m.HasOne(x => x.Conversation).WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             // Restrict, not SetNull: Users -> SupportMessages.SenderUserId would otherwise
-            // be a second cascade path alongside Users -> SupportConversations.*UserId ->
-            // SupportMessages.ConversationId, which SQL Server rejects as a multiple
-            // cascade path. Same convention as the Venue/Seating module above — the app
-            // relies on soft-delete anyway, so Users are never hard-deleted in practice.
+            // be a second cascade path alongside Users -> SupportMessages.UserId /
+            // Users -> SupportConversations.*UserId -> SupportMessages.ConversationId,
+            // which SQL Server rejects as a multiple cascade path. Same convention as
+            // the Venue/Seating module above — the app relies on soft-delete anyway,
+            // so Users are never hard-deleted in practice.
             m.HasOne(x => x.SenderUser).WithMany().HasForeignKey(x => x.SenderUserId).OnDelete(DeleteBehavior.Restrict);
             m.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
@@ -437,49 +445,51 @@ public partial class ApplicationDBContext
         {
             c.ToTable("SupportConversations");
             c.HasKey(x => x.Id);
-            // "Open" mirrors Core.Constants.SupportChatStatuses.Open — DomainPersistence
-            // doesn't reference Core, so the literal is duplicated here on purpose.
+            // "AdminSupport"/"Open" mirror Core.Constants.SupportChatTypes/Statuses —
+            // DomainPersistence doesn't reference Core, so the literals are duplicated here on purpose.
+            c.Property(x => x.Type).IsRequired().HasMaxLength(20).HasDefaultValue("AdminSupport");
             c.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue("Open");
             c.Property(x => x.LastMessagePreview).HasMaxLength(300);
             c.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             c.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            c.HasIndex(x => x.GuestId).IsUnique();
+            // Replaces the old "one conversation per guest" unique index: a guest now
+            // gets exactly one AdminSupport thread AND one DriverGuest thread per
+            // distinct driver. Two filtered indexes, not one composite index over
+            // (UserId, Type, OtherUserId) — EF Core's SqlServer convention filters a
+            // unique index to WHERE OtherUserId IS NOT NULL whenever it covers a
+            // nullable column (ANSI NULL semantics), which would silently stop
+            // enforcing "at most one AdminSupport row per guest" (OtherUserId is
+            // always null there) entirely.
+            c.HasIndex(x => new { x.UserId, x.Type }).IsUnique().HasFilter("[OtherUserId] IS NULL");
+            c.HasIndex(x => new { x.UserId, x.Type, x.OtherUserId }).IsUnique().HasFilter("[OtherUserId] IS NOT NULL");
             c.HasIndex(x => new { x.Status, x.UnreadByAdminCount, x.LastMessageAt });
-            c.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            // Restrict — see SupportMessage.SenderUserId comment above; these two paths
-            // into Users are what SQL Server flagged as a multiple cascade path.
+            c.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            // Restrict — see SupportMessage.SenderUserId comment above; these paths
+            // into Users are what SQL Server flags as a multiple cascade path.
+            c.HasOne(x => x.OtherUser).WithMany().HasForeignKey(x => x.OtherUserId).OnDelete(DeleteBehavior.Restrict);
             c.HasOne(x => x.AssignedAdmin).WithMany().HasForeignKey(x => x.AssignedAdminUserId).OnDelete(DeleteBehavior.Restrict);
             c.HasOne(x => x.ClosedByUser).WithMany().HasForeignKey(x => x.ClosedByUserId).OnDelete(DeleteBehavior.Restrict);
             c.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
-        modelBuilder.Entity<GuestDevice>(d =>
+        modelBuilder.Entity<Device>(d =>
         {
-            d.ToTable("GuestDevices");
+            d.ToTable("Devices");
             d.HasKey(x => x.Id);
             d.Property(x => x.Token).IsRequired().HasMaxLength(500);
             d.Property(x => x.Platform).HasMaxLength(20);
+            d.Property(x => x.DeviceIdentifier).HasMaxLength(200);
+            d.Property(x => x.DeviceModel).HasMaxLength(200);
+            d.Property(x => x.OsVersion).HasMaxLength(50);
+            d.Property(x => x.AppVersion).HasMaxLength(50);
+            d.Property(x => x.NotificationsEnabled).HasDefaultValue(true);
+            d.Property(x => x.IsActive).HasDefaultValue(true);
             d.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             d.HasIndex(x => x.Token).IsUnique();
-            d.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            d.HasIndex(x => new { x.UserId, x.IsActive });
+            d.HasOne(x => x.User).WithMany(x => x.Devices).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             d.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
-        });
-
-        modelBuilder.Entity<GuestNotification>(n =>
-        {
-            n.ToTable("GuestNotifications");
-            n.HasKey(x => x.Id);
-            n.Property(x => x.Title).IsRequired().HasMaxLength(300);
-            n.Property(x => x.Message).HasColumnType("nvarchar(max)");
-            n.Property(x => x.Type).HasMaxLength(50);
-            n.Property(x => x.RedirectUrl).HasMaxLength(500);
-            n.Property(x => x.Data).HasColumnType("nvarchar(max)");
-            n.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
-            n.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            n.HasIndex(x => new { x.GuestId, x.Read });
-            n.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
-            n.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         // ── Invitation / accreditation ──────────────────────────────────────

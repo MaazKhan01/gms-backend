@@ -11,5 +11,5 @@ namespace Core.Constants;
 // collide (see ICurrentGuest's remarks).
 public static class GuestClaims
 {
-    public const string GuestId = "Id";
+    public const string UserId = "Id";
 }

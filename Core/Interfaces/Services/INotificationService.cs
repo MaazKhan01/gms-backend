@@ -33,5 +33,13 @@ public interface INotificationService
     Task<ApiResponse<int>> GetGuestUnreadCountAsync(int guestId, CancellationToken ct = default);
     Task<ApiResponse<bool>> MarkGuestNotificationReadAsync(int guestId, Guid notificationId, CancellationToken ct = default);
     Task<ApiResponse<bool>> MarkAllGuestNotificationsReadAsync(int guestId, CancellationToken ct = default);
+
+    // Kept for backward compatibility with the existing VIP app build — an
+    // alias over RegisterDeviceAsync keyed by the guest's linked UserId.
     Task<ApiResponse<bool>> RegisterGuestDeviceAsync(int guestId, RegisterDeviceRequest request, CancellationToken ct = default);
+
+    // ---- Device registration — any authenticated User (staff, driver, or
+    // guest), resolved from ICurrentUser. See Device entity remarks. ----
+    Task<ApiResponse<bool>> RegisterDeviceAsync(RegisterDeviceRequest request, CancellationToken ct = default);
+    Task<ApiResponse<bool>> DeregisterDeviceAsync(string token, CancellationToken ct = default);
 }
