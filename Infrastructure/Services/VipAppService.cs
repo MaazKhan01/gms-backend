@@ -27,7 +27,7 @@ namespace Infrastructure.Services;
 // the bottom of this file and of IVipAppService.
 //
 // `guestId` is the caller, resolved by the controller from ICurrentGuest (a
-// Core.Constants.GuestClaims.GuestId claim plus role=="guest" — see CurrentGuest).
+// Guests.UserId lookup off the token's User.Id plus role=="guest" — see CurrentGuest).
 // Auth endpoints issue that token via OTP (guests have no password). Everything
 // reads/writes existing GMS entities plus GuestRefreshToken and the
 // Guest.PreferencesJson column.
@@ -224,19 +224,19 @@ public class VipAppService(
 
         var claims = new List<Claim>
         {
-            new("sub", guest.Id.ToString()),
-            // NameIdentifier is the guest's linked User.Id (Guest.UserId), not
-            // Guest.Id — Guest is now a 1:1 profile extension of User (see Guest
-            // entity remarks), so this is a real, disjoint Users.Id: ICurrentUser,
-            // Clients.User(...) targeting, and AuditInterceptor's CreatedBy/UpdatedBy
-            // stamping all resolve correctly for a guest token, the same way they
-            // already do for a staff token. GuestClaims.GuestId below is unchanged —
-            // ICurrentGuest and every existing guest-scoped route still key off Guest.Id.
+            // The access token carries the guest's linked User.Id only (Guest is a
+            // 1:1 profile extension of User — see the Guest entity remarks), never
+            // Guest.Id. ICurrentUser, Clients.User(...) targeting and
+            // AuditInterceptor's CreatedBy/UpdatedBy therefore resolve exactly as
+            // they do for a staff token, and ICurrentGuest derives Guest.Id from
+            // Guests.UserId. `sub` matches: the JWT handler maps inbound "sub" onto
+            // ClaimTypes.NameIdentifier, so a differing value here would win the
+            // FindFirst race and resolve the wrong identity.
+            new("sub", guest.UserId.ToString()),
             new(ClaimTypes.NameIdentifier, guest.UserId.ToString()),
             new(ClaimTypes.Email, guest.Email ?? string.Empty),
             new(ClaimTypes.Name, fullName),
             new("role", "guest"),
-            new(CurrentGuest.GuestIdClaim, guest.Id.ToString()), // ICurrentGuest reads this
             new("email", guest.Email ?? string.Empty),
             new("fullName", fullName),
         };

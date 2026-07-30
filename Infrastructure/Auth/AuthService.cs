@@ -412,11 +412,8 @@ public class AuthService(
             new("roleId", user.RoleId?.ToString() ?? string.Empty),
             new("client", ClientApps.Normalize(clientApp)),
         };
-        // Deliberately NOT adding Core.Constants.GuestClaims.GuestId here — that
-        // claim means "this is a Guest", and this is a User token. A User and a
-        // Guest can share the same internal id (see ICurrentGuest's remarks), so
-        // leaking that claim onto a User token let CurrentGuest resolve a
-        // logged-in admin as a Guest using their own user id.
+        // No Guest.Id claim here (or on the guest token either) — ICurrentGuest
+        // resolves Guest.Id from Guests.UserId, gated on role=="guest".
 
         // Role-based permissions — gate both server [HasPermission] and frontend nav.
         var addedPerms = new HashSet<string>();

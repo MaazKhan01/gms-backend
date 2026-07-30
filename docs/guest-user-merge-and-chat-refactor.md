@@ -13,13 +13,14 @@ Only the concerns that were duplicated purely to work around "Guest isn't a
 User" — chat, notifications, devices — move onto the shared `User`-based
 tables.
 
-Guest identity for the **existing** OTP/VIP-app auth flow is unchanged:
-`ICurrentGuest`/`CurrentGuest`/`GuestClaims` still resolve `Guest.Id` exactly
-as before, and every guest-scoped route (`/support-chat/my/*`,
-`/notifications/guest/*`, `/vip-app/*`, seating, invitations, etc.) is
-untouched. The **only** claim that changed is the guest JWT's
-`ClaimTypes.NameIdentifier`, which now carries the guest's linked `User.Id`
-instead of `Guest.Id` (see §4) — this is what lets `ICurrentUser`,
+Guest identity for the **existing** OTP/VIP-app auth flow still resolves to
+`Guest.Id` via `ICurrentGuest`, and every guest-scoped route
+(`/support-chat/my/*`, `/notifications/guest/*`, `/vip-app/*`, seating,
+invitations, etc.) is untouched. What changed is where that id comes from: the
+guest JWT now carries **only** the linked `User.Id` (`sub` and
+`ClaimTypes.NameIdentifier`) plus `role=="guest"` — the old `Guest.Id` claim and
+its `GuestClaims` constant are gone. `CurrentGuest` derives `Guest.Id` with one
+cached `Guests.UserId` lookup per request. This is what lets `ICurrentUser`,
 `Clients.User(...)` SignalR targeting, and `AuditInterceptor`'s
 `CreatedBy`/`UpdatedBy` stamping resolve correctly for a guest token the same
 way they already do for a staff token, without any client-side change.
@@ -100,10 +101,18 @@ migration's `Down()` comment.
   also creates the linked `User` (`CreateLinkedUserAsync`); `UpdateGuestAsync`
   keeps the linked `User`'s `FirstName`/`LastName` in sync. CSV import goes
   through `CreateGuestAsync`, so it's covered too.
-- `Infrastructure/Services/VipAppService.cs` — `BuildAccessToken`: the guest
-  JWT's `ClaimTypes.NameIdentifier` is now `guest.UserId` (previously
-  `guest.Id`). `GuestClaims.GuestId` (`"Id"` claim), which `ICurrentGuest`
-  reads, is unchanged.
+- `Infrastructure/Services/VipAppService.cs` — `BuildAccessToken`: `sub` and
+  `ClaimTypes.NameIdentifier` are both `guest.UserId` (previously `guest.Id`);
+  the `"Id"` (`Guest.Id`) claim is removed. Both must match — the JWT handler
+  maps inbound `sub` onto `NameIdentifier`, so a differing `sub` wins the
+  `FindFirst` and resolves the wrong identity. The refresh token's `sub` is
+  still `Guest.Id`; it's server-validated against a stored `jti` and never read
+  as an identity.
+- `Infrastructure/Services/CurrentGuest.cs` — now takes `IUnitOfWork` and
+  resolves `Guest.Id` from `Guests.UserId` (one cached query per request),
+  gated on `role=="guest"`. `Core/Constants/GuestClaims.cs` deleted.
+- `Core/Helpers/RealTimeHubService.cs` — same lookup on connect, because
+  senders still target `guest:{Guest.Id}` groups.
 - `Infrastructure/Services/SupportChatService.cs` — full rewrite onto the
   `UserId`/`Type`/`OtherUserId` model. Every existing public method keeps its
   exact signature and behavior for `AdminSupport` (guestId in, guest PublicId

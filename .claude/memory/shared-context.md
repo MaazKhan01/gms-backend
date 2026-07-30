@@ -16,11 +16,13 @@ call (previously a stub). Full writeup: `docs/guest-user-merge-and-chat-refactor
   merge, because `Guests.Email` has no uniqueness constraint (same person can
   have multiple Guest rows across events) — a full merge into `Users.Email`
   (which IS unique) would have collided.
-- Guest JWT's `NameIdentifier` claim now carries `Guest.UserId`, not
-  `Guest.Id` — `GuestClaims.GuestId` (what `ICurrentGuest` reads) is
-  unchanged. This was necessary for `Clients.User(...)`/`ICurrentUser` to
-  resolve a guest correctly, and incidentally fixes a pre-existing
-  id-collision risk between Guest.Id and User.Id.
+- Guest JWT carries only `Guest.UserId` (`sub` + `NameIdentifier`) plus
+  `role=="guest"`; no `Guest.Id` claim at all (`GuestClaims` deleted).
+  `ICurrentGuest`/`RealTimeHubService` derive `Guest.Id` from `Guests.UserId`.
+  Necessary for `Clients.User(...)`/`ICurrentUser` to resolve a guest, and it
+  removes the Guest.Id/User.Id collision risk entirely. Keep `sub` and
+  `NameIdentifier` identical — the JWT handler maps `sub` onto `NameIdentifier`,
+  so a stale `sub` silently wins `FindFirst`.
 - EF Core's SqlServer provider auto-filters a unique index to exclude NULLs
   whenever it covers a nullable column — caught this because it would have
   silently broken "one AdminSupport conversation per guest". Split into two

@@ -14,8 +14,8 @@ namespace API.Controllers.v1;
 // VIP Guest App — single mobile-facing controller. All endpoints under
 // api/v1/vip-app. Auth endpoints are public; everything else is guest-scoped.
 //
-// GuestId comes from ICurrentGuest (the "guestId" JWT claim issued by the
-// OTP-login flow), NOT ICurrentUser — a guest is not a system user.
+// GuestId comes from ICurrentGuest, which resolves it from the OTP-login
+// token's User.Id via Guests.UserId — NOT ICurrentUser, whose id is Users.Id.
 // ============================================================================
 [Route("api/v1/vip-app")]
 [Authorize]

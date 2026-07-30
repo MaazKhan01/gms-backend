@@ -1,54 +1,57 @@
 using System;
+using System.Linq;
 using System.Security.Claims;
 using Core.Common.Interfaces;
-using Core.Constants;
+using Core.Interfaces.Repositories;
 using Microsoft.AspNetCore.Http;
 
 namespace Infrastructure.Services;
 
-// Reads the guest identity straight off the JWT claims — no DB lookup. The
-// guest token carries a GuestClaims.GuestId ("Id") claim (see VipAppService
-// token generation).
+// Resolves the calling guest from the guest JWT. The token carries only the
+// guest's linked User.Id (ClaimTypes.NameIdentifier) plus role=="guest" — no
+// Guest.Id claim — so Guest.Id is looked up from Guests.UserId (1:1, see the
+// Guest entity remarks). One query per request, cached.
 //
-// Also requires the "role" claim to be "guest": a Guest and a User can share
-// the same internal id, so trusting the id claim alone would let a User token
-// resolve as "Guest #{their own user id}" if that claim were ever present on
-// a User token too (see AuthService — it deliberately never adds it).
-public class CurrentGuest(IHttpContextAccessor _http) : ICurrentGuest
+// The role=="guest" guard matters: NameIdentifier is a plain Users.Id on staff
+// tokens too, and without the guard a staff token whose user happens to own a
+// Guest row would resolve as that guest.
+public class CurrentGuest(IHttpContextAccessor _http, IUnitOfWork _unitOfWork) : ICurrentGuest
 {
-    public const string GuestIdClaim = GuestClaims.UserId;
     private const string GuestRoleValue = "guest";
+
+    private int? _guestId;
 
     private ClaimsPrincipal User => _http.HttpContext?.User;
 
-    private string? Role =>
-     User?.FindFirstValue(ClaimTypes.Role);
-
-    private bool isGuest =>
+    // Both spellings: the token is issued with a short "role" claim, and whether
+    // it survives as "role" or is mapped to ClaimTypes.Role depends on the
+    // handler's MapInboundClaims (JsonWebTokenHandler vs JwtSecurityTokenHandler).
+    private bool IsGuestToken =>
         string.Equals(
-            Role,
+            User?.FindFirstValue("role") ?? User?.FindFirstValue(ClaimTypes.Role),
             GuestRoleValue,
             StringComparison.OrdinalIgnoreCase);
-    public int GuestId => GetGuestId();
 
-    private int GetGuestId()
+    public int GuestId => _guestId ??= ResolveGuestId();
+
+    private int ResolveGuestId()
     {
-        if (!isGuest)
+        if (!IsGuestToken)
         {
             return 0;
         }
 
-        var guestIdClaim = User?.FindFirstValue(GuestIdClaim);
-
-        if (string.IsNullOrWhiteSpace(guestIdClaim))
+        if (!int.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) || userId == 0)
         {
             return 0;
         }
 
-        return int.TryParse(guestIdClaim, out var guestId)
-            ? guestId
-            : 0;
+        return _unitOfWork.Guests.QueryNoTracking()
+            .Where(g => g.UserId == userId)
+            .Select(g => g.Id)
+            .FirstOrDefault();
     }
+
     public string Email => User?.FindFirstValue(ClaimTypes.Email);
 
     public bool IsAuthenticated => GuestId != 0;

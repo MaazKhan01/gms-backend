@@ -6,11 +6,11 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Core.Constants;
+using Core.Interfaces.Repositories;
 
 namespace Core.Helpers
 {
-    public class RealTimeHubService : Hub
+    public class RealTimeHubService(IUnitOfWork _unitOfWork) : Hub
     {
         public async Task JoinGroup(string connectionId)
         {
@@ -33,17 +33,24 @@ namespace Core.Helpers
                     await Groups.AddToGroupAsync(Context.ConnectionId, userId);
                 }
 
-                // Guest tokens carry a GuestClaims.GuestId ("Id") claim plus role=="guest"
-                // and also set NameIdentifier to the guest's own internal id — which can
-                // numerically collide with a User's internal id above. Give guests a
-                // distinctly-named group so guest-targeted sends (Groups, not Clients.User)
-                // can't cross-deliver to a User. The role check mirrors CurrentGuest's
-                // guard — a User token must never join a guest group.
-                var isGuestToken = string.Equals(Context.User.FindFirst("role")?.Value, "guest", StringComparison.OrdinalIgnoreCase);
-                var guestId = isGuestToken ? Context.User.FindFirst(GuestClaims.UserId)?.Value : null;
-                if (!string.IsNullOrEmpty(guestId))
+                // A guest token carries only its linked User.Id (the NameIdentifier
+                // above) plus role=="guest". Senders still target guests by Guest.Id
+                // ("guest:{Guest.Id}" — see TransportAppService), so resolve it from
+                // Guests.UserId here. The role check mirrors CurrentGuest's guard — a
+                // staff token must never join a guest group.
+                var role = Context.User.FindFirst("role")?.Value
+                    ?? Context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+                var isGuestToken = string.Equals(role, "guest", StringComparison.OrdinalIgnoreCase);
+                if (isGuestToken && int.TryParse(userId, out var guestUserId))
                 {
-                    await Groups.AddToGroupAsync(Context.ConnectionId, $"guest:{guestId}");
+                    var guestId = await _unitOfWork.Guests.QueryNoTracking()
+                        .Where(g => g.UserId == guestUserId)
+                        .Select(g => g.Id)
+                        .FirstOrDefaultAsync();
+                    if (guestId != 0)
+                    {
+                        await Groups.AddToGroupAsync(Context.ConnectionId, $"guest:{guestId}");
+                    }
                 }
             }
 
