@@ -349,8 +349,14 @@ public class NotificationService(
 
             var data = items.Select(n => new GuestNotificationResponse
             {
-                Id = n.PublicId, Title = n.Title, Message = n.Message, Type = n.Type,
-                Read = n.Read == true, CreatedAt = n.CreatedAt, RedirectUrl = n.RedirectUrl, Data = n.Data
+                Id = n.PublicId,
+                Title = n.Title,
+                Message = n.Message,
+                Type = n.Type,
+                Read = n.Read == true,
+                CreatedAt = n.CreatedAt,
+                RedirectUrl = n.RedirectUrl,
+                Data = n.Data
             }).ToList();
 
             return ApiResponse<List<GuestNotificationResponse>>.SuccessResponse(data);
@@ -454,6 +460,37 @@ public class NotificationService(
     public async Task<ApiResponse<bool>> RegisterDeviceAsync(RegisterDeviceRequest request, CancellationToken ct = default)
         => await RegisterDeviceForUserAsync(_currentUser.UserId, request, ct);
 
+    public async Task<ApiResponse<DeviceResponse>> UpdateDeviceAsync(UpdateDeviceRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request?.Token))
+                return ApiResponse<DeviceResponse>.ErrorResponse("Device token is required");
+
+            var device = await _unitOfWork.Devices
+                .FindFirstOrDefaultAsync(d => d.Token == request.Token && d.UserId == _currentUser.UserId, ct);
+            if (device is null)
+                return ApiResponse<DeviceResponse>.NotFoundResponse("No device registered with this token");
+
+            if (request.DeviceIdentifier != null) device.DeviceIdentifier = request.DeviceIdentifier;
+            if (request.Platform != null) device.Platform = request.Platform;
+            if (request.DeviceModel != null) device.DeviceModel = request.DeviceModel;
+            if (request.OsVersion != null) device.OsVersion = request.OsVersion;
+            if (request.AppVersion != null) device.AppVersion = request.AppVersion;
+            if (request.NotificationsEnabled.HasValue) device.NotificationsEnabled = request.NotificationsEnabled.Value;
+            device.LastActiveAt = DateTime.UtcNow;
+
+            _unitOfWork.Devices.Update(device);
+            await _unitOfWork.SaveChangesAsync(ct);
+            return ApiResponse<DeviceResponse>.SuccessResponse(MapDevice(device), "Device updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating device");
+            return ApiResponse<DeviceResponse>.ServerErrorResponse("An error occurred while updating the device");
+        }
+    }
+
     public async Task<ApiResponse<bool>> DeregisterDeviceAsync(string token, CancellationToken ct = default)
     {
         try
@@ -476,6 +513,60 @@ public class NotificationService(
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while deregistering the device");
         }
     }
+
+    public async Task<ApiResponse<DeviceResponse>> GetMyDeviceByTokenAsync(string token, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return ApiResponse<DeviceResponse>.ErrorResponse("Device token is required");
+
+            var device = await _unitOfWork.Devices.QueryNoTracking()
+                .FirstOrDefaultAsync(d => d.Token == token && d.UserId == _currentUser.UserId, ct);
+
+            return device is null
+                ? ApiResponse<DeviceResponse>.NotFoundResponse("No device registered with this token")
+                : ApiResponse<DeviceResponse>.SuccessResponse(MapDevice(device));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking device token");
+            return ApiResponse<DeviceResponse>.ServerErrorResponse("An error occurred while checking the device token");
+        }
+    }
+
+    public async Task<ApiResponse<List<DeviceResponse>>> GetMyDevicesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var devices = await _unitOfWork.Devices.QueryNoTracking()
+                .Where(d => d.UserId == _currentUser.UserId)
+                .OrderByDescending(d => d.LastActiveAt)
+                .ToListAsync(ct);
+
+            return ApiResponse<List<DeviceResponse>>.SuccessResponse(devices.Select(MapDevice).ToList());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching devices for user {UserId}", _currentUser.UserId);
+            return ApiResponse<List<DeviceResponse>>.ServerErrorResponse("An error occurred while fetching devices");
+        }
+    }
+
+    private static DeviceResponse MapDevice(Device d) => new()
+    {
+        Id = d.PublicId,
+        Token = d.Token,
+        Platform = d.Platform,
+        DeviceIdentifier = d.DeviceIdentifier,
+        DeviceModel = d.DeviceModel,
+        OsVersion = d.OsVersion,
+        AppVersion = d.AppVersion,
+        NotificationsEnabled = d.NotificationsEnabled,
+        IsActive = d.IsActive,
+        LastActiveAt = d.LastActiveAt,
+        TokenUpdatedAt = d.TokenUpdatedAt
+    };
 
     // Shared upsert for any authenticated User (staff, driver, or guest) —
     // one row per token, re-pointed at whichever User most recently registered

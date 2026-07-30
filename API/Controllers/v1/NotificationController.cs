@@ -9,7 +9,6 @@ using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Noification;
-using Core.ViewModel.VipApp;
 
 namespace API.Controllers.v1;
 
@@ -19,7 +18,8 @@ namespace API.Controllers.v1;
 // same routes: a guest is not a row in the Users table (OTP login, separate
 // GuestNotification table, resolved via ICurrentGuest not ICurrentUser), so
 // merging them into one set of endpoints would require conflating two
-// distinct identities and audiences.
+// distinct identities and audiences. Device registration lives on
+// DevicesController now (same route prefix).
 [Route("api/v1/notifications")]
 [Authorize]
 [ApiVersion("1.0")]
@@ -127,29 +127,4 @@ public class NotificationsController : Controllers.BaseApiController
         var result = await _notificationService.MarkAllGuestNotificationsReadAsync(_currentGuest.GuestId, ct);
         return ToResponse(result);
     }
-
-    [HttpPost("guest/devices")]
-    public async Task<IActionResult> RegisterGuestDevice([FromBody] RegisterDeviceRequest request, CancellationToken ct)
-    {
-        var result = await _notificationService.RegisterGuestDeviceAsync(_currentGuest.GuestId, request, ct);
-        return ToResponse(result);
-    }
-
-    // ============================================================
-    // Device registration — any authenticated User (staff, driver, or a guest
-    // token, whose NameIdentifier now resolves to their own linked User —
-    // see VipAppService.BuildAccessToken). "guest/devices" above is kept only
-    // for the existing VIP app build; new clients (driver app included) should
-    // use these instead.
-    // ============================================================
-
-    [HttpPost("devices")]
-    public async Task<IActionResult> RegisterDevice([FromBody] RegisterDeviceRequest request, CancellationToken ct)
-        => ToResponse(await _notificationService.RegisterDeviceAsync(request, ct));
-
-    // Token via query string, not a route segment — FCM tokens can contain
-    // characters ('/', '+') that don't round-trip safely through a URL path.
-    [HttpDelete("devices")]
-    public async Task<IActionResult> DeregisterDevice([FromQuery] string token, CancellationToken ct)
-        => ToResponse(await _notificationService.DeregisterDeviceAsync(token, ct));
 }

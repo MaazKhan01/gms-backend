@@ -41,5 +41,19 @@ public interface INotificationService
     // ---- Device registration — any authenticated User (staff, driver, or
     // guest), resolved from ICurrentUser. See Device entity remarks. ----
     Task<ApiResponse<bool>> RegisterDeviceAsync(RegisterDeviceRequest request, CancellationToken ct = default);
+
+    // Updates fields (platform, model, OS/app version, notifications toggle,
+    // device identifier) on the caller's already-registered Device row,
+    // found by Token. Distinct from RegisterDeviceAsync's upsert-by-token.
+    Task<ApiResponse<DeviceResponse>> UpdateDeviceAsync(UpdateDeviceRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeregisterDeviceAsync(string token, CancellationToken ct = default);
+
+    // Existence check: does this exact token already have a Device row for the
+    // current User? Lets a client skip re-registering (or detect a stale local
+    // token) without a write. Scoped to the caller — never returns another
+    // User's device even if the token string happened to match.
+    Task<ApiResponse<DeviceResponse>> GetMyDeviceByTokenAsync(string token, CancellationToken ct = default);
+
+    // Every device currently registered to the caller.
+    Task<ApiResponse<List<DeviceResponse>>> GetMyDevicesAsync(CancellationToken ct = default);
 }

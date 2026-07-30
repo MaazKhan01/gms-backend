@@ -11,6 +11,7 @@ namespace Core.ViewModel.VipApp;
 
 // ---------------- Auth ----------------
 public record RequestOtpRequest(string Email);
+
 public record VerifyOtpRequest(string Email, string Code);
 public record RefreshTokenRequest(string RefreshToken);
 public record LogoutRequest(string RefreshToken);
@@ -21,6 +22,11 @@ public class GuestAuthResponse
     public string RefreshToken { get; set; }
     public DateTime ExpiresAt { get; set; }
     public GuestProfileResponse Guest { get; set; }
+
+    // Pulled from the guest's linked User's Device row — verify-otp never
+    // writes to Devices, only reads the caller's existing registration.
+    public string FcmToken { get; set; }
+    public string DeviceId { get; set; }
 }
 
 // ---------------- Events / selection ----------------
@@ -254,3 +260,35 @@ public class GuestNotificationResponse
     public string Data { get; set; }
 }
 public record RegisterDeviceRequest(string Token, string Platform); // ios / android
+
+// Update fields on an already-registered Device row. Token identifies the
+// row (must belong to the caller); every other field is optional — only
+// non-null ones are applied. Use POST devices instead if the token itself
+// changed (that's an upsert, not an update).
+public class UpdateDeviceRequest
+{
+
+    public Guid UserId { get; set; }
+    public string Token { get; set; }
+    public string DeviceIdentifier { get; set; }
+    public string Platform { get; set; }
+    public string DeviceModel { get; set; }
+    public string OsVersion { get; set; }
+    public string AppVersion { get; set; }
+    public bool? NotificationsEnabled { get; set; }
+}
+
+public class DeviceResponse
+{
+    public Guid Id { get; set; }
+    public string Token { get; set; }
+    public string Platform { get; set; }
+    public string DeviceIdentifier { get; set; }
+    public string DeviceModel { get; set; }
+    public string OsVersion { get; set; }
+    public string AppVersion { get; set; }
+    public bool NotificationsEnabled { get; set; }
+    public bool IsActive { get; set; }
+    public DateTime? LastActiveAt { get; set; }
+    public DateTime? TokenUpdatedAt { get; set; }
+}

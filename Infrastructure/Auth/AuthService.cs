@@ -65,10 +65,25 @@ public class AuthService(
             IsRevoked = false,
             CreatedAt = DateTime.UtcNow
         }, ct);
+
         await _unitOfWork.SaveChangesAsync(ct);
 
-        return ApiResponse<TokenResponse>.SuccessResponse(BuildTokenResponse(user, accessToken, refreshToken), "Login successful");
+        var response = BuildTokenResponse(user, accessToken, refreshToken);
+        var device = await GetLatestDeviceAsync(user.Id, ct);
+        response.FcmToken = device?.Token;
+        response.DeviceId = device?.DeviceIdentifier;
+
+        return ApiResponse<TokenResponse>.SuccessResponse(response, "Login successful");
     }
+
+    // Read-only — login never writes to Devices, only reports the caller's
+    // most recently active registration (see NotificationService for the
+    // register/update endpoints that actually write this table).
+    private Task<Device> GetLatestDeviceAsync(int userId, CancellationToken ct)
+        => _unitOfWork.Devices.Query()
+            .Where(d => d.UserId == userId && d.IsActive)
+            .OrderByDescending(d => d.LastActiveAt)
+            .FirstOrDefaultAsync(ct);
 
     public async Task<ApiResponse<TokenResponse>> RefreshTokenAsync(string refreshToken, CancellationToken ct = default)
     {
