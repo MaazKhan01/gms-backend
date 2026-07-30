@@ -28,9 +28,20 @@ namespace DomainPersistence.Entities
         // The actual issue/revoke lifecycle lives on the Invitation row.
         public bool AccreditationRequired { get; set; }
 
+        // 1:1 with a Users row, auto-provisioned alongside the guest (see
+        // GuestService.CreateGuestAsync) with RoleId -> the "guest" role
+        // (PortalAccess=false, no password — OTP via CurrentGuest/VipAppService
+        // remains the only way in). Gives chat/notifications/devices one shared
+        // identity space with staff instead of a second, duplicated one. Email is
+        // deliberately NOT copied onto the User row: Guests.Email has no
+        // uniqueness constraint (the same person can be re-invited per event),
+        // which would collide with Users' filtered-unique Email index.
+        public int UserId { get; set; }
+
         public virtual ICollection<GuestSession> GuestSessions { get; set; } = new List<GuestSession>();
         public virtual Nationality Nationality { get; set; }
         public virtual Organization OrganizationRef { get; set; }
         public virtual Event Event { get; set; }
+        public virtual User User { get; set; }
     }
 }

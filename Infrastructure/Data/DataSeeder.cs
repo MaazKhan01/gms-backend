@@ -166,16 +166,17 @@ public static class DataSeeder
             var role = await db.Roles.FirstOrDefaultAsync(r => r.Code == def.Code, ct);
             if (role == null)
             {
-                role = new Role { Code = def.Code, Name = def.Name, Description = def.Description };
+                role = new Role { Code = def.Code, Name = def.Name, Description = def.Description, PortalAccess = def.PortalAccess };
                 db.Roles.Add(role);
                 // Persist so the DB assigns role.Id before we wire its RolePermissions.
                 await db.SaveChangesAsync(ct);
             }
             else
             {
-                // Sync name/description in case it changed.
+                // Sync name/description/portal-access in case it changed.
                 role.Name = def.Name;
                 role.Description = def.Description;
+                role.PortalAccess = def.PortalAccess;
             }
 
             // Diff: only remove stale links and add missing ones — never re-insert existing rows.

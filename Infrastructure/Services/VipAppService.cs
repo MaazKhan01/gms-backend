@@ -225,7 +225,14 @@ public class VipAppService(
         var claims = new List<Claim>
         {
             new("sub", guest.Id.ToString()),
-            new(ClaimTypes.NameIdentifier, guest.Id.ToString()),
+            // NameIdentifier is the guest's linked User.Id (Guest.UserId), not
+            // Guest.Id — Guest is now a 1:1 profile extension of User (see Guest
+            // entity remarks), so this is a real, disjoint Users.Id: ICurrentUser,
+            // Clients.User(...) targeting, and AuditInterceptor's CreatedBy/UpdatedBy
+            // stamping all resolve correctly for a guest token, the same way they
+            // already do for a staff token. GuestClaims.GuestId below is unchanged —
+            // ICurrentGuest and every existing guest-scoped route still key off Guest.Id.
+            new(ClaimTypes.NameIdentifier, guest.UserId.ToString()),
             new(ClaimTypes.Email, guest.Email ?? string.Empty),
             new(ClaimTypes.Name, fullName),
             new("role", "guest"),

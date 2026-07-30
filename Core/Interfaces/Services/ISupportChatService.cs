@@ -33,4 +33,10 @@ public interface ISupportChatService
     Task<ApiResponse<bool>> MarkReadByAdminAsync(Guid conversationId, CancellationToken ct = default);
     Task<ApiResponse<bool>> CloseAsync(Guid conversationId, CancellationToken ct = default);
     Task<ApiResponse<bool>> ReopenAsync(Guid conversationId, CancellationToken ct = default);
+
+    // ---- Driver <-> Guest (called from SupportChatController; senderUserId/
+    // senderRole are resolved by the controller from ICurrentUser/ICurrentGuest,
+    // never trusted from the request body) ----
+    Task<ApiResponse<SupportMessageResponse>> SendDriverGuestMessageAsync(
+        int senderUserId, string senderRole, SendDriverGuestMessageRequest request, CancellationToken ct = default);
 }

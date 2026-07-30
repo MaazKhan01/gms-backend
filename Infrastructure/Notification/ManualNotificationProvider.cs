@@ -9,11 +9,11 @@ using Microsoft.Extensions.Logging;
 // RealTimeAlertService) — no namespace declared, global namespace.
 //
 // Current implementation: delivers over the existing SignalR hub only — no
-// external push SDK. A User recipient is reached via the built-in
-// Clients.User(...) (their NameIdentifier claim). A Guest recipient is reached
-// via a dedicated "guest:{id}" group (see RealTimeHubService) rather than
-// Clients.User(...), because guest and user JWTs can carry the same numeric id
-// and would otherwise collide on the SignalR user-id concept.
+// external push SDK. Every recipient (staff, driver, or guest — all Users
+// now) is reached via the built-in Clients.User(...), keyed by their own
+// Users.Id (their NameIdentifier claim — see VipAppService.BuildAccessToken
+// for why a guest token's NameIdentifier is the guest's linked User.Id, not
+// Guest.Id, precisely so this works uniformly for every audience).
 public class ManualNotificationProvider(
     IRealTimeAlertService _realTimeAlertService,
     ILogger<ManualNotificationProvider> _logger) : IPushNotificationProvider
@@ -27,24 +27,14 @@ public class ManualNotificationProvider(
             // string-only Data dictionary.
             object data = payload.Payload ?? payload.Data;
 
-            if (payload.RecipientType == NotificationRecipientType.User && payload.UserId.HasValue)
-            {
-                await _realTimeAlertService.SendToUserAsync(
-                    payload.Topic, payload.UserId.Value.ToString(), payload.Title, payload.Body, data
-                ).ConfigureAwait(false);
-            }
-            else if (payload.RecipientType == NotificationRecipientType.Guest && payload.GuestId.HasValue)
-            {
-                await _realTimeAlertService.SendToGroupAsync(
-                    payload.Topic, $"guest:{payload.GuestId.Value}", payload.Title, payload.Body, data
-                ).ConfigureAwait(false);
-            }
+            await _realTimeAlertService.SendToUserAsync(
+                payload.Topic, payload.UserId.ToString(), payload.Title, payload.Body, data
+            ).ConfigureAwait(false);
         }
         catch (System.Exception ex)
         {
-            // Best-effort — the durable Notification/GuestNotification row already
-            // persisted by the caller is the source of truth, this is just the
-            // real-time nudge.
+            // Best-effort — the durable Notification row already persisted by
+            // the caller is the source of truth, this is just the real-time nudge.
             _logger.LogError(ex, "Error dispatching manual push notification");
         }
     }

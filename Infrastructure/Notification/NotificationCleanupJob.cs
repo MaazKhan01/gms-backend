@@ -26,19 +26,16 @@ public class NotificationCleanupJob(
 
         try
         {
-            var userNotificationsDeleted = await _unitOfWork.Notifications.Query()
+            // Guests are Users now — one Notifications table for every audience,
+            // so one purge sweep covers all of them.
+            var notificationsDeleted = await _unitOfWork.Notifications.Query()
                 .IgnoreQueryFilters()
                 .Where(n => n.CreatedAt < cutoff && (n.Read == true || n.IsDeleted == true))
                 .ExecuteDeleteAsync(ct);
 
-            var guestNotificationsDeleted = await _unitOfWork.GuestNotifications.Query()
-                .IgnoreQueryFilters()
-                .Where(n => n.CreatedAt < cutoff && (n.Read || n.IsDeleted == true))
-                .ExecuteDeleteAsync(ct);
-
             _logger.LogInformation(
-                "Notification cleanup: purged {UserCount} user + {GuestCount} guest notification(s) older than {Days} day(s)",
-                userNotificationsDeleted, guestNotificationsDeleted, retentionDays);
+                "Notification cleanup: purged {Count} notification(s) older than {Days} day(s)",
+                notificationsDeleted, retentionDays);
         }
         catch (Exception ex)
         {

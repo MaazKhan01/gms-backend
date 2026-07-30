@@ -1,3 +1,4 @@
+using System;
 using Core.Common;
 
 namespace Core.Constants;
@@ -9,7 +10,10 @@ namespace Core.Constants;
 /// </summary>
 public static class RoleDefinitions
 {
-    public sealed record RoleDef(string Code, string Name, string Description, string[] Permissions);
+    // PortalAccess defaults to true so every pre-existing RoleDef call site (none
+    // of which pass it) keeps its current behavior. Only roles that must never
+    // sign into the admin portal (driver, guest) pass false explicitly.
+    public sealed record RoleDef(string Code, string Name, string Description, string[] Permissions, bool PortalAccess = true);
 
     // Every read-only ("view") permission across modules — used by Viewer and
     // mixed into manager roles that need to see neighbouring modules.
@@ -76,9 +80,13 @@ public static class RoleDefinitions
             PermissionCodes.ReportsView, PermissionCodes.ReportsGenerate, PermissionCodes.DashboardView,
         }),
         new("viewer", "Viewer", "Read-only access across all modules", AllViews),
-        new("driver", "Driver", "Ground-transport driver with vehicle and license details on file", new[]
+        new(Roles.DRIVER, "Driver", "Ground-transport driver with vehicle and license details on file", new[]
         {
             PermissionCodes.DashboardView,
-        }),
+        }, PortalAccess: false),
+        // Auto-provisioned 1:1 with a Guest row (see GuestService.CreateGuestAsync) —
+        // never created directly by an admin. No portal access, no permissions:
+        // a guest only ever authenticates into the VIP app via OTP, never the portal.
+        new(Roles.GUEST, "Guest", "VIP guest app account, auto-provisioned alongside its Guest profile", Array.Empty<string>(), PortalAccess: false),
     };
 }

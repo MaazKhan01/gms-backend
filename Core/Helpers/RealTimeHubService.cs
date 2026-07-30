@@ -40,7 +40,7 @@ namespace Core.Helpers
                 // can't cross-deliver to a User. The role check mirrors CurrentGuest's
                 // guard — a User token must never join a guest group.
                 var isGuestToken = string.Equals(Context.User.FindFirst("role")?.Value, "guest", StringComparison.OrdinalIgnoreCase);
-                var guestId = isGuestToken ? Context.User.FindFirst(GuestClaims.GuestId)?.Value : null;
+                var guestId = isGuestToken ? Context.User.FindFirst(GuestClaims.UserId)?.Value : null;
                 if (!string.IsNullOrEmpty(guestId))
                 {
                     await Groups.AddToGroupAsync(Context.ConnectionId, $"guest:{guestId}");

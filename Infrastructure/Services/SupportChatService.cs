@@ -20,10 +20,15 @@ using DomainPersistence.Entities;
 namespace Infrastructure.Services;
 
 // ============================================================================
-// Support Chat — guest ↔ admin. A guest has exactly one implicit conversation
-// (SupportConversation, one row per GuestId), matching SupportMessage's existing
-// one-thread-per-guest design. Both guest and admin entry points funnel through
-// the same get-or-create + append + notify sequence below.
+// Support Chat — two products share the same SupportConversation/SupportMessage
+// tables (see SupportConversation.Type):
+//   AdminSupport — guest <-> admin. One implicit conversation per guest.
+//   DriverGuest  — driver <-> guest. One conversation per (guest, driver) pair.
+// Every guest/admin/driver identity in this file is a Users.Id — Guest is now
+// a 1:1 profile extension of User (Guest.UserId), so a guest's "own" id for
+// chat purposes is Guest.UserId, never Guest.Id. Guest.Id (and its PublicId)
+// is still what the guest-facing DTOs expose as "GuestId", to keep the wire
+// contract unchanged for existing admin/guest clients.
 // ============================================================================
 public class SupportChatService(
     IUnitOfWork _unitOfWork,
@@ -35,13 +40,19 @@ public class SupportChatService(
     private const int PreviewLength = 200;
 
     // ============================================================
-    // Guest-facing
+    // Guest-facing (AdminSupport only — a DriverGuest thread never shows up
+    // in "my conversation with support")
     // ============================================================
     public async Task<ApiResponse<List<SupportConversationSummaryResponse>>> GetMyConversationsAsync(int guestId, CancellationToken ct = default)
     {
+        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
+        if (guest is null)
+            return ApiResponse<List<SupportConversationSummaryResponse>>.SuccessResponse(new());
+
         var conversation = await _unitOfWork.SupportConversations.QueryNoTracking()
-            .Include(c => c.Guest)
-            .FirstOrDefaultAsync(c => c.GuestId == guestId, ct);
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.Nationality)
+            .FirstOrDefaultAsync(c => c.UserId == guest.UserId && c.Type == SupportChatTypes.AdminSupport, ct);
 
         var data = new List<SupportConversationSummaryResponse>();
         if (conversation != null)
@@ -55,10 +66,14 @@ public class SupportChatService(
         var page = request?.PageNumber > 0 ? request.PageNumber : 1;
         var size = request?.PageSize > 0 ? request.PageSize : 50;
 
+        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
+        if (guest is null)
+            return ApiResponse<PaginatedResponse<SupportMessageResponse>>.SuccessResponse(new(new(), 0, page, size));
+
         var query = _unitOfWork.SupportMessages.QueryNoTracking()
             .Include(m => m.SenderUser)
             .Include(m => m.Conversation)
-            .Where(m => m.GuestId == guestId);
+            .Where(m => m.UserId == guest.UserId && m.Conversation.Type == SupportChatTypes.AdminSupport);
 
         var total = await query.CountAsync(ct);
         var items = await query
@@ -78,7 +93,11 @@ public class SupportChatService(
         if (validation != null)
             return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
 
-        var conversation = await GetOrCreateConversationAsync(guestId, ct);
+        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
+        if (guest is null)
+            return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest not found");
+
+        var conversation = await GetOrCreateConversationAsync(guest.UserId, SupportChatTypes.AdminSupport, null, ct);
         if (conversation.Status == SupportChatStatuses.Closed)
         {
             conversation.Status = SupportChatStatuses.Open;
@@ -89,7 +108,8 @@ public class SupportChatService(
         var body = request.Body?.Trim() ?? string.Empty;
         var msg = new SupportMessage
         {
-            GuestId = guestId,
+            UserId = guest.UserId,
+            SenderUserId = guest.UserId,
             ConversationId = conversation.Id,
             Conversation = conversation,
             Body = body,
@@ -116,7 +136,12 @@ public class SupportChatService(
 
     public async Task<ApiResponse<bool>> MarkReadByGuestAsync(int guestId, CancellationToken ct = default)
     {
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.GuestId == guestId, ct);
+        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
+        if (guest is null)
+            return ApiResponse<bool>.SuccessResponse(true, "Nothing to mark read");
+
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.UserId == guest.UserId && c.Type == SupportChatTypes.AdminSupport, ct);
         if (conversation is null)
             return ApiResponse<bool>.SuccessResponse(true, "Nothing to mark read");
 
@@ -135,7 +160,7 @@ public class SupportChatService(
     }
 
     // ============================================================
-    // Admin-facing
+    // Admin-facing (AdminSupport only)
     // ============================================================
     public async Task<ApiResponse<PaginatedResponse<SupportConversationSummaryResponse>>> GetConversationsAsync(SupportConversationPagedRequest request, CancellationToken ct = default)
     {
@@ -143,9 +168,9 @@ public class SupportChatService(
         var size = request?.PageSize > 0 ? request.PageSize : 20;
 
         var query = _unitOfWork.SupportConversations.QueryNoTracking()
-            .Include(c => c.Guest).ThenInclude(g => g.OrganizationRef)
-            .Include(c => c.Guest).ThenInclude(g => g.Nationality)
-            .AsQueryable();
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.Nationality)
+            .Where(c => c.Type == SupportChatTypes.AdminSupport);
 
         if (request?.OnlyUnread == true)
             query = query.Where(c => c.UnreadByAdminCount > 0);
@@ -155,25 +180,25 @@ public class SupportChatService(
 
         if (!string.IsNullOrWhiteSpace(request?.SearchTerm))
             query = query.Where(c =>
-                (c.Guest.FirstName + " " + c.Guest.LastName).Contains(request.SearchTerm) ||
-                (c.Guest.Email != null && c.Guest.Email.Contains(request.SearchTerm)));
+                (c.User.FirstName + " " + c.User.LastName).Contains(request.SearchTerm) ||
+                (c.User.GuestProfile.Email != null && c.User.GuestProfile.Email.Contains(request.SearchTerm)));
 
         if (!string.IsNullOrWhiteSpace(request?.Tier))
         {
             var tier = request.Tier.ToLower();
-            query = query.Where(c => c.Guest.Tier.ToLower() == tier);
+            query = query.Where(c => c.User.GuestProfile.Tier.ToLower() == tier);
         }
 
         if (request?.OrganizationId.HasValue == true && request.OrganizationId != Guid.Empty)
         {
             var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.OrganizationId.Value, ct);
-            query = query.Where(c => org != null && c.Guest.OrganizationId == org.Id);
+            query = query.Where(c => org != null && c.User.GuestProfile.OrganizationId == org.Id);
         }
 
         if (request?.NationalityId.HasValue == true && request.NationalityId != Guid.Empty)
         {
             var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(request.NationalityId.Value, ct);
-            query = query.Where(c => nat != null && c.Guest.NationalityId == nat.Id);
+            query = query.Where(c => nat != null && c.User.GuestProfile.NationalityId == nat.Id);
         }
 
         var total = await query.CountAsync(ct);
@@ -193,7 +218,8 @@ public class SupportChatService(
 
     public async Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetMessagesAsync(Guid conversationId, PagedRequest request, CancellationToken ct = default)
     {
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.PublicId == conversationId, ct);
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.PublicId == conversationId && c.Type == SupportChatTypes.AdminSupport, ct);
         if (conversation is null)
             return ApiResponse<PaginatedResponse<SupportMessageResponse>>.NotFoundResponse("Conversation not found");
 
@@ -223,17 +249,18 @@ public class SupportChatService(
         if (validation != null)
             return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
 
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.PublicId == conversationId, ct);
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.PublicId == conversationId && c.Type == SupportChatTypes.AdminSupport, ct);
         if (conversation is null)
             return ApiResponse<SupportMessageResponse>.NotFoundResponse("Conversation not found");
 
         return await SendAdminMessageAsync(conversation, request, ct);
     }
 
-    // Admin-initiated: get-or-create the guest's conversation, then send through
-    // the exact same path ReplyAsync uses. Safe to call even when a conversation
-    // already exists for this guest (e.g. the admin's local list was stale) —
-    // it just continues that thread rather than erroring or duplicating it.
+    // Admin-initiated: get-or-create the guest's AdminSupport conversation, then
+    // send through the exact same path ReplyAsync uses. Safe to call even when a
+    // conversation already exists for this guest (e.g. the admin's local list
+    // was stale) — it just continues that thread rather than erroring or duplicating it.
     public async Task<ApiResponse<SupportMessageResponse>> StartOrReplyByGuestAsync(Guid guestId, SendSupportMessageRequest request, CancellationToken ct = default)
     {
         var validation = ValidateSend(request);
@@ -244,7 +271,7 @@ public class SupportChatService(
         if (guest is null)
             return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest not found");
 
-        var conversation = await GetOrCreateConversationAsync(guest.Id, ct);
+        var conversation = await GetOrCreateConversationAsync(guest.UserId, SupportChatTypes.AdminSupport, null, ct);
         return await SendAdminMessageAsync(conversation, request, ct);
     }
 
@@ -268,7 +295,7 @@ public class SupportChatService(
         var adminUserId = _currentUser.UserId;
         var msg = new SupportMessage
         {
-            GuestId = conversation.GuestId,
+            UserId = conversation.UserId,
             ConversationId = conversation.Id,
             Conversation = conversation,
             Body = body,
@@ -299,7 +326,8 @@ public class SupportChatService(
 
     public async Task<ApiResponse<bool>> MarkReadByAdminAsync(Guid conversationId, CancellationToken ct = default)
     {
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.PublicId == conversationId, ct);
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.PublicId == conversationId && c.Type == SupportChatTypes.AdminSupport, ct);
         if (conversation is null)
             return ApiResponse<bool>.NotFoundResponse("Conversation not found");
 
@@ -319,7 +347,8 @@ public class SupportChatService(
 
     public async Task<ApiResponse<bool>> CloseAsync(Guid conversationId, CancellationToken ct = default)
     {
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.PublicId == conversationId, ct);
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.PublicId == conversationId && c.Type == SupportChatTypes.AdminSupport, ct);
         if (conversation is null)
             return ApiResponse<bool>.NotFoundResponse("Conversation not found");
 
@@ -334,7 +363,8 @@ public class SupportChatService(
 
     public async Task<ApiResponse<bool>> ReopenAsync(Guid conversationId, CancellationToken ct = default)
     {
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.PublicId == conversationId, ct);
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.PublicId == conversationId && c.Type == SupportChatTypes.AdminSupport, ct);
         if (conversation is null)
             return ApiResponse<bool>.NotFoundResponse("Conversation not found");
 
@@ -348,16 +378,150 @@ public class SupportChatService(
     }
 
     // ============================================================
+    // Driver <-> Guest (task: one endpoint, start-or-reuse + targeting + validation)
+    // ============================================================
+    public async Task<ApiResponse<SupportMessageResponse>> SendDriverGuestMessageAsync(
+        int senderUserId, string senderRole, SendDriverGuestMessageRequest request, CancellationToken ct = default)
+    {
+        var validation = ValidateSend(new SendSupportMessageRequest
+        {
+            Body = request?.Body,
+            AttachmentUrl = request?.AttachmentUrl,
+            AttachmentType = request?.AttachmentType
+        });
+        if (validation != null)
+            return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
+
+        var isDriverSender = string.Equals(senderRole, Roles.DRIVER, StringComparison.OrdinalIgnoreCase);
+        var isGuestSender = string.Equals(senderRole, Roles.GUEST, StringComparison.OrdinalIgnoreCase);
+        if (!isDriverSender && !isGuestSender)
+            return ApiResponse<SupportMessageResponse>.ForbiddenResponse("Only drivers and guests can use this endpoint");
+
+        int guestUserId, driverUserId;
+
+        if (request.RecipientUserId.HasValue)
+        {
+            var recipient = await _unitOfWork.Users.Query()
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.PublicId == request.RecipientUserId.Value, ct);
+
+            if (recipient is null)
+                return ApiResponse<SupportMessageResponse>.NotFoundResponse("Recipient not found");
+            if (!recipient.IsActive)
+                return ApiResponse<SupportMessageResponse>.ErrorResponse("Recipient is inactive");
+
+            var recipientRole = recipient.Role?.Code;
+            if (isGuestSender)
+            {
+                if (!string.Equals(recipientRole, Roles.DRIVER, StringComparison.OrdinalIgnoreCase))
+                    return ApiResponse<SupportMessageResponse>.ErrorResponse("Invalid recipient — expected a driver");
+                driverUserId = recipient.Id;
+                guestUserId = senderUserId;
+            }
+            else
+            {
+                if (!string.Equals(recipientRole, Roles.GUEST, StringComparison.OrdinalIgnoreCase))
+                    return ApiResponse<SupportMessageResponse>.ErrorResponse("Invalid recipient — expected a guest");
+                guestUserId = recipient.Id;
+                driverUserId = senderUserId;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.RecipientRole))
+        {
+            // Role-based targeting is only meaningful for a guest reaching "a"
+            // driver — resolved via that guest's assignment pool. A driver has
+            // (potentially) many guests, so there's no equivalent implicit target.
+            if (!isGuestSender || !string.Equals(request.RecipientRole, Roles.DRIVER, StringComparison.OrdinalIgnoreCase))
+                return ApiResponse<SupportMessageResponse>.ErrorResponse(
+                    "recipientRole targeting is only supported for a guest messaging \"driver\" — a driver must specify recipientUserId");
+
+            var guestForAssignment = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.UserId == senderUserId, ct);
+            if (guestForAssignment is null)
+                return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest profile not found");
+
+            var assignedDriverIds = await _unitOfWork.GuestDriverAssignments.Query()
+                .Where(a => a.GuestId == guestForAssignment.Id)
+                .Select(a => a.DriverId)
+                .ToListAsync(ct);
+
+            if (assignedDriverIds.Count == 0)
+                return ApiResponse<SupportMessageResponse>.NotFoundResponse("No driver is assigned to you yet");
+            if (assignedDriverIds.Count > 1)
+                return ApiResponse<SupportMessageResponse>.ErrorResponse(
+                    "More than one driver is assigned — specify recipientUserId to pick one");
+
+            var driverProfile = await _unitOfWork.DriverProfiles.FindFirstOrDefaultAsync(d => d.Id == assignedDriverIds[0], ct);
+            if (driverProfile is null)
+                return ApiResponse<SupportMessageResponse>.NotFoundResponse("Assigned driver not found");
+
+            guestUserId = senderUserId;
+            driverUserId = driverProfile.UserId;
+        }
+        else
+        {
+            return ApiResponse<SupportMessageResponse>.ErrorResponse("recipientUserId or recipientRole is required");
+        }
+
+        var conversation = await GetOrCreateConversationAsync(guestUserId, SupportChatTypes.DriverGuest, driverUserId, ct);
+        if (conversation.Status == SupportChatStatuses.Closed)
+        {
+            conversation.Status = SupportChatStatuses.Open;
+            conversation.ClosedAt = null;
+            conversation.ClosedByUserId = null;
+        }
+
+        var fromGuest = senderUserId == guestUserId;
+        var body = request.Body?.Trim() ?? string.Empty;
+        var msg = new SupportMessage
+        {
+            UserId = guestUserId,
+            SenderUserId = senderUserId,
+            ConversationId = conversation.Id,
+            Conversation = conversation,
+            Body = body,
+            FromGuest = fromGuest,
+            SentAt = DateTime.UtcNow,
+            IsRead = false,
+            AttachmentUrl = request.AttachmentUrl,
+            AttachmentType = request.AttachmentType,
+        };
+        await _unitOfWork.SupportMessages.AddAsync(msg, ct);
+
+        conversation.LastMessageAt = msg.SentAt;
+        conversation.LastMessagePreview = ComputePreview(body, request.AttachmentType);
+        conversation.LastMessageFromGuest = fromGuest;
+        if (fromGuest) conversation.UnreadByAdminCount += 1; else conversation.UnreadByGuestCount += 1;
+        _unitOfWork.SupportConversations.Update(conversation);
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var recipientUserId = fromGuest ? driverUserId : guestUserId;
+        await NotifyDriverGuestRecipientAsync(recipientUserId, conversation, ct);
+
+        var senderName = await _unitOfWork.Users.Query()
+            .Where(u => u.Id == senderUserId)
+            .Select(u => (u.FirstName + " " + u.LastName).Trim())
+            .FirstOrDefaultAsync(ct);
+
+        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, senderName), "Message sent");
+    }
+
+    // ============================================================
     // Helpers
     // ============================================================
-    private async Task<SupportConversation> GetOrCreateConversationAsync(int guestId, CancellationToken ct)
+    // otherUserId is null for AdminSupport (the "other side" is any admin, not
+    // one fixed User) and the driver's User.Id for DriverGuest.
+    private async Task<SupportConversation> GetOrCreateConversationAsync(int guestUserId, string type, int? otherUserId, CancellationToken ct)
     {
-        var conversation = await _unitOfWork.SupportConversations.FindFirstOrDefaultAsync(c => c.GuestId == guestId, ct);
+        var conversation = await _unitOfWork.SupportConversations
+            .FindFirstOrDefaultAsync(c => c.UserId == guestUserId && c.Type == type && c.OtherUserId == otherUserId, ct);
         if (conversation != null) return conversation;
 
         conversation = new SupportConversation
         {
-            GuestId = guestId,
+            UserId = guestUserId,
+            Type = type,
+            OtherUserId = otherUserId,
             Status = SupportChatStatuses.Open,
         };
         await _unitOfWork.SupportConversations.AddAsync(conversation, ct);
@@ -393,7 +557,7 @@ public class SupportChatService(
     {
         try
         {
-            await _notificationManagerService.SendToGuestAsync(conversation.GuestId, new NotificationContent
+            await _notificationManagerService.SendToUserAsync(conversation.UserId, new NotificationContent
             {
                 Title = "New reply from support",
                 Message = conversation.LastMessagePreview,
@@ -406,6 +570,26 @@ public class SupportChatService(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error notifying guest of support reply");
+        }
+    }
+
+    private async Task NotifyDriverGuestRecipientAsync(int recipientUserId, SupportConversation conversation, CancellationToken ct)
+    {
+        try
+        {
+            await _notificationManagerService.SendToUserAsync(recipientUserId, new NotificationContent
+            {
+                Title = "New message",
+                Message = conversation.LastMessagePreview,
+                Type = "driver_guest_message",
+                RedirectUrl = $"/chat/{conversation.PublicId}",
+                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() },
+                Topic = RealtimeTopics.SupportMessageNew
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error notifying driver/guest chat recipient {UserId}", recipientUserId);
         }
     }
 
@@ -437,21 +621,25 @@ public class SupportChatService(
             ? "📷 Photo" : "📎 Attachment";
     }
 
-    private static SupportConversationSummaryResponse MapSummary(SupportConversation c, int unreadCount) => new()
+    private static SupportConversationSummaryResponse MapSummary(SupportConversation c, int unreadCount)
     {
-        Id = c.PublicId,
-        GuestId = c.Guest.PublicId,
-        GuestName = $"{c.Guest.FirstName} {c.Guest.LastName}".Trim(),
-        GuestEmail = c.Guest.Email,
-        Status = c.Status,
-        LastMessagePreview = c.LastMessagePreview,
-        LastMessageAt = c.LastMessageAt,
-        LastMessageFromGuest = c.LastMessageFromGuest,
-        UnreadCount = unreadCount,
-        OrganizationName = c.Guest.OrganizationRef?.Name ?? c.Guest.Organization,
-        NationalityName = c.Guest.Nationality?.Name,
-        Tier = c.Guest.Tier
-    };
+        var guestProfile = c.User.GuestProfile;
+        return new()
+        {
+            Id = c.PublicId,
+            GuestId = guestProfile?.PublicId ?? Guid.Empty,
+            GuestName = $"{c.User.FirstName} {c.User.LastName}".Trim(),
+            GuestEmail = guestProfile?.Email,
+            Status = c.Status,
+            LastMessagePreview = c.LastMessagePreview,
+            LastMessageAt = c.LastMessageAt,
+            LastMessageFromGuest = c.LastMessageFromGuest,
+            UnreadCount = unreadCount,
+            OrganizationName = guestProfile?.OrganizationRef?.Name ?? guestProfile?.Organization,
+            NationalityName = guestProfile?.Nationality?.Name,
+            Tier = guestProfile?.Tier
+        };
+    }
 
     private static SupportMessageResponse MapMessage(SupportMessage m, string senderName = null) => new()
     {

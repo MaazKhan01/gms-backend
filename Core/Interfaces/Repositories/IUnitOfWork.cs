@@ -72,8 +72,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; }
     IGenericRepository<SupportMessage> SupportMessages { get; }
     IGenericRepository<SupportConversation> SupportConversations { get; }
-    IGenericRepository<GuestDevice> GuestDevices { get; }
-    IGenericRepository<GuestNotification> GuestNotifications { get; }
+    IGenericRepository<Device> Devices { get; }
 
     // Audit
     IGenericRepository<UserLoginLog> UserLoginLogs { get; }

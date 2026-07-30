@@ -23,7 +23,7 @@ namespace API.Controllers.v1;
 [Route("api/v1/support-chat")]
 [Authorize]
 [ApiVersion("1.0")]
-public class SupportChatController(ISupportChatService _supportChat, ICurrentGuest _currentGuest) : Controllers.BaseApiController
+public class SupportChatController(ISupportChatService _supportChat, ICurrentGuest _currentGuest, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
     private int GuestId => _currentGuest.GuestId;
 
@@ -82,4 +82,15 @@ public class SupportChatController(ISupportChatService _supportChat, ICurrentGue
     [HasPermission(PermissionCodes.SupportChatManage)]
     public async Task<IActionResult> Reopen(Guid conversationId, CancellationToken ct)
         => ToResponse(await _supportChat.ReopenAsync(conversationId, ct));
+
+    // ================= Driver <-> Guest =================
+    // Either side's token resolves through ICurrentUser: a driver token is a
+    // normal staff User token; a guest token's NameIdentifier is now the
+    // guest's own linked User.Id (see VipAppService.BuildAccessToken), so
+    // _currentUser.UserId/RoleName resolve correctly for both without a
+    // separate guest-only code path. The service still rejects anything
+    // that isn't role "driver" or "guest".
+    [HttpPost("driver-guest/messages"), EnableRateLimiting("chat")]
+    public async Task<IActionResult> SendDriverGuestMessage([FromBody] SendDriverGuestMessageRequest request, CancellationToken ct)
+        => ToResponse(await _supportChat.SendDriverGuestMessageAsync(_currentUser.UserId, _currentUser.RoleName, request, ct));
 }
