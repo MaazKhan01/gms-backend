@@ -26,7 +26,7 @@ public class EmailService : IEmailService
 
         var connectionString = configuration.GetValue<string>("AzureCommunicationServiceConfig:COMMUNICATION_SERVICES_CONNECTION_STRING");
         _senderEmail = configuration.GetValue<string>("AzureCommunicationServiceConfig:EmailSenderInfo");
-        _appName = configuration.GetValue<string>("AppName") ?? "GMS";
+        _appName = configuration.GetValue<string>("AppName") ?? "QOC - GMS";
 
         if (string.IsNullOrEmpty(connectionString))
             throw new InvalidOperationException("AzureCommunicationServiceConfig:COMMUNICATION_SERVICES_CONNECTION_STRING is not configured.");
@@ -111,7 +111,7 @@ public class EmailService : IEmailService
 
         var inner = $@"
             <p style='{P}'>Hi {name},</p>
-            <p style='{P}'>An administrator has created an account for you on <strong style='color:{Ink};'>{_appName}</strong>.</p>
+            <p style='{P}'>QOC administrator has created an account for you on <strong style='color:{Ink};'>{_appName}</strong>.</p>
             {roleSection}
             <p style='{P}'>Click the button below to set your password and activate your account:</p>
             {Cta(acceptUrl, "Set Up My Account")}
