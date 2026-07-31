@@ -12,7 +12,9 @@ public interface ITravelService
     Task<ApiResponse<List<IdNameDto>>> GetVehicleTypesAsync(CancellationToken ct = default);
     Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default);
     Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default);
-    Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, CancellationToken ct = default);
+    // bookingId narrows the prefill to one specific Flight/Accommodation/Transport
+    // (Services' per-booking Edit); omit it for the wizard's "most recent of each".
+    Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, Guid? bookingId = null, CancellationToken ct = default);
 
     // Per-event booking lists (one per travel tab).
     Task<ApiResponse<PaginatedResponse<EventFlightRow>>> GetEventFlightsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);

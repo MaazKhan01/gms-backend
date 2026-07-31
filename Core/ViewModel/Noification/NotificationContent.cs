@@ -12,7 +12,7 @@ public class NotificationContent
     public string Message { get; set; }
 
     // Free-form category/template code (e.g. "booking-created", "support_message").
-    // See Core.Constants.Notification.NotificationTemplateCodes for examples.
+    // Every code, and its wording, lives in Core.Constants.Notification.NotificationTemplates.
     public string Type { get; set; }
 
     public string RedirectUrl { get; set; }

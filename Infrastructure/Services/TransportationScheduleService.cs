@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Constants;
+using Core.Constants.Notification;
 using Core.Interfaces;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -19,6 +20,7 @@ public class TransportationScheduleService(
     IUnitOfWork _unitOfWork,
     ITransportationConflictValidator _conflictValidator,
     IRealTimeAlertService _realTimeAlerts,
+    INotificationManagerService _notifications,
     ILogger<TransportationScheduleService> _logger) : ITransportationScheduleService
 {
     public async Task<ApiResponse<ScheduleRow>> CreateScheduleAsync(CreateScheduleRequest request, int userId, CancellationToken ct = default)
@@ -66,14 +68,9 @@ public class TransportationScheduleService(
             await RecordStatusHistoryAsync(transport.Id, transport.TripStatus, userId, ct);
 
             if (driverId.HasValue)
-            {
-                var driverUserId = await _unitOfWork.DriverProfiles.Query()
-                    .Where(d => d.Id == driverId.Value)
-                    .Select(d => d.UserId)
-                    .FirstOrDefaultAsync(ct);
-                await _realTimeAlerts.SendToUserAsync(RealtimeTopics.TransportationScheduleUpdated, driverUserId.ToString(),
-                    "New schedule", "A new transportation schedule has been assigned to you.");
-            }
+                await _notifications.SendToDriverAsync(_unitOfWork, driverId.Value,
+                    NotificationTemplates.TransportDriverAssigned,
+                    transport.Tokens(guest), ct);
 
             return await GetScheduleRowAsync(transport.Id, ct);
         }
@@ -204,12 +201,11 @@ public class TransportationScheduleService(
 
             if (transport.DriverId.HasValue)
             {
-                var driverUserId = await _unitOfWork.DriverProfiles.Query()
-                    .Where(d => d.Id == transport.DriverId.Value)
-                    .Select(d => d.UserId)
-                    .FirstOrDefaultAsync(ct);
-                await _realTimeAlerts.SendToUserAsync(RealtimeTopics.TransportationRideCancelled, driverUserId.ToString(),
-                    "Ride cancelled", "A transportation schedule assigned to you has been cancelled.");
+                var guest = await _unitOfWork.Guests.Query()
+                    .FirstOrDefaultAsync(g => g.Id == transport.GuestId, ct);
+                await _notifications.SendToDriverAsync(_unitOfWork, transport.DriverId.Value,
+                    NotificationTemplates.TransportDriverTripCancelled,
+                    transport.Tokens(guest), ct);
             }
 
             return ApiResponse<bool>.SuccessResponse(true, "Schedule cancelled");

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Core.Common;
 using Core.Common.Interfaces;
 using Core.Constants;
+using Core.Constants.Notification;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -82,7 +83,8 @@ public class SupportChatService(
             .ToListAsync(ct);
         items.Reverse(); // oldest-first within the returned window, like a chat feed
 
-        var data = items.Select(m => MapMessage(m)).ToList();
+        // The caller is the guest, so their own messages are the FromGuest ones.
+        var data = items.Select(m => MapMessage(m, isMine: m.FromGuest)).ToList();
         return ApiResponse<PaginatedResponse<SupportMessageResponse>>.SuccessResponse(
             new PaginatedResponse<SupportMessageResponse>(data, total, page, size));
     }
@@ -131,7 +133,7 @@ public class SupportChatService(
 
         await NotifyAdminsAsync(conversation, ct);
 
-        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg), "Message sent");
+        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true), "Message sent");
     }
 
     public async Task<ApiResponse<bool>> MarkReadByGuestAsync(int guestId, CancellationToken ct = default)
@@ -238,7 +240,8 @@ public class SupportChatService(
             .ToListAsync(ct);
         items.Reverse();
 
-        var data = items.Select(m => MapMessage(m)).ToList();
+        // The caller is an admin, so anything not from the guest is theirs.
+        var data = items.Select(m => MapMessage(m, isMine: !m.FromGuest)).ToList();
         return ApiResponse<PaginatedResponse<SupportMessageResponse>>.SuccessResponse(
             new PaginatedResponse<SupportMessageResponse>(data, total, page, size));
     }
@@ -321,7 +324,7 @@ public class SupportChatService(
         var senderName = _currentUser.UserInfo != null
             ? $"{_currentUser.UserInfo.FirstName} {_currentUser.UserInfo.LastName}".Trim()
             : null;
-        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, senderName), "Message sent");
+        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true, senderName), "Message sent");
     }
 
     public async Task<ApiResponse<bool>> MarkReadByAdminAsync(Guid conversationId, CancellationToken ct = default)
@@ -503,7 +506,7 @@ public class SupportChatService(
             .Select(u => (u.FirstName + " " + u.LastName).Trim())
             .FirstOrDefaultAsync(ct);
 
-        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, senderName), "Message sent");
+        return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true, senderName), "Message sent");
     }
 
     public async Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetDriverGuestThreadAsync(
@@ -535,12 +538,8 @@ public class SupportChatService(
             .ToListAsync(ct);
         items.Reverse(); // oldest-first within the returned window, like a chat feed
 
-        var data = items.Select(m =>
-        {
-            var dto = MapMessage(m);
-            dto.IsMine = m.SenderUserId == callerUserId;
-            return dto;
-        }).ToList();
+        // Both participants read this same thread, so "mine" is by actual sender.
+        var data = items.Select(m => MapMessage(m, isMine: m.SenderUserId == callerUserId)).ToList();
 
         return ApiResponse<PaginatedResponse<SupportMessageResponse>>.SuccessResponse(
             new PaginatedResponse<SupportMessageResponse>(data, total, page, size));
@@ -577,15 +576,8 @@ public class SupportChatService(
     {
         try
         {
-            await _notificationManagerService.SendToPermissionAsync(PermissionCodes.SupportChatManage, new NotificationContent
-            {
-                Title = "New support message",
-                Message = conversation.LastMessagePreview,
-                Type = "support_message",
-                RedirectUrl = $"/admin/support-chat/{conversation.PublicId}",
-                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() },
-                Topic = RealtimeTopics.SupportMessageNew // preserve the existing wire event name the admin UI listens on
-            }, ct);
+            await _notificationManagerService.SendToPermissionAsync(PermissionCodes.SupportChatManage,
+                NotificationTemplates.SupportMessageNew, ChatTokens(conversation), ct);
         }
         catch (Exception ex)
         {
@@ -597,15 +589,8 @@ public class SupportChatService(
     {
         try
         {
-            await _notificationManagerService.SendToUserAsync(conversation.UserId, new NotificationContent
-            {
-                Title = "New reply from support",
-                Message = conversation.LastMessagePreview,
-                Type = "support_reply",
-                RedirectUrl = $"/support/{conversation.PublicId}",
-                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() },
-                Topic = RealtimeTopics.SupportMessageNew // preserve the existing wire event name the guest app listens on
-            }, ct);
+            await _notificationManagerService.SendToUserAsync(conversation.UserId,
+                NotificationTemplates.SupportReplyNew, ChatTokens(conversation), ct);
         }
         catch (Exception ex)
         {
@@ -617,21 +602,20 @@ public class SupportChatService(
     {
         try
         {
-            await _notificationManagerService.SendToUserAsync(recipientUserId, new NotificationContent
-            {
-                Title = "New message",
-                Message = conversation.LastMessagePreview,
-                Type = "driver_guest_message",
-                RedirectUrl = $"/chat/{conversation.PublicId}",
-                Data = new Dictionary<string, string> { ["conversationId"] = conversation.PublicId.ToString() },
-                Topic = RealtimeTopics.SupportMessageNew
-            }, ct);
+            await _notificationManagerService.SendToUserAsync(recipientUserId,
+                NotificationTemplates.DriverGuestMessage, ChatTokens(conversation), ct);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error notifying driver/guest chat recipient {UserId}", recipientUserId);
         }
     }
+
+    private static Dictionary<string, string> ChatTokens(SupportConversation conversation) => new()
+    {
+        ["conversationId"] = conversation.PublicId.ToString(),
+        ["preview"] = conversation.LastMessagePreview,
+    };
 
     // A message needs a body, an attachment, or both — never neither.
     private static string ValidateSend(SendSupportMessageRequest request)
@@ -681,7 +665,12 @@ public class SupportChatService(
         };
     }
 
-    private static SupportMessageResponse MapMessage(SupportMessage m, string senderName = null) => new()
+    // isMine is always the CALLER's point of view, so every endpoint has to say
+    // which side it is serving — the message row alone can't tell (the same row is
+    // "mine" to the guest and "theirs" to the admin). It has no safe default,
+    // hence no defaulted parameter: forgetting it is a compile error, not a
+    // silently-false flag that renders every bubble as incoming.
+    private static SupportMessageResponse MapMessage(SupportMessage m, bool isMine, string senderName = null) => new()
     {
         Id = m.PublicId,
         ConversationId = m.Conversation.PublicId,
@@ -691,6 +680,7 @@ public class SupportChatService(
         ReadAt = m.ReadAt,
         AttachmentUrl = m.AttachmentUrl,
         AttachmentType = m.AttachmentType,
+        IsMine = isMine,
         SenderName = senderName ?? (m.SenderUser != null ? $"{m.SenderUser.FirstName} {m.SenderUser.LastName}".Trim() : null)
-    }; 
+    };
 }

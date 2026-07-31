@@ -50,7 +50,10 @@ public class TransportAppService(
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync(ct);
 
-        int CountOf(params string[] statuses) => byStatus.Where(x => statuses.Contains(x.Status)).Sum(x => x.Count);
+        // Case-insensitive: statuses are compared in-memory here, and SQL Server's
+        // default collation lets a row hold "Assigned" where the constant is "assigned".
+        int CountOf(params string[] statuses) =>
+            byStatus.Where(x => statuses.Contains(x.Status, StringComparer.OrdinalIgnoreCase)).Sum(x => x.Count);
 
         return ApiResponse<DriverStatsResponse>.SuccessResponse(new DriverStatsResponse
         {
@@ -79,7 +82,7 @@ public class TransportAppService(
             .Select(Project)
             .ToListAsync(ct);
 
-        MarkStartable(jobs);
+        MarkStartable(jobs, await HasActiveJobAsync(driverId, ct));
 
         return ApiResponse<List<DriverJobResponse>>.SuccessResponse(jobs);
     }
@@ -87,15 +90,26 @@ public class TransportAppService(
     // Exactly one job in the list may show a Start button: the nearest assigned
     // one. Nothing is startable while another job is already under way — the
     // driver can't be in two cars at once.
-    private static void MarkStartable(List<DriverJobResponse> jobs)
+    //
+    // driverBusy comes from HasActiveJobAsync rather than from `jobs` itself: the
+    // list is narrowed (by eventId, and by which statuses the calling endpoint
+    // asks for), so an active job can be missing from it while the driver is very
+    // much out on it.
+    private static void MarkStartable(List<DriverJobResponse> jobs, bool driverBusy)
     {
-        if (jobs.Any(j => TransportStatuses.Active.Contains(j.Status)))
-            return;
+        if (driverBusy) return;
 
         // The list is already ordered earliest pickup first (nulls last).
-        var next = jobs.FirstOrDefault(j => j.Status == TransportStatuses.Assigned);
+        var next = jobs.FirstOrDefault(j =>
+            string.Equals(j.Status, TransportStatuses.Assigned, StringComparison.OrdinalIgnoreCase));
         if (next != null) next.ShowStartButton = true;
     }
+
+    // Is this driver already out on a job? Deliberately not narrowed by eventId —
+    // one driver is one person across every event.
+    private Task<bool> HasActiveJobAsync(int? driverId, CancellationToken ct)
+        => _unitOfWork.Transports.QueryNoTracking()
+            .AnyAsync(t => t.DriverId == driverId && TransportStatuses.Active.Contains(t.TripStatus), ct);
 
     public async Task<ApiResponse<List<DriverJobResponse>>> GetPendingPickupsAsync(
         int userId, Guid? eventId = null, CancellationToken ct = default)
@@ -114,6 +128,10 @@ public class TransportAppService(
             .ThenBy(t => t.PickupTime)
             .Select(Project)
             .ToListAsync(ct);
+
+        // Same Start-button rule as the upcoming list — this screen shows assigned
+        // jobs too, so without this the flag was always false here.
+        MarkStartable(jobs, await HasActiveJobAsync(driverId, ct));
 
         return ApiResponse<List<DriverJobResponse>>.SuccessResponse(jobs);
     }
@@ -506,8 +524,17 @@ public class TransportAppService(
     // ── Lifecycle: one endpoint per step, each asserting the status it expects ──
     // assigned → in-progress → arrived → in-transit → completed
 
-    public Task<ApiResponse<DriverJobResponse>> StartJobAsync(int userId, Guid jobId, CancellationToken ct = default)
-        => AdvanceAsync(userId, jobId, TransportStatuses.Assigned, TransportStatuses.InProgress, ct);
+    // Starting is the one step with a cross-job rule: a driver may only be out on
+    // one job at a time. ShowStartButton hides the button, but a stale screen (or
+    // a direct call) must be refused here too — the flag is a hint, not the rule.
+    public async Task<ApiResponse<DriverJobResponse>> StartJobAsync(int userId, Guid jobId, CancellationToken ct = default)
+    {
+        var driverId = await ResolveDriverIdAsync(userId, ct);
+        if (driverId != null && await HasActiveJobAsync(driverId, ct))
+            return ApiResponse<DriverJobResponse>.ConflictResponse("You already have a job under way — finish it before starting another");
+
+        return await AdvanceAsync(userId, jobId, TransportStatuses.Assigned, TransportStatuses.InProgress, ct);
+    }
 
     public Task<ApiResponse<DriverJobResponse>> ArrivedAsync(int userId, Guid jobId, CancellationToken ct = default)
         => AdvanceAsync(userId, jobId, TransportStatuses.InProgress, TransportStatuses.Arrived, ct);

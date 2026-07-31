@@ -724,7 +724,9 @@ public class VipAppService(
         },
         Driver = t.Driver?.User is not { } drv ? null : new DriverResponse
         {
-            Name = $"{drv.FirstName} {drv.LastName}".Trim(), Role = "Chauffeur", Phone = drv.Phone
+            Name = $"{drv.FirstName} {drv.LastName}".Trim(),
+            Phone = drv.Phone,
+            DriverUserId = drv.PublicId
         },
     };
 

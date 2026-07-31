@@ -1,4 +1,5 @@
 using Core.Constants;
+using Core.Constants.Notification;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -12,7 +13,10 @@ namespace Infrastructure.Services;
 
 // Per-guest travel: flight / accommodation / transport. Each is optional — the
 // admin picks which ones a guest gets. Ids in/out are public Guids.
-public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logger) : ITravelService
+public class TravelService(
+    IUnitOfWork _unitOfWork,
+    INotificationManagerService _notifications,
+    ILogger<TravelService> _logger) : ITravelService
 {
     public async Task<ApiResponse<List<IdNameDto>>> GetFlightClassesAsync(CancellationToken ct = default)
     {
@@ -98,21 +102,24 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         return ApiResponse<List<LocationDto>>.SuccessResponse(data);
     }
 
-    public async Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, CancellationToken ct = default)
+    public async Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(
+        Guid guestId, Guid? bookingId = null, CancellationToken ct = default)
     {
         var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
         if (guest == null) return ApiResponse<GuestTravelResponse>.NotFoundResponse("Guest not found");
 
         var data = new GuestTravelResponse();
 
-        // A guest can hold more than one of each — the wizard's single accordion
-        // only ever prefills/edits the most recently added one; the rest are
-        // managed from Services' per-guest booking list instead.
+        // A guest can hold more than one of each. With no bookingId the wizard's
+        // single accordion prefills the most recently added one of each kind;
+        // with a bookingId (Services' per-booking Edit) exactly that booking is
+        // returned and the other two sections come back empty — a booking id only
+        // ever matches one kind, and the edit form only reads its own section.
         var flight = await _unitOfWork.Flights.Query()
             .Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
-            .Where(f => f.GuestId == guest.Id)
+            .Where(f => f.GuestId == guest.Id && (bookingId == null || f.PublicId == bookingId))
             .OrderByDescending(f => f.Id)
             .FirstOrDefaultAsync(ct);
         if (flight != null)
@@ -142,7 +149,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
 
         var acc = await _unitOfWork.Accommodations.Query()
             .Include(a => a.Hotel).Include(a => a.RoomType)
-            .Where(a => a.GuestId == guest.Id)
+            .Where(a => a.GuestId == guest.Id && (bookingId == null || a.PublicId == bookingId))
             .OrderByDescending(a => a.Id)
             .FirstOrDefaultAsync(ct);
         if (acc != null)
@@ -158,7 +165,9 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
         var tr = await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.Vehicle)
             .Include(t => t.Driver)
-            .FirstOrDefaultAsync(t => t.GuestId == guest.Id, ct);
+            .Where(t => t.GuestId == guest.Id && (bookingId == null || t.PublicId == bookingId))
+            .OrderByDescending(t => t.Id)
+            .FirstOrDefaultAsync(ct);
         if (tr != null)
             data.Transport = new TransportInput
             {
@@ -578,6 +587,10 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
             }
 
+            // Set when this save is what put a (new/different) driver on the trip —
+            // notified after SaveChanges so the Transport has its row/PublicId.
+            (Transport Transport, int DriverId)? newlyAssigned = null;
+
             if (request.Transport != null)
             {
                 var pickupId = await ResolveNullableId(_unitOfWork.Locations, request.Transport.PickupLocationId, ct);
@@ -593,6 +606,7 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                         .FirstOrDefaultAsync(t => t.PublicId == trId && t.GuestId == guest.Id, ct);
 
                 var isNewTransport = tr == null;
+                var previousDriverId = tr?.DriverId;
                 if (isNewTransport) tr = new Transport { GuestId = guest.Id };
 
                 tr.PickupLocationId = pickupId;
@@ -614,9 +628,19 @@ public class TravelService(IUnitOfWork _unitOfWork, ILogger<TravelService> _logg
                 tr.DropoffTime = request.Transport.DropoffTime;
 
                 if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
+
+                // Re-saving the same driver is not an assignment — don't re-notify.
+                if (driverId.HasValue && driverId != previousDriverId)
+                    newlyAssigned = (tr, driverId.Value);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
+
+            if (newlyAssigned is { } assigned)
+                await _notifications.SendToDriverAsync(_unitOfWork, assigned.DriverId,
+                    NotificationTemplates.TransportDriverAssigned,
+                    assigned.Transport.Tokens(guest), ct);
+
             return ApiResponse<bool>.SuccessResponse(true, "Travel saved");
         }
         catch (Exception ex)

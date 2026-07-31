@@ -166,6 +166,7 @@ public class DriverResponse
     public string Name { get; set; }
     public string Role { get; set; }
     public string Phone { get; set; }
+    public Guid DriverUserId { get; set; }
 }
 
 public class ContactResponse
@@ -230,10 +231,12 @@ public class SupportMessageResponse
     public string AttachmentType { get; set; }
     public string SenderName { get; set; } // populated for admin-sent messages
 
-    // Sent-vs-received from the caller's own point of view. Only set by the
-    // driver<->guest thread endpoint (ChatController), where both participants
-    // read the same thread; FromGuest alone can't tell them apart. Always false
-    // on the admin/guest support endpoints, which each only ever serve one side.
+    // Sent-vs-received from the CALLER's own point of view — the same message row
+    // is IsMine to whoever wrote it and not to the other side, so every endpoint
+    // sets it for the audience it serves: the guest's support thread (their own
+    // messages), the admin inbox (anything not from the guest), and the
+    // driver<->guest thread (by actual SenderUserId, since both participants read
+    // one thread and FromGuest alone can't tell them apart).
     public bool IsMine { get; set; }
 }
 

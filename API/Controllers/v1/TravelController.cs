@@ -33,10 +33,11 @@ public class TravelController(ITravelService _travel, ICurrentUser _currentUser)
     public async Task<IActionResult> GetEventArrivalsDepartures(Guid eventId, [FromQuery] ArrivalsDeparturesRequest request, CancellationToken ct)
         => ToResponse(await _travel.GetEventArrivalsDeparturesAsync(eventId, request, ct));
 
-    // Prefill on edit.
+    // Prefill on edit. ?bookingId= targets one specific booking (Services' table
+    // lists one row per booking); without it, the most recent of each kind.
     [HttpGet("guest/{guestId:guid}")]
-    public async Task<IActionResult> GetGuestTravel(Guid guestId, CancellationToken ct)
-        => ToResponse(await _travel.GetGuestTravelAsync(guestId, ct));
+    public async Task<IActionResult> GetGuestTravel(Guid guestId, [FromQuery] Guid? bookingId, CancellationToken ct)
+        => ToResponse(await _travel.GetGuestTravelAsync(guestId, bookingId, ct));
 
     // Upsert the selected sections (any subset of flight/accommodation/transport).
     // A section with an Id updates that specific booking in place; without one,
