@@ -1,4 +1,5 @@
 using AutoMapper;
+using Core.Constants;
 using Core.ViewModel.AccountRequest;
 using Core.ViewModel.Event;
 using Core.ViewModel.Guest;
@@ -101,7 +102,10 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.NationalityFlag,
                 opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Flag : null))
             .ForMember(dest => dest.OrganizationId,
-                opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null));
+                opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null))
+            // Stored as JSON on the entity, a plain int list on the wire.
+            .ForMember(dest => dest.AllowedServices,
+                opt => opt.MapFrom(src => GuestServices.Parse(src.AllowedServicesJson)));
 
         // Nationality mappings
         CreateMap<Nationality, NationalityResponse>()

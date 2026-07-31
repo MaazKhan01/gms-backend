@@ -528,6 +528,10 @@ public class GuestService(
             guest.DepartureDate = request.DepartureDate;
             guest.PhotoUrl      = request.PhotoUrl;
             guest.AccreditationRequired = request.AccreditationRequired;
+            // Same null-means-leave-alone rule as SessionIds below — a caller that
+            // doesn't know about this field can't silently revoke the permissions.
+            if (request.AllowedServices != null)
+                guest.AllowedServicesJson = GuestServices.Serialize(request.AllowedServices);
 
             _unitOfWork.Guests.Update(guest);
 
@@ -604,6 +608,7 @@ public class GuestService(
                 DepartureDate = request.DepartureDate,
                 PhotoUrl      = request.PhotoUrl,
                 AccreditationRequired = request.AccreditationRequired,
+                AllowedServicesJson = GuestServices.Serialize(request.AllowedServices),
                 UserId        = user.Id,
                 CreatedAt     = DateTime.UtcNow,
                 IsDeleted     = false

@@ -94,6 +94,13 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     public async Task<IActionResult> RequestTransport([FromBody] TransportRequest request, CancellationToken ct)
         => ToResponse(await _vip.RequestTransportAsync(GuestId, request, ct));
 
+    // Guest drops their own request while it's still unclaimed ("new"). Once a
+    // driver has accepted it (assigned onwards) this 409s — the guest can't pull
+    // a job out from under a driver who is already on the way.
+    [HttpPost("transport-requests/{id:guid}/cancel")]
+    public async Task<IActionResult> CancelTransportRequest(Guid id, CancellationToken ct)
+        => ToResponse(await _vip.CancelTransportRequestAsync(GuestId, id, ct));
+
     // ---------------- Sessions ----------------
     [HttpGet("sessions")]
     // eventId optional — omit it for every event the guest is on.

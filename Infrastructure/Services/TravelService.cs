@@ -108,7 +108,10 @@ public class TravelService(
         var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
         if (guest == null) return ApiResponse<GuestTravelResponse>.NotFoundResponse("Guest not found");
 
-        var data = new GuestTravelResponse();
+        var data = new GuestTravelResponse
+        {
+            AllowTransportRequest = GuestServices.Allows(guest.AllowedServicesJson, GuestServiceType.Transport),
+        };
 
         // A guest can hold more than one of each. With no bookingId the wizard's
         // single accordion prefills the most recently added one of each kind;
@@ -585,6 +588,19 @@ public class TravelService(
                 acc.CheckOut = request.Accommodation.CheckOut;
 
                 if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
+            }
+
+            // Self-service permission, not a booking — handled here rather than in
+            // the Transport block below precisely so it can be granted with no
+            // transport record at all (the guest then requests one from the app).
+            if (request.AllowTransportRequest is { } allowTransport)
+            {
+                var services = GuestServices.Parse(guest.AllowedServicesJson);
+                var transport = (int)GuestServiceType.Transport;
+                if (allowTransport) services.Add(transport);
+                else services.Remove(transport);
+                guest.AllowedServicesJson = GuestServices.Serialize(services);
+                _unitOfWork.Guests.Update(guest);
             }
 
             // Set when this save is what put a (new/different) driver on the trip —

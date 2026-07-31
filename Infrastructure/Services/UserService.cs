@@ -264,19 +264,27 @@ public class UserService(
             };
             user.SetCreationAudit(inviterId);
             await _unitOfWork.Users.AddAsync(user, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
 
-            if (role.Code == Roles.DRIVER && request.DriverProfile != null)
+            // Case-insensitive: a role row seeded/edited as "Driver" must still be
+            // recognised, or the driver silently gets no profile and then never
+            // shows up in any driver lookup.
+            var isDriver = string.Equals(role.Code, Roles.DRIVER, StringComparison.OrdinalIgnoreCase);
+            if (isDriver)
             {
+                if (request.DriverProfile is null)
+                    return ApiResponse<UserResponse>.ErrorResponse("Driver details are required for the driver role");
+
                 var d = request.DriverProfile;
-               
+
                 var nationalityId = d.NationalityId.HasValue
                     ? (await _unitOfWork.Nationalities.GetByPublicIdAsync(d.NationalityId.Value, ct))?.Id
                     : null;
 
                 var profile = new DriverProfile
                 {
-                    UserId = user.Id,
+                    // Navigation, not UserId: the user row hasn't been inserted yet,
+                    // so its Id is still 0 — EF fills the FK when it saves both.
+                    User = user,
                     DriverType = d.DriverType,
                     LicenseNumber = d.LicenseNumber,
                     LicenseExpiry = d.LicenseExpiry,
@@ -285,10 +293,16 @@ public class UserService(
                 };
                 profile.SetCreationAudit(inviterId);
                 await _unitOfWork.DriverProfiles.AddAsync(profile, ct);
-                await _unitOfWork.SaveChangesAsync(ct);
             }
 
-            var emailSent = await TrySendInviteEmailAsync(user, role.Name, ct);
+            // One SaveChanges for user + driver profile. Two separate saves left a
+            // committed, invite-less account behind whenever the profile insert
+            // failed: the catch below turned it into a 500 *after* the user row was
+            // already permanent, and the email is sent below that point — so a
+            // driver would exist with no invite mail and nothing to retry from.
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            var (emailSent, emailError) = await TrySendInviteEmailAsync(user, role.Name, ct);
 
             var created = await _unitOfWork.Users.Query()
                 .Include(u => u.Role)
@@ -296,9 +310,10 @@ public class UserService(
 
             var response = _mapper.Map<UserResponse>(created);
             response.InviteEmailSent = emailSent;
+            response.InviteEmailError = emailError;
             var message = emailSent
                 ? "Invite sent"
-                : "User created, but the invite email could not be sent — use Resend Invite to try again.";
+                : $"User created, but the invite email could not be sent — use Resend Invite to try again. {emailError}".Trim();
             return ApiResponse<UserResponse>.SuccessResponse(response, message);
         }
         catch (Exception ex)
@@ -367,11 +382,11 @@ public class UserService(
             _unitOfWork.Users.Update(user);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            var emailSent = await TrySendInviteEmailAsync(user, user.Role?.Name, ct);
+            var (emailSent, emailError) = await TrySendInviteEmailAsync(user, user.Role?.Name, ct);
 
             return emailSent
                 ? ApiResponse<bool>.SuccessResponse(true, "Invite resent")
-                : ApiResponse<bool>.ServerErrorResponse("Could not send the invite email — check the server logs for details.");
+                : ApiResponse<bool>.ServerErrorResponse($"Could not send the invite email. {emailError}".Trim());
         }
         catch (Exception ex)
         {
@@ -458,18 +473,29 @@ public class UserService(
     // Awaiting it keeps the send inside the request, and any failure is both
     // logged at Error level and reflected in the response message so it's
     // never silently lost.
-    private async Task<bool> TrySendInviteEmailAsync(User user, string roleName, CancellationToken ct)
+    // Returns the provider's own reason on failure, not just false — it's the only
+    // way an admin ever learns WHY (the portal drops the response message, and
+    // "no email arrived" is indistinguishable from a throttled/rejected send
+    // without it). Azure Communication Services surfaces quota/throttling as a
+    // RequestFailedException, so its status + error code are worth keeping.
+    private async Task<(bool Sent, string Error)> TrySendInviteEmailAsync(User user, string roleName, CancellationToken ct)
     {
         var acceptUrl = $"{FrontendUrl}/?screen=userInvite&token={user.InviteToken}";
         try
         {
             await _emailService.SendUserInviteAsync(user.Email, user.FirstName, roleName, acceptUrl, ct);
-            return true;
+            return (true, null);
+        }
+        catch (Azure.RequestFailedException ex)
+        {
+            _logger.LogError(ex, "Could not send invite email to {Email} — ACS {Status} {ErrorCode}",
+                user.Email, ex.Status, ex.ErrorCode);
+            return (false, $"Email provider rejected the send ({ex.Status} {ex.ErrorCode}): {ex.Message}");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Could not send invite email to {Email}", user.Email);
-            return false;
+            return (false, ex.Message);
         }
     }
 }

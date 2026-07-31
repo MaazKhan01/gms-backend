@@ -28,6 +28,13 @@ public class GuestTravelRequest
     public FlightInput Flight { get; set; }
     public AccommodationInput Accommodation { get; set; }
     public TransportInput Transport { get; set; }
+
+    /// <summary>May the guest book their own transport from the VIP app? Stands
+    /// apart from Transport: it needs no booking at all, so an admin can allow
+    /// requests while leaving the transport section empty. Toggles
+    /// GuestServiceType.Transport on Guest.AllowedServicesJson; null leaves it
+    /// as it is.</summary>
+    public bool? AllowTransportRequest { get; set; }
 }
 
 public class FlightInput
@@ -87,6 +94,10 @@ public class GuestTravelResponse
     public FlightInput Flight { get; set; }
     public AccommodationInput Accommodation { get; set; }
     public TransportInput Transport { get; set; }
+
+    /// <summary>Current state of the "guest may book their own transport" toggle
+    /// — always returned, even when bookingId narrowed the sections to one.</summary>
+    public bool AllowTransportRequest { get; set; }
 }
 
 // ---- Admin travel view: one row list per tab, scoped to an event ----

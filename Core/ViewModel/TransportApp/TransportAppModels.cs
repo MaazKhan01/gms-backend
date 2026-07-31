@@ -48,7 +48,7 @@ public class DriverJobDetailResponse
 
     public Guid? EventId { get; set; }
     public string EventName { get; set; }
-
+    public Guid GuestUserId { get; set; }
     public string GuestName { get; set; }
     public string GuestTier { get; set; }
     public string GuestType { get; set; }
@@ -158,6 +158,14 @@ public class DriverProfileResponse
     public Guid? NationalityId { get; set; }
     public string Nationality { get; set; }
     public string PhotoUrl { get; set; }
+}
+
+/// <summary>Body of POST profile/toggle-online. IsOnline sets the flag outright;
+/// omit it (or send no body at all) and the current value is flipped — which is
+/// what driver-app builds that predate this field do.</summary>
+public class SetDriverOnlineRequest
+{
+    public bool? IsOnline { get; set; }
 }
 
 /// <summary>Self-service edit from the driver app. Null field = leave unchanged.</summary>

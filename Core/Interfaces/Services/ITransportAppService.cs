@@ -24,8 +24,10 @@ public interface ITransportAppService
     /// <summary>The caller's own profile: User row + DriverProfile row.</summary>
     Task<ApiResponse<DriverProfileResponse>> GetProfileAsync(int userId, CancellationToken ct = default);
 
-    /// <summary>Flips the caller's online flag. Open drivers only — a Fixed driver gets a 400.</summary>
-    Task<ApiResponse<DriverProfileResponse>> ToggleOnlineAsync(int userId, CancellationToken ct = default);
+    /// <summary>Sets the caller's online flag to <paramref name="isOnline"/>, or
+    /// flips it when that is null (the pre-payload driver-app behaviour). Open
+    /// drivers only — a Fixed driver gets a 400.</summary>
+    Task<ApiResponse<DriverProfileResponse>> ToggleOnlineAsync(int userId, bool? isOnline = null, CancellationToken ct = default);
 
     /// <summary>Driver edits their own name / phone / photo. Null fields stay as they are.</summary>
     Task<ApiResponse<DriverProfileResponse>> UpdateProfileAsync(int userId, UpdateDriverProfileRequest request, CancellationToken ct = default);

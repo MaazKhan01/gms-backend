@@ -151,7 +151,8 @@ public class TransportAppService(
         return ApiResponse<DriverProfileResponse>.SuccessResponse(profile);
     }
 
-    public async Task<ApiResponse<DriverProfileResponse>> ToggleOnlineAsync(int userId, CancellationToken ct = default)
+    public async Task<ApiResponse<DriverProfileResponse>> ToggleOnlineAsync(
+        int userId, bool? isOnline = null, CancellationToken ct = default)
     {
         try
         {
@@ -165,7 +166,10 @@ public class TransportAppService(
             if (profile.DriverType != DriverType.Open)
                 return ApiResponse<DriverProfileResponse>.ErrorResponse("Only open drivers can go online or offline");
 
-            profile.IsOnline = !profile.IsOnline;
+            // Explicit value wins; no value means flip. Sending the state the app
+            // already shows is also idempotent this way — two taps in a row can't
+            // land a driver on the opposite state from what their screen says.
+            profile.IsOnline = isOnline ?? !profile.IsOnline;
             profile.SetUpdateAudit(userId);
             _unitOfWork.DriverProfiles.Update(profile);
             await _unitOfWork.SaveChangesAsync(ct);
@@ -311,6 +315,7 @@ public class TransportAppService(
                 EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
                 EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,
                 GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+                GuestUserId = t.Guest.User.PublicId,
                 GuestTier = t.Guest.Tier,
                 GuestType = t.Guest.GuestType,
                 GuestOrganization = t.Guest.Organization,

@@ -7,6 +7,7 @@ using Core.ViewModel.TransportApp;
 using Core.ViewModel.Transportation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace API.Controllers.v1;
 
@@ -62,10 +63,16 @@ public class TransportAppController(ITransportAppService _transportApp, ICurrent
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateDriverProfileRequest request, CancellationToken ct)
         => ToResponse(await _transportApp.UpdateProfileAsync(_currentUser.UserId, request, ct));
 
-    // Flips online ⇄ offline and returns the refreshed profile. Open drivers only.
+    // Sets online ⇄ offline and returns the refreshed profile. Open drivers only.
+    // Body { "isOnline": true|false } sets it outright; an empty body (or a null
+    // isOnline) flips the current value, so driver-app builds that send nothing
+    // keep working unchanged. EmptyBodyBehavior.Allow is what permits no body at
+    // all — [FromBody] is otherwise mandatory and would 400 those clients.
     [HttpPost("profile/toggle-online")]
-    public async Task<IActionResult> ToggleOnline(CancellationToken ct)
-        => ToResponse(await _transportApp.ToggleOnlineAsync(_currentUser.UserId, ct));
+    public async Task<IActionResult> ToggleOnline(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SetDriverOnlineRequest request,
+        CancellationToken ct)
+        => ToResponse(await _transportApp.ToggleOnlineAsync(_currentUser.UserId, request?.IsOnline, ct));
 
     // All of this driver's jobs. eventId / date / status each filter only when sent.
     [HttpGet("jobs")]

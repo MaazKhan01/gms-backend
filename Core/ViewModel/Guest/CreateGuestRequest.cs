@@ -23,6 +23,10 @@ public class CreateGuestRequest
     public DateOnly? DepartureDate { get; set; }
     public string PhotoUrl { get; set; }
     public bool AccreditationRequired { get; set; }
+    // Which services this guest may request from the VIP app on their own —
+    // GuestServiceType values (1 = flight, 2 = accommodation, 3 = transport).
+    // Unrecognised values are dropped; null/empty means none.
+    public List<int> AllowedServices { get; set; }
     // Selecting a template sends (or resends) the invitation email.
     public Guid? InvitationTemplateId { get; set; }
 }

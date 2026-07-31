@@ -76,6 +76,12 @@ public class ItinerarySummaryResponse
     public List<TransportationResponse> Transports { get; set; } = new();
     public List<AccommodationResponse> Accommodations { get; set; } = new();
     public List<GuestSessionResponse> Sessions { get; set; } = new();
+
+    /// <summary>May this guest request a car themselves (POST transport-requests)?
+    /// Independent of Transports: the admin can allow requests without booking
+    /// anything, so the app shows the request screen on an empty transport list.
+    /// Set from Guest.AllowedServicesJson — see Core.Constants.GuestServices.</summary>
+    public bool TransportAllowed { get; set; }
 }
 
 // ---------------- Travel ----------------

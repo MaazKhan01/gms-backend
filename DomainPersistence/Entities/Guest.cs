@@ -28,6 +28,13 @@ namespace DomainPersistence.Entities
         // The actual issue/revoke lifecycle lives on the Invitation row.
         public bool AccreditationRequired { get; set; }
 
+        // JSON array of Core.Constants.GuestServiceType values (1 = flight,
+        // 2 = accommodation, 3 = transport) the guest may REQUEST from the VIP
+        // app themselves — independent of what the admin has actually booked, so
+        // a guest with no Transport row can still be allowed to ask for a car.
+        // Null/empty = nothing self-requestable. Read/written via GuestServices.
+        public string AllowedServicesJson { get; set; }
+
         // 1:1 with a Users row, auto-provisioned alongside the guest (see
         // GuestService.CreateGuestAsync) with RoleId -> the "guest" role
         // (PortalAccess=false, no password — OTP via CurrentGuest/VipAppService

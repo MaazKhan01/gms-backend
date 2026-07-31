@@ -76,6 +76,20 @@ public class VipAppService(
     private Task<Guest> GetGuestAsync(int guestId, CancellationToken ct)
         => _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
 
+    // "May this person request a car?" — true if ANY of their guest rows says so.
+    // The same person can hold one row per event (ResolveGuestIdsAsync matches on
+    // email), and a permission granted on one of them shouldn't disappear because
+    // a sibling row lacks it.
+    private async Task<bool> AllowsTransportAsync(List<int> guestIds, CancellationToken ct)
+    {
+        var allowed = await _unitOfWork.Guests.QueryNoTracking()
+            .Where(g => guestIds.Contains(g.Id))
+            .Select(g => g.AllowedServicesJson)
+            .ToListAsync(ct);
+
+        return allowed.Any(json => GuestServices.Allows(json, GuestServiceType.Transport));
+    }
+
     // ============================================================
     // Auth — OTP login issuing guest-scoped JWTs
     // ============================================================
@@ -552,6 +566,11 @@ public class VipAppService(
             }).ToList(),
 
             Sessions = sessions.Select(s => MapSession(s, picks[s.Id] ?? "selected")).ToList(),
+
+            // Deliberately not filtered by `date` — it's a permission, not an
+            // itinerary item. Any of the guest's sibling rows allowing it is
+            // enough (guestIds spans this person's rows across events).
+            TransportAllowed = await AllowsTransportAsync(guestIds, ct),
         };
 
         return ApiResponse<ItinerarySummaryResponse>.SuccessResponse(data);
@@ -645,6 +664,12 @@ public class VipAppService(
             var guest = await GetGuestAsync(guestId, ct);
             if (guest is null) return ApiResponse<TransportationResponse>.NotFoundResponse("Guest not found");
 
+            // The itinerary's TransportAllowed flag only hides the button; the rule
+            // itself is enforced here, since the request can be sent without it.
+            if (!GuestServices.Allows(guest.AllowedServicesJson, GuestServiceType.Transport))
+                return ApiResponse<TransportationResponse>.ForbiddenResponse(
+                    "Transport requests are not enabled for you");
+
             var pickupId = await ResolveLocationIdAsync(request.PickupLocationId, ct);
             if (pickupId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid pickup location");
 
@@ -691,6 +716,54 @@ public class VipAppService(
         {
             _logger.LogError(ex, "Transport request failed for guest {GuestId}", guestId);
             return ApiResponse<TransportationResponse>.ServerErrorResponse("Could not create the transport request");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> CancelTransportRequestAsync(
+        int guestId, Guid transportId, CancellationToken ct)
+    {
+        try
+        {
+            var guestIds = await ResolveGuestIdsAsync(guestId, null, ct);
+            if (guestIds is null) return ApiResponse<bool>.NotFoundResponse("Guest not found");
+
+            // Cancellable only while nobody has taken it. One conditional UPDATE —
+            // the "still new" test is part of the WHERE, so a driver accepting at
+            // the same moment can't have the job cancelled out from under them:
+            // whichever write lands second touches 0 rows (same shape as
+            // TransportAppService.AcceptJobAsync). Guest-scoped in the same WHERE,
+            // so one guest can never cancel another's ride.
+            var cancelled = await _unitOfWork.Transports.Query()
+                .Where(t => t.PublicId == transportId
+                         && guestIds.Contains(t.GuestId)
+                         && t.TripStatus == TransportStatuses.New)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(t => t.TripStatus, TransportStatuses.Cancelled)
+                    .SetProperty(t => t.UpdatedAt, DateTime.UtcNow), ct);
+
+            if (cancelled > 0)
+                return ApiResponse<bool>.SuccessResponse(true, "Transport request cancelled");
+
+            // 0 rows — separate "not yours/not there" from "too late", so the app
+            // can tell the guest why the button did nothing.
+            var status = await _unitOfWork.Transports.QueryNoTracking()
+                .Where(t => t.PublicId == transportId && guestIds.Contains(t.GuestId))
+                .Select(t => t.TripStatus)
+                .FirstOrDefaultAsync(ct);
+
+            if (status is null)
+                return ApiResponse<bool>.NotFoundResponse("Transport request not found");
+
+            if (string.Equals(status, TransportStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+                return ApiResponse<bool>.SuccessResponse(true, "Transport request is already cancelled");
+
+            return ApiResponse<bool>.ConflictResponse(
+                "This request can no longer be cancelled — a driver has already been assigned to it");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Cancelling transport request {TransportId} failed for guest {GuestId}", transportId, guestId);
+            return ApiResponse<bool>.ServerErrorResponse("Could not cancel the transport request");
         }
     }
 

@@ -45,6 +45,11 @@ public interface IVipAppService
     /// waiting for a driver to accept it.</summary>
     Task<ApiResponse<TransportationResponse>> RequestTransportAsync(int guestId, TransportRequest request, CancellationToken ct);
 
+    /// <summary>Guest cancels their own request — allowed only while it is still
+    /// "new" (unclaimed). Once a driver has it (assigned or beyond) this returns
+    /// 409 and the ride stands; dispatch cancels those instead.</summary>
+    Task<ApiResponse<bool>> CancelTransportRequestAsync(int guestId, Guid transportId, CancellationToken ct);
+
     // ---- Sessions ----
     Task<ApiResponse<List<GuestSessionResponse>>> GetSessionsAsync(int guestId, Guid? eventId = null, CancellationToken ct = default);
     Task<ApiResponse<SessionDetailResponse>> GetSessionDetailAsync(int guestId, Guid sessionId, CancellationToken ct);

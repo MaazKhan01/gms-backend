@@ -23,6 +23,9 @@ public class GuestResponse
     public DateOnly? DepartureDate { get; set; }
     public string PhotoUrl { get; set; }
     public bool AccreditationRequired { get; set; }
+    // GuestServiceType values the guest may self-request from the VIP app
+    // (1 = flight, 2 = accommodation, 3 = transport). See Guest.AllowedServicesJson.
+    public List<int> AllowedServices { get; set; } = new();
     public List<Guid> SessionIds { get; set; } = new();
     public DateTime CreatedAt { get; set; }
 

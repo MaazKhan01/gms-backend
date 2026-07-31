@@ -22,4 +22,8 @@ public class UserResponse
     // Only meaningful right after InviteUserAsync — true elsewhere/by default,
     // since most callers of this DTO don't just send an invite.
     public bool InviteEmailSent { get; set; } = true;
+    // Why the send failed, when it did — the account exists either way, so the
+    // admin needs the provider's reason to know whether Resend Invite will help.
+    // Null when the email went out. Admin-only endpoint (Users.Create).
+    public string InviteEmailError { get; set; }
 }
