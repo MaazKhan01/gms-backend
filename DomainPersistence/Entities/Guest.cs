@@ -10,14 +10,20 @@ namespace DomainPersistence.Entities
         public int EventId { get; set;}
         public string GuestType { get; set;}
         // Free-text fallback — kept in sync with OrganizationRef.Name whenever
-        // OrganizationId is set (see GuestService), so every existing consumer
-        // that just reads this string (search, CSV export, travel rows,
-        // dashboard) keeps working unchanged. CSV import still writes here
-        // directly with no OrganizationId, since it has no id to resolve.
         public string Organization { get; set; }
         public int? OrganizationId { get; set; }
         public int? NationalityId { get; set;}
-        public string Tier { get; set;}
+
+         public string Tier { get; set;}
+
+        // The guest's grade for this event. Nullable so pre-existing rows and CSV
+        public int? ServiceLevelId { get; set; }
+
+        // Set when an authorised user pushed this assignment through despite a
+        // failing Service Level rule (capacity full / missing required fields).
+        // Kept for audit — diplomatic events need to show who waived what.
+        public bool ServiceLevelRulesOverridden { get; set; }
+        public string ServiceLevelOverrideReason { get; set; }
         public string PreferencesJson { get; set; }
         public bool NotificationsEnabled { get; set; } = true;
         public string Language { get; set; }
@@ -28,26 +34,14 @@ namespace DomainPersistence.Entities
         // The actual issue/revoke lifecycle lives on the Invitation row.
         public bool AccreditationRequired { get; set; }
 
-        // JSON array of Core.Constants.GuestServiceType values (1 = flight,
-        // 2 = accommodation, 3 = transport) the guest may REQUEST from the VIP
-        // app themselves — independent of what the admin has actually booked, so
-        // a guest with no Transport row can still be allowed to ask for a car.
-        // Null/empty = nothing self-requestable. Read/written via GuestServices.
         public string AllowedServicesJson { get; set; }
 
-        // 1:1 with a Users row, auto-provisioned alongside the guest (see
-        // GuestService.CreateGuestAsync) with RoleId -> the "guest" role
-        // (PortalAccess=false, no password — OTP via CurrentGuest/VipAppService
-        // remains the only way in). Gives chat/notifications/devices one shared
-        // identity space with staff instead of a second, duplicated one. Email is
-        // deliberately NOT copied onto the User row: Guests.Email has no
-        // uniqueness constraint (the same person can be re-invited per event),
-        // which would collide with Users' filtered-unique Email index.
-        public int UserId { get; set; }
+         public int UserId { get; set; }
 
         public virtual ICollection<GuestSession> GuestSessions { get; set; } = new List<GuestSession>();
         public virtual Nationality Nationality { get; set; }
         public virtual Organization OrganizationRef { get; set; }
+        public virtual ServiceLevel ServiceLevel { get; set; }
         public virtual Event Event { get; set; }
         public virtual User User { get; set; }
     }

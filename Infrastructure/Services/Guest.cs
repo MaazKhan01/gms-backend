@@ -1,4 +1,6 @@
 using AutoMapper;
+using Core.Common;
+using Core.Common.Interfaces;
 using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -27,7 +29,8 @@ public class GuestService(
     ILogger<GuestService> _logger,
     IBlobService _blobService,
     IBackgroundJobClient _backgroundJobClient,
-    IImportBatchService _importBatchService) : IGuestService
+    IImportBatchService _importBatchService,
+    ICurrentUser _currentUser) : IGuestService
 {
     private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
 
@@ -128,6 +131,7 @@ public class GuestService(
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
                 .Include(g => g.OrganizationRef)
+                .Include(g => g.ServiceLevel)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.PublicId == id, ct);
 
@@ -422,6 +426,7 @@ public class GuestService(
             var query = _unitOfWork.Guests.Query()
                 .Include(g => g.Nationality)
                 .Include(g => g.OrganizationRef)
+                .Include(g => g.ServiceLevel)
                 .Include(g => g.Event)
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Where(g => g.EventId == ev.Id);
@@ -440,6 +445,16 @@ public class GuestService(
             {
                 var tier = request.Tier.ToLower();
                 query = query.Where(g => g.Tier.ToLower() == tier);
+            }
+
+            if (request.ServiceLevelId is { } levelPublicId && levelPublicId != Guid.Empty)
+            {
+                var level = await _unitOfWork.ServiceLevels.QueryNoTracking()
+                    .FirstOrDefaultAsync(l => l.PublicId == levelPublicId, ct);
+                // Unknown id must return nothing, not everything.
+                query = level == null
+                    ? query.Where(_ => false)
+                    : query.Where(g => g.ServiceLevelId == level.Id);
             }
 
             // Invitation status lives on the Invitation row, not the Guest — and
@@ -569,6 +584,7 @@ public class GuestService(
                 .Include(g => g.GuestSessions)
                 .Include(g => g.Nationality)
                 .Include(g => g.OrganizationRef)
+                .Include(g => g.ServiceLevel)
                 .Include(g => g.Event)
                 .Include(g => g.User)
                 .FirstOrDefaultAsync(g => g.PublicId == request.Id.Value, ct);
@@ -576,16 +592,33 @@ public class GuestService(
             if (guest == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            // Duplicate email within the same event (excluding this guest)
+            var (serviceLevel, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, guest.EventId, ct);
+            if (levelError != null)
+                return ApiResponse<GuestResponse>.ErrorResponse(levelError);
+
+            // Duplicate guard is now (event, email, service level), not (event,
+            // email): the same person may legitimately appear once per level —
+            // e.g. as a Speaker and again as a VIP delegate — each with its own
+            // invitation/accreditation/seating/travel.
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 var normalised = request.Email.ToLower().Trim();
+                var levelId = serviceLevel?.Id;
                 var duplicate = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Email == normalised && g.EventId == guest.EventId && g.Id != guest.Id, ct);
+                    .FirstOrDefaultAsync(g => g.Email == normalised
+                                              && g.EventId == guest.EventId
+                                              && g.ServiceLevelId == levelId
+                                              && g.Id != guest.Id, ct);
 
                 if (duplicate != null)
-                    return ApiResponse<GuestResponse>.ConflictResponse("A guest with this email already exists for this event");
+                    return ApiResponse<GuestResponse>.ConflictResponse(serviceLevel == null
+                        ? "A guest with this email already exists for this event with no service level"
+                        : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
             }
+
+            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, guest, ct);
+            if (ruleError != null)
+                return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
 
             var nationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct);
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
@@ -606,7 +639,16 @@ public class GuestService(
             guest.Organization  = organization?.Name ?? request.Organization;
             guest.OrganizationId = organization?.Id;
             guest.NationalityId = nationalityId;
-            guest.Tier          = request.Tier ?? guest.Tier;
+            // Tier mirrors the level's Code so every legacy string consumer keeps
+            // working; falls back to the raw Tier only when no level is set (CSV).
+            guest.ServiceLevelId = serviceLevel?.Id;
+            guest.Tier          = serviceLevel?.Code ?? request.Tier ?? guest.Tier;
+            if (serviceLevel != null && request.OverrideServiceLevelRules
+                && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules))
+            {
+                guest.ServiceLevelRulesOverridden = true;
+                guest.ServiceLevelOverrideReason = request.ServiceLevelOverrideReason?.Trim();
+            }
             guest.ArrivalDate   = request.ArrivalDate;
             guest.DepartureDate = request.DepartureDate;
             guest.PhotoUrl      = request.PhotoUrl;
@@ -637,6 +679,7 @@ public class GuestService(
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
                 .Include(g => g.OrganizationRef)
+                .Include(g => g.ServiceLevel)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
@@ -664,15 +707,33 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<GuestResponse>.ErrorResponse("Event not found");
 
+            var (serviceLevel, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, ev.Id, ct);
+            if (levelError != null)
+                return ApiResponse<GuestResponse>.ErrorResponse(levelError);
+
+            // (event, email, service level) — not (event, email). The same person
+            // may appear once per level; see the Update path for the rationale.
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 var normalised = request.Email.ToLower().Trim();
+                var levelId = serviceLevel?.Id;
                 var existing = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Email == normalised && g.EventId == ev.Id, ct);
+                    .FirstOrDefaultAsync(g => g.Email == normalised
+                                              && g.EventId == ev.Id
+                                              && g.ServiceLevelId == levelId, ct);
 
                 if (existing != null)
-                    return ApiResponse<GuestResponse>.ConflictResponse("A guest with this email already exists for this event");
+                    return ApiResponse<GuestResponse>.ConflictResponse(serviceLevel == null
+                        ? "A guest with this email already exists for this event with no service level"
+                        : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
             }
+
+            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, null, ct);
+            if (ruleError != null)
+                return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
+
+            var overrodeRules = serviceLevel != null && request.OverrideServiceLevelRules
+                                && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);
 
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
             var user = await CreateLinkedUserAsync(request.FirstName.Trim(), request.LastName.Trim(), ct);
@@ -686,7 +747,12 @@ public class GuestService(
                 Organization  = organization?.Name ?? request.Organization,
                 OrganizationId = organization?.Id,
                 NationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct),
-                Tier          = request.Tier,
+                ServiceLevelId = serviceLevel?.Id,
+                // Mirrored from the level's code so legacy string consumers work;
+                // CSV import (no level) still writes its raw Tier string.
+                Tier          = serviceLevel?.Code ?? request.Tier,
+                ServiceLevelRulesOverridden = overrodeRules,
+                ServiceLevelOverrideReason = overrodeRules ? request.ServiceLevelOverrideReason?.Trim() : null,
                 ArrivalDate   = request.ArrivalDate,
                 DepartureDate = request.DepartureDate,
                 PhotoUrl      = request.PhotoUrl,
@@ -731,6 +797,7 @@ public class GuestService(
                 .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
                 .Include(g => g.Nationality)
                 .Include(g => g.OrganizationRef)
+                .Include(g => g.ServiceLevel)
                 .Include(g => g.Event)
                 .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
 
@@ -800,6 +867,91 @@ public class GuestService(
         if (publicId == null || publicId == Guid.Empty) return null;
         return await _unitOfWork.Organizations.GetByPublicIdAsync(publicId.Value, ct);
     }
+
+    // ── Service level (replaces the old free-text Tier) ──────────────────────
+
+    /// <summary>Resolves the public level id, rejecting a level that belongs to a
+    /// different event — the level list is per-event, so a cross-event id is a
+    /// client bug we should surface rather than silently accept.</summary>
+    private async Task<(ServiceLevel level, string error)> ResolveServiceLevelAsync(
+        Guid? publicId, int eventId, CancellationToken ct)
+    {
+        if (publicId == null || publicId == Guid.Empty) return (null, null);
+
+        var level = await _unitOfWork.ServiceLevels.Query()
+            .FirstOrDefaultAsync(l => l.PublicId == publicId.Value, ct);
+
+        if (level == null) return (null, "Service level not found");
+        if (level.EventId != eventId) return (null, "That service level belongs to a different event");
+
+        return (level, null);
+    }
+
+    /// <summary>
+    /// Enforces the level's rules (capacity, required guest fields). Returns a
+    /// message when the assignment should be blocked, or null to allow it.
+    /// </summary>
+    /// <remarks>
+    /// Overridable by design: an authorised user (<see cref="PermissionCodes.ServiceLevelsOverrideRules"/>)
+    /// can push through with <c>OverrideServiceLevelRules</c>. The permission is
+    /// re-checked here rather than trusted from the request, so a client can't
+    /// grant itself the bypass. Overrides are recorded on the guest row for audit.
+    /// </remarks>
+    private async Task<string> ValidateServiceLevelAssignmentAsync(
+        ServiceLevel level, CreateGuestRequest request, Guest existing, CancellationToken ct)
+    {
+        if (level == null) return null;
+
+        // Unchanged level on an edit: the guest is already here, so re-validating
+        // (and failing on a since-lowered capacity) would block unrelated edits.
+        var isNewAssignment = existing == null || existing.ServiceLevelId != level.Id;
+
+        var violations = new List<string>();
+
+        if (isNewAssignment && level.Capacity.HasValue)
+        {
+            var query = _unitOfWork.Guests.Query().Where(g => g.ServiceLevelId == level.Id);
+            if (existing != null) query = query.Where(g => g.Id != existing.Id);
+
+            var count = await query.CountAsync(ct);
+            if (count >= level.Capacity.Value)
+                violations.Add($"\"{level.Name}\" is at capacity ({count} / {level.Capacity}).");
+        }
+
+        var required = ServiceLevelRules.ParseRequiredFields(level.RequiredGuestFieldsJson);
+        var missing = required.Where(key => !IsGuestFieldFilled(key, request)).ToList();
+        if (missing.Count > 0)
+            violations.Add($"\"{level.Name}\" requires: {string.Join(", ", missing.Select(GuestRequirableFields.Label))}.");
+
+        if (violations.Count == 0) return null;
+
+        var canOverride = _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);
+        if (request.OverrideServiceLevelRules && canOverride)
+        {
+            _logger.LogInformation(
+                "Service level rules overridden for level {Level} by user {UserId}. Violations: {Violations}. Reason: {Reason}",
+                level.Name, _currentUser.UserId, string.Join(" ", violations),
+                request.ServiceLevelOverrideReason ?? "(none given)");
+            return null;
+        }
+
+        var suffix = canOverride
+            ? " You can override this if it's intentional."
+            : " Ask someone with override permission to place this guest.";
+        return string.Join(" ", violations) + suffix;
+    }
+
+    private static bool IsGuestFieldFilled(string key, CreateGuestRequest r) => key switch
+    {
+        GuestRequirableFields.Email => !string.IsNullOrWhiteSpace(r.Email),
+        GuestRequirableFields.NationalityId => r.NationalityId is { } n && n != Guid.Empty,
+        GuestRequirableFields.OrganizationId => (r.OrganizationId is { } o && o != Guid.Empty)
+                                                || !string.IsNullOrWhiteSpace(r.Organization),
+        GuestRequirableFields.PhotoUrl => !string.IsNullOrWhiteSpace(r.PhotoUrl),
+        GuestRequirableFields.ArrivalDate => r.ArrivalDate.HasValue,
+        GuestRequirableFields.DepartureDate => r.DepartureDate.HasValue,
+        _ => true,
+    };
 
     // CSV import has no Guids to work with — match the Nationality column
     // against the lookup's Name or Code (case-insensitive) instead.

@@ -69,6 +69,12 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<TransportStatusHistory> TransportStatusHistories { get; }
     IGenericRepository<GuestDriverAssignment> GuestDriverAssignments { get; }
     IGenericRepository<Organization> Organizations { get; }
+
+    // Per-event service catalog + guest grades
+    IGenericRepository<Service> Services { get; }
+    IGenericRepository<ServiceLevel> ServiceLevels { get; }
+    IGenericRepository<ServiceLevelService> ServiceLevelServices { get; }
+
     // Notifications
     IGenericRepository<Notification> Notifications { get; }
 

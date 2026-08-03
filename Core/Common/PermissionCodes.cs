@@ -32,6 +32,19 @@ public static class PermissionCodes
     public const string OrganizationsView = "Organizations.View";
     public const string OrganizationsManage = "Organizations.Manage";
 
+    // Per-event service catalog (admin managed). Reads are open to any signed-in
+    // user so the Service Levels builder and guest form can populate dropdowns.
+    public const string ServicesView = "Services.View";
+    public const string ServicesManage = "Services.Manage";
+
+    // Per-event guest grades — replaces the old hardcoded tier list.
+    public const string ServiceLevelsView = "ServiceLevels.View";
+    public const string ServiceLevelsManage = "ServiceLevels.Manage";
+    // Lets a user push a guest onto a level whose rules fail (capacity full, or
+    // required guest fields missing). Deliberately separate from .Manage so
+    // "can edit levels" and "can waive the rules" are grantable independently.
+    public const string ServiceLevelsOverrideRules = "ServiceLevels.OverrideRules";
+
     // ── GMS modules ─────────────────────────────────────────────────────
     // Each module exposes a `.View` (read-only, no action buttons) plus its
     // action permissions. Policies register automatically via reflection in

@@ -58,6 +58,9 @@ public class UnitOfWork : IUnitOfWork
         TransportStatusHistories = new GenericRepository<TransportStatusHistory>(_context);
         GuestDriverAssignments = new GenericRepository<GuestDriverAssignment>(_context);
         Organizations = new GenericRepository<Organization>(_context);
+        Services = new GenericRepository<Service>(_context);
+        ServiceLevels = new GenericRepository<ServiceLevel>(_context);
+        ServiceLevelServices = new GenericRepository<ServiceLevelService>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
@@ -105,6 +108,9 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<TransportStatusHistory> TransportStatusHistories { get; private set; }
     public IGenericRepository<GuestDriverAssignment> GuestDriverAssignments { get; private set; }
     public IGenericRepository<Organization> Organizations { get; private set; }
+    public IGenericRepository<Service> Services { get; private set; }
+    public IGenericRepository<ServiceLevel> ServiceLevels { get; private set; }
+    public IGenericRepository<ServiceLevelService> ServiceLevelServices { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<VenueType> VenueTypes { get; private set; }

@@ -17,7 +17,10 @@ public class PagedRequest
 // server-side — filtering client-side would only ever filter the current page.
 public class GuestPagedRequest : PagedRequest
 {
+    /// <summary>Legacy grade-string filter, still matched against Guest.Tier so
+    /// older callers keep working. New callers should send ServiceLevelId.</summary>
     public string Tier { get; set; }
+    public Guid? ServiceLevelId { get; set; }
     public string InvitationStatus { get; set; }
     // Comma-separated, e.g. "sent,opened,accepted" — lets the Guests filter
     // panel select more than one status at once. Independent of the single

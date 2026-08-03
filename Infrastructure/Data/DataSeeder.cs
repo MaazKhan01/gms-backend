@@ -44,6 +44,7 @@ public static class DataSeeder
         await EnsureAdminUserAsync(db, config, adminRole, logger, ct);
 
         await db.SaveChangesAsync(ct);
+
         logger?.LogInformation("Data seeding completed.");
     }
 
@@ -397,4 +398,5 @@ public static class DataSeeder
         foreach (var name in eventTypes)
             db.EventTypes.Add(new EventType { Name = name });
     }
+
 }

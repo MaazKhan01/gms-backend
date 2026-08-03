@@ -18,7 +18,16 @@ public class GuestResponse
     public string NationalityName { get; set; }
     public string NationalityCode { get; set; }
     public string NationalityFlag { get; set; }
+    /// <summary>Legacy grade string, mirrored from ServiceLevel.Code. Kept so
+    /// existing consumers (chips, CSV export, VIP-app seating category) work
+    /// unchanged — new code should prefer ServiceLevelName/ServiceLevelColor.</summary>
     public string Tier { get; set; }
+    public Guid? ServiceLevelId { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelNameAr { get; set; }
+    public string ServiceLevelColor { get; set; }
+    public bool ServiceLevelRulesOverridden { get; set; }
+    public string ServiceLevelOverrideReason { get; set; }
     public DateOnly? ArrivalDate { get; set; }
     public DateOnly? DepartureDate { get; set; }
     public string PhotoUrl { get; set; }
