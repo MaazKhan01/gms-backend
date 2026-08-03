@@ -10,6 +10,7 @@ namespace DomainPersistence.Entities;
 public partial class ApplicationDBContext
 {
     public virtual DbSet<Event> Events { get; set; }
+    public virtual DbSet<EventType> EventTypes { get; set; }
     public virtual DbSet<Session> Sessions { get; set; }
     public virtual DbSet<AccountRequest> AccountRequests { get; set; }
     public virtual DbSet<UserModuleGrant> UserModuleGrants { get; set; }
@@ -220,6 +221,15 @@ public partial class ApplicationDBContext
         // Most relationships use Restrict to avoid SQL Server multiple-cascade-path
         // errors; the app relies on soft-delete anyway. Only the two leaf ownership
         // edges (propâ†’seats, seatingâ†’assignments) cascade.
+        modelBuilder.Entity<EventType>(et2 =>
+        {
+            et2.ToTable("EventTypes");
+            et2.HasKey(x => x.Id);
+            et2.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            et2.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            et2.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
         modelBuilder.Entity<VenueType>(vt =>
         {
             vt.ToTable("VenueTypes");

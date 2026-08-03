@@ -40,6 +40,7 @@ public static class DataSeeder
 
         await SeedNationalitiesAsync(db, ct);
         await SeedVenueRefDataAsync(db, ct);
+        await SeedEventTypesAsync(db, ct);
         await EnsureAdminUserAsync(db, config, adminRole, logger, ct);
 
         await db.SaveChangesAsync(ct);
@@ -383,5 +384,17 @@ public static class DataSeeder
             foreach (var (code, name, nameAr) in elementTypes)
                 db.ElementTypes.Add(new ElementType { Code = code, Name = name, NameAr = nameAr });
         }
+    }
+
+    // Replaces the old hardcoded EVENT_TYPES list (frontend + backend) with an
+    // admin-managed lookup — seeded once with the same 5 values so existing
+    // events/imports keep working without anyone having to re-add them.
+    private static async Task SeedEventTypesAsync(ApplicationDBContext db, CancellationToken ct)
+    {
+        if (await db.EventTypes.AnyAsync(ct)) return;
+
+        var eventTypes = new[] { "Conference", "Sports", "Exhibition", "Food Festival", "Others" };
+        foreach (var name in eventTypes)
+            db.EventTypes.Add(new EventType { Name = name });
     }
 }

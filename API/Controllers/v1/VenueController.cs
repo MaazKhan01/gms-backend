@@ -23,6 +23,13 @@ namespace API.Controllers.v1
             }
             return ToResponse(result);
         }
+        [HttpPost("{id:guid}/clone")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> CloneVenue(Guid id, [FromBody] CloneVenueRequest request, CancellationToken ct)
+        {
+            var result = await _venueService.CloneVenueAsync(id, request, _currentUser.UserId, ct);
+            return ToResponse(result);
+        }
         [HttpPost("{id:guid}")]
         [HasPermission(PermissionCodes.VenueManage)]
         public async Task<IActionResult> AddVenueBlock(Guid id, [FromQuery] Guid? sessionId, [FromQuery] Guid venueId, [FromBody] CreateVenueBlockDto request, CancellationToken ct)

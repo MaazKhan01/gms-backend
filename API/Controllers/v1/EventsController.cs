@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Core.Authorization;
 using Core.Common;
@@ -36,6 +37,36 @@ public class EventsController(IEventService _eventService, ICurrentUser _current
     [HasPermission(PermissionCodes.EventsView)]
     public async Task<IActionResult> GetEventById(Guid id, CancellationToken ct)
         => ToResponse(await _eventService.GetEventByIdAsync(id, ct));
+
+    [HttpGet("types")]
+    public async Task<IActionResult> GetEventTypes(CancellationToken ct)
+        => ToResponse(await _eventService.GetEventTypesAsync(ct));
+
+    [HttpPost("types")]
+    [HasPermission(PermissionCodes.EventsCreate)]
+    public async Task<IActionResult> CreateEventType([FromBody] CreateEventTypeRequest request, CancellationToken ct)
+        => ToResponse(await _eventService.CreateEventTypeAsync(request, _currentUser.UserId, ct));
+
+    [HttpGet("import-template")]
+    [HasPermission(PermissionCodes.EventsCreate)]
+    public async Task<IActionResult> GetImportTemplate(CancellationToken ct)
+    {
+        var bytes = await _eventService.BuildImportTemplateAsync(ct);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "events-import-template.xlsx");
+    }
+
+    [HttpPost("import")]
+    [HasPermission(PermissionCodes.EventsCreate)]
+    [RequestSizeLimit(20_000_000)]
+    public async Task<IActionResult> ImportEvents(IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<object>.ErrorResponse("A file is required."));
+
+        using var stream = file.OpenReadStream();
+        var result = await _eventService.ImportEventsAsync(stream, _currentUser.UserId, ct);
+        return ToResponse(result);
+    }
 
     [HttpPost]
     [HasPermission(PermissionCodes.EventsCreate)]

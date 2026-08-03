@@ -44,6 +44,7 @@ public static class PermissionCodes
     public const string EventsDelete = "Events.Delete";
     public const string EventsManageStatus = "Events.ManageStatus";
     public const string EventsManageSessions = "Events.ManageSessions";
+    public const string EventsImport = "Events.Import";
 
     // Invitations
     public const string InvitationsView = "Invitations.View";

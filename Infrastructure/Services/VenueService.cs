@@ -541,6 +541,142 @@ namespace Infrastructure.Services
 
         }
 
+        // Deep-copies one VenueBox (Blocks→Props→Seats, VenueLayouts→Props→Seats)
+        // into a brand-new Venue, dropping EventId/SessionId on the new box so it
+        // becomes that venue's shared template — pickBox's fallback (frontend)
+        // picks it up automatically the first time the clone is assigned to any
+        // event/session. Seat Status is reset (never carries over a booking —
+        // the clone starts with nobody assigned since its SeatProperties rows are
+        // brand new and no SeatAssign row references them).
+        public async Task<ApiResponse<GetVenueResonse>> CloneVenueAsync(Guid sourceVenueId, CloneVenueRequest request, int userId, CancellationToken ct)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.VenueName))
+                    return ApiResponse<GetVenueResonse>.ErrorResponse("Venue name is required");
+                if (request.SourceBoxId == Guid.Empty)
+                    return ApiResponse<GetVenueResonse>.ErrorResponse("The layout to clone is required.");
+
+                var sourceVenue = await _unitOfWork.Venues.Query()
+                    .FirstOrDefaultAsync(v => v.PublicId == sourceVenueId, ct);
+                if (sourceVenue == null)
+                    return ApiResponse<GetVenueResonse>.NotFoundResponse("Source venue not found.");
+
+                var sourceBox = await _unitOfWork.VenueBoxes.Query()
+                    .Include(b => b.Blocks!).ThenInclude(bl => bl.Props).ThenInclude(p => p.Seats)
+                    .Include(b => b.VenueLayouts!).ThenInclude(l => l.VenueLayoutProps).ThenInclude(p => p.Seats)
+                    .AsSplitQuery()
+                    .FirstOrDefaultAsync(b => b.PublicId == request.SourceBoxId && b.VenueId == sourceVenue.Id, ct);
+                if (sourceBox == null)
+                    return ApiResponse<GetVenueResonse>.NotFoundResponse("Source layout not found.");
+
+                int? creatorId = userId == 0 ? null : userId;
+
+                int? typeId = null;
+                if (request.VenueType != Guid.Empty)
+                {
+                    typeId = await _unitOfWork.VenueTypes.Query()
+                        .Where(t => t.PublicId == request.VenueType)
+                        .Select(t => (int?)t.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
+                int? locationId = null;
+                if (request.LocationId.HasValue && request.LocationId.Value != Guid.Empty)
+                {
+                    locationId = await _unitOfWork.Locations.Query()
+                        .Where(l => l.PublicId == request.LocationId.Value)
+                        .Select(l => (int?)l.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
+                static VenueLayoutProp CloneProp(VenueLayoutProp p) => new()
+                {
+                    Code = p.Code,
+                    Label = p.Label,
+                    Row = p.Row,
+                    SeatsQuantity = p.SeatsQuantity,
+                    RowNames = p.RowNames?.ToList() ?? new(),
+                    RemovedSeats = p.RemovedSeats?.ToList() ?? new(),
+                    PitchW = p.PitchW,
+                    PitchH = p.PitchH,
+                    StageW = p.StageW,
+                    StageH = p.StageH,
+                    Color = p.Color,
+                    Seats = (p.Seats ?? new()).Select(s => new SeatProperties
+                    {
+                        Code = s.Code,
+                        Placeholder = s.Placeholder,
+                        Index = s.Index,
+                        Color = s.Color,
+                        Status = null,
+                        IsDisabled = s.IsDisabled,
+                        SeatInfo = s.SeatInfo,
+                        Block = s.Block,
+                        Gate = s.Gate,
+                    }).ToList(),
+                };
+
+                var newBox = new VenueBox
+                {
+                    EventId = null,
+                    SessionId = null,
+                    Width = sourceBox.Width,
+                    Height = sourceBox.Height,
+                    Blocks = (sourceBox.Blocks ?? new List<VenueBlock>()).Select(b => new VenueBlock
+                    {
+                        Type = b.Type,
+                        X = b.X,
+                        Y = b.Y,
+                        Rotation = b.Rotation,
+                        Label = b.Label,
+                        Category = b.Category,
+                        Rows = b.Rows,
+                        SeatsPerRow = b.SeatsPerRow,
+                        Props = (b.Props ?? new List<VenueLayoutProp>()).Select(CloneProp).ToList(),
+                    }).ToList(),
+                    VenueLayouts = (sourceBox.VenueLayouts ?? new List<VenueLayout>()).Select(l => new VenueLayout
+                    {
+                        Type = l.Type,
+                        X = l.X,
+                        Y = l.Y,
+                        Rotation = l.Rotation,
+                        ScaleX = l.ScaleX,
+                        ScaleY = l.ScaleY,
+                        OffsetX = l.OffsetX,
+                        OffsetY = l.OffsetY,
+                        VenueLayoutProps = (l.VenueLayoutProps ?? new List<VenueLayoutProp>()).Select(CloneProp).ToList(),
+                    }).ToList(),
+                };
+                if (creatorId.HasValue) newBox.SetCreationAudit(creatorId.Value);
+
+                var venue = new Venue
+                {
+                    Name = request.VenueName.Trim(),
+                    TypeId = typeId,
+                    LocationId = locationId,
+                    Category = request.Category?
+                        .Where(c => !string.IsNullOrWhiteSpace(c))
+                        .Select(c => c.Trim())
+                        .ToList() ?? new(),
+                    Color = request.Color,
+                    ImageUrl = request.ImageUrl,
+                    VenueBoxes = new List<VenueBox> { newBox },
+                };
+                if (creatorId.HasValue) venue.SetCreationAudit(creatorId.Value);
+
+                await _unitOfWork.Venues.AddAsync(venue, ct);
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue), "Venue cloned");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cloning venue {VenueId}", sourceVenueId);
+                return ApiResponse<GetVenueResonse>.ServerErrorResponse("An error occurred while cloning the venue.");
+            }
+        }
+
         public async Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, int userId, CancellationToken ct)
         {
             try
@@ -563,10 +699,18 @@ namespace Infrastructure.Services
                 int? normalizedEventId = null;
                 if (eventId != Guid.Empty)
                 {
-                    normalizedEventId = await _unitOfWork.Events.Query()
-                        .Where(e => e.PublicId == eventId)
-                        .Select(e => (int?)e.Id)
-                        .FirstOrDefaultAsync(ct);
+                    var eventEntity = await _unitOfWork.Events.Query()
+                        .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+                    normalizedEventId = eventEntity?.Id;
+
+                    // Backfill Event.VenueId the first time a layout is saved for this
+                    // event — the event may have been created without a venue picked,
+                    // or (until this fix) never had VenueId set at all on create/update.
+                    if (eventEntity != null && eventEntity.VenueId == null)
+                    {
+                        eventEntity.VenueId = venueIntId;
+                        eventEntity.VenueName = venueEntity.Name;
+                    }
                 }
 
                 // SessionId arrives as a public id; resolve to the internal int FK.

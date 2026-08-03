@@ -67,7 +67,8 @@ public class MappingProfile : Profile
 
         // Event mappings
         CreateMap<Event, EventResponse>()
-            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId));
+            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
+            .ForMember(dest => dest.VenueId, opt => opt.MapFrom(src => src.Venue != null ? (Guid?)src.Venue.PublicId : null));
         CreateMap<Session, SessionResponse>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
             .ForMember(dest => dest.EventId, opt => opt.MapFrom(src => src.Event != null ? src.Event.PublicId : Guid.Empty))
@@ -75,7 +76,10 @@ public class MappingProfile : Profile
         CreateMap<CreateEventRequest, Event>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.AppKey, opt => opt.Ignore())
-            .ForMember(dest => dest.Sessions, opt => opt.Ignore());
+            .ForMember(dest => dest.Sessions, opt => opt.Ignore())
+            // Guid on the request, int FK on the entity — resolved and set explicitly
+            // in EventService.CreateEventAsync instead.
+            .ForMember(dest => dest.VenueId, opt => opt.Ignore());
         CreateMap<CreateSessionRequest, Session>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.Event, opt => opt.Ignore())

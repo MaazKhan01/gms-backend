@@ -10,6 +10,7 @@ public class EventResponse
     public string Type { get; set; }
     public string Theme { get; set; }
     public string VenueName { get; set; }
+    public Guid? VenueId { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public string Status { get; set; }

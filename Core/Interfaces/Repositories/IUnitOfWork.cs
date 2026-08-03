@@ -21,6 +21,7 @@ public interface IUnitOfWork : IDisposable
 
     // GMS — Events
     IGenericRepository<Event> Events { get; }
+    IGenericRepository<EventType> EventTypes { get; }
     IGenericRepository<Session> Sessions { get; }
 
     // GMS — Guests

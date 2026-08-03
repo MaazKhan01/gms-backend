@@ -6,6 +6,7 @@ namespace Core.Interfaces.Services
     public interface IVenueService
     {
         Task<ApiResponse<GetVenueResonse>> CreateVenueAsync(CreateVenueRequest request,int userId, CancellationToken ct);
+        Task<ApiResponse<GetVenueResonse>> CloneVenueAsync(Guid sourceVenueId, CloneVenueRequest request, int userId, CancellationToken ct);
         Task<ApiResponse<GetVenueResonse>> AddVenueBlockAsync(Guid eventId, Guid? sessionId, Guid venueId, CreateVenueBlockDto request, CancellationToken ct);
         Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, int userId, CancellationToken ct);
         Task<ApiResponse<GetVenueResonse>> GetVenueByIdAsync(Guid venueId, CancellationToken ct);

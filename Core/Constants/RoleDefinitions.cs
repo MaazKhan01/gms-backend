@@ -34,6 +34,7 @@ public static class RoleDefinitions
         {
             PermissionCodes.EventsView, PermissionCodes.EventsCreate, PermissionCodes.EventsUpdate,
             PermissionCodes.EventsDelete, PermissionCodes.EventsManageStatus, PermissionCodes.EventsManageSessions,
+            PermissionCodes.EventsImport,
             PermissionCodes.DashboardView,
         }),
         new("invitations-manager", "Invitations Manager", "Design templates and send invitations", new[]
