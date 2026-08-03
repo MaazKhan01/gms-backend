@@ -14,6 +14,76 @@ namespace Core.ViewModel.Dashboard
         public DashboardFunnelDto FunnelData { get; set; }
         public List<DashboardMeetingDto> Meetings { get; set; } = new();
         public List<DashboardGuestDto> RecentGuests { get; set; } = new();
+
+        // ── Analytics ──────────────────────────────────────────────────────
+        // Everything below is derived from the same guest/invitation/travel
+        // rows already loaded for the funnel, so the extra detail costs no
+        // additional round trips.
+        public DashboardRsvpDto Rsvp { get; set; } = new();
+        public DashboardAccreditationDto Accreditation { get; set; } = new();
+        public DashboardTravelDto Travel { get; set; } = new();
+        public DashboardSeatingDto Seating { get; set; } = new();
+
+        /// <summary>Guests per service level, in the level's configured sort order.</summary>
+        public List<DashboardBreakdownDto> ServiceLevels { get; set; } = new();
+        public List<DashboardBreakdownDto> Nationalities { get; set; } = new();
+        public List<DashboardBreakdownDto> Organizations { get; set; } = new();
+
+        /// <summary>Arrival/departure counts per day, for the movements chart.</summary>
+        public List<DashboardDayCountDto> Movements { get; set; } = new();
+    }
+
+    public class DashboardRsvpDto
+    {
+        public int Accepted { get; set; }
+        public int Declined { get; set; }
+        /// <summary>Invited but no answer yet — sent + opened.</summary>
+        public int Awaiting { get; set; }
+        /// <summary>No invitation has gone out at all.</summary>
+        public int NotSent { get; set; }
+        /// <summary>Accepted as a percentage of everyone actually invited (0 when none are).</summary>
+        public int ResponseRate { get; set; }
+    }
+
+    public class DashboardAccreditationDto
+    {
+        public int Issued { get; set; }
+        public int Pending { get; set; }
+        public int Revoked { get; set; }
+        /// <summary>Guests whose profile says accreditation isn't needed.</summary>
+        public int NotRequired { get; set; }
+    }
+
+    public class DashboardTravelDto
+    {
+        public int FlightsBooked { get; set; }
+        public int AccommodationBooked { get; set; }
+        public int TransportBooked { get; set; }
+        /// <summary>Distinct guests with at least one of the three.</summary>
+        public int GuestsWithTravel { get; set; }
+    }
+
+    public class DashboardSeatingDto
+    {
+        public int Assigned { get; set; }
+        public int Unassigned { get; set; }
+    }
+
+    /// <summary>A labelled slice of the guest list — service level, nationality, organization.</summary>
+    public class DashboardBreakdownDto
+    {
+        public string Label { get; set; }
+        public string LabelAr { get; set; }
+        /// <summary>Only service levels carry one; null elsewhere.</summary>
+        public string Color { get; set; }
+        public int Count { get; set; }
+    }
+
+    public class DashboardDayCountDto
+    {
+        public DateOnly Date { get; set; }
+        public int Arrivals { get; set; }
+        public int Departures { get; set; }
     }
 
     public class DashboardSessionDto
