@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using ClosedXML.Excel;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Core.Interfaces.Repositories;
@@ -18,7 +19,13 @@ using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;
 
-public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<EventService> _logger) : IEventService
+public class EventService(
+    IUnitOfWork _unitOfWork,
+    IMapper _mapper,
+    ILogger<EventService> _logger,
+    IBlobService _blobService,
+    IBackgroundJobClient _backgroundJobClient,
+    IImportBatchService _importBatchService) : IEventService
 {
     private static readonly string[] ValidStatuses = { "planning", "active", "completed", "cancelled" };
 
@@ -442,11 +449,64 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<Even
         return stream.ToArray();
     }
 
-    public async Task<ApiResponse<ImportEventsResult>> ImportEventsAsync(Stream fileStream, int userId, CancellationToken ct = default)
+    // Uploads the file to blob storage (so the background job can re-read it
+    // outside the request's lifetime), records an ImportBatch row, and enqueues
+    // the actual processing — the HTTP request never waits on the parse/insert
+    // work. The caller polls IImportBatchService.GetStatusAsync(batchId).
+    public async Task<ApiResponse<StartImportResponse>> StartEventsImportAsync(Stream fileStream, string fileName, int userId, CancellationToken ct = default)
     {
-        var result = new ImportEventsResult();
+        string fileUrl;
         try
         {
+            fileUrl = await _blobService.UploadStreamAsync(fileStream, fileName, "imports", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload events import file");
+            return ApiResponse<StartImportResponse>.ServerErrorResponse("Could not upload the file — please try again.");
+        }
+
+        var batch = new ImportBatch
+        {
+            Kind = "events",
+            Status = "queued",
+            FileUrl = fileUrl,
+            CreatedByUserId = userId,
+        };
+        await _unitOfWork.ImportBatches.AddAsync(batch, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        _backgroundJobClient.Enqueue<IEventService>(x => x.ProcessEventsImportBatchAsync(batch.PublicId, CancellationToken.None));
+
+        return ApiResponse<StartImportResponse>.SuccessResponse(
+            new StartImportResponse { BatchId = batch.PublicId, Status = batch.Status },
+            "Import started — you'll be notified when it's done.");
+    }
+
+    // The Hangfire job body — everything ImportEventsAsync used to do
+    // synchronously, now writing per-row outcomes to ImportBatchRow instead of
+    // an in-memory result, and pushing a notification on completion instead of
+    // returning an HTTP response (there's no request left to return one to).
+    public async Task ProcessEventsImportBatchAsync(Guid batchId, CancellationToken ct = default)
+    {
+        var batch = await _unitOfWork.ImportBatches.Query().FirstOrDefaultAsync(b => b.PublicId == batchId, ct);
+        if (batch == null)
+        {
+            _logger.LogError("Import batch {BatchId} not found", batchId);
+            return;
+        }
+
+        batch.Status = "processing";
+        batch.StartedAt = DateTime.UtcNow;
+        _unitOfWork.ImportBatches.Update(batch);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var rowResults = new List<ImportBatchRow>();
+        var toInsert = new List<Event>();
+
+        try
+        {
+            using var fileStream = await _blobService.DownloadAsync(batch.FileUrl, ct);
             using var wb = new XLWorkbook(fileStream);
             var ws = wb.Worksheets.FirstOrDefault(w => w.Visibility == XLWorksheetVisibility.Visible) ?? wb.Worksheet(1);
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
@@ -468,8 +528,7 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<Even
                 await _unitOfWork.EventTypes.Query().Select(t => t.Name).ToListAsync(ct),
                 StringComparer.OrdinalIgnoreCase);
 
-            int? creatorId = userId == 0 ? null : userId;
-            var toInsert = new List<Event>();
+            int? creatorId = batch.CreatedByUserId == 0 ? null : batch.CreatedByUserId;
 
             for (int r = 2; r <= lastRow; r++)
             {
@@ -485,63 +544,25 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<Even
                     && startCell.IsEmpty() && endCell.IsEmpty() && imageUrl.Length == 0;
                 if (rowIsBlank) continue;
 
-                result.Total++;
+                void Fail(string error, string category) => rowResults.Add(new ImportBatchRow
+                { RowNumber = r, Title = title, Success = false, Error = error, ErrorCategory = category });
 
-                if (string.IsNullOrWhiteSpace(title))
-                {
-                    result.Rows.Add(new ImportEventRowResult
-                    { Row = r, Title = title, Success = false, Error = "Title is required.", ErrorCategory = "validation" });
-                    continue;
-                }
+                if (string.IsNullOrWhiteSpace(title)) { Fail("Title is required.", "validation"); continue; }
 
                 int? venueId = null;
                 if (!string.IsNullOrWhiteSpace(venueName))
                 {
-                    if (venueLookup.TryGetValue(venueName, out var vid))
-                    {
-                        venueId = vid;
-                    }
-                    else
-                    {
-                        result.Rows.Add(new ImportEventRowResult
-                        {
-                            Row = r, Title = title, Success = false,
-                            Error = $"Venue \"{venueName}\" no longer exists in the portal.",
-                            ErrorCategory = "stale_venue",
-                        });
-                        continue;
-                    }
+                    if (venueLookup.TryGetValue(venueName, out var vid)) venueId = vid;
+                    else { Fail($"Venue \"{venueName}\" no longer exists in the portal.", "stale_venue"); continue; }
                 }
 
                 if (!string.IsNullOrWhiteSpace(type) && !validTypes.Contains(type))
-                {
-                    result.Rows.Add(new ImportEventRowResult
-                    {
-                        Row = r, Title = title, Success = false,
-                        Error = $"Type \"{type}\" is not a recognized event type.",
-                        ErrorCategory = "stale_type",
-                    });
-                    continue;
-                }
+                { Fail($"Type \"{type}\" is not a recognized event type.", "stale_type"); continue; }
 
-                if (!TryReadDate(startCell, out var startDate))
-                {
-                    result.Rows.Add(new ImportEventRowResult
-                    { Row = r, Title = title, Success = false, Error = "Start Date is not a valid date.", ErrorCategory = "validation" });
-                    continue;
-                }
-                if (!TryReadDate(endCell, out var endDate))
-                {
-                    result.Rows.Add(new ImportEventRowResult
-                    { Row = r, Title = title, Success = false, Error = "End Date is not a valid date.", ErrorCategory = "validation" });
-                    continue;
-                }
+                if (!TryReadDate(startCell, out var startDate)) { Fail("Start Date is not a valid date.", "validation"); continue; }
+                if (!TryReadDate(endCell, out var endDate)) { Fail("End Date is not a valid date.", "validation"); continue; }
                 if (startDate.HasValue && endDate.HasValue && endDate < startDate)
-                {
-                    result.Rows.Add(new ImportEventRowResult
-                    { Row = r, Title = title, Success = false, Error = "End Date can't be before Start Date.", ErrorCategory = "validation" });
-                    continue;
-                }
+                { Fail("End Date can't be before Start Date.", "validation"); continue; }
 
                 var baseKey = Slugify(title);
                 var appKey = baseKey;
@@ -564,27 +585,35 @@ public class EventService(IUnitOfWork _unitOfWork, IMapper _mapper, ILogger<Even
                 if (creatorId.HasValue) ev.SetCreationAudit(creatorId.Value);
 
                 toInsert.Add(ev);
-                result.Rows.Add(new ImportEventRowResult { Row = r, Title = title, Success = true });
+                rowResults.Add(new ImportBatchRow { RowNumber = r, Title = title, Success = true });
             }
 
             if (toInsert.Count > 0)
-            {
                 await _unitOfWork.Events.AddRangeAsync(toInsert, ct);
-                await _unitOfWork.SaveChangesAsync(ct);
-            }
 
-            result.Imported = toInsert.Count;
-            result.Failed = result.Rows.Count(x => !x.Success);
+            foreach (var rr in rowResults) rr.ImportBatchId = batch.Id;
+            if (rowResults.Count > 0)
+                await _unitOfWork.ImportBatchRows.AddRangeAsync(rowResults, ct);
 
-            return ApiResponse<ImportEventsResult>.SuccessResponse(
-                result, $"{result.Imported} imported, {result.Failed} failed");
+            batch.Total = rowResults.Count;
+            batch.Imported = toInsert.Count;
+            batch.Failed = rowResults.Count(x => !x.Success);
+            batch.Status = "completed";
+            batch.CompletedAt = DateTime.UtcNow;
+            _unitOfWork.ImportBatches.Update(batch);
+            await _unitOfWork.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error importing events from Excel");
-            return ApiResponse<ImportEventsResult>.ServerErrorResponse(
-                "Failed to read the file — make sure it's a .xlsx exported from the template.");
+            _logger.LogError(ex, "Error processing events import batch {BatchId}", batchId);
+            batch.Status = "failed";
+            batch.ErrorMessage = "Failed to read the file — make sure it's a .xlsx exported from the template.";
+            batch.CompletedAt = DateTime.UtcNow;
+            _unitOfWork.ImportBatches.Update(batch);
+            await _unitOfWork.SaveChangesAsync(ct);
         }
+
+        await _importBatchService.NotifyFinishedAsync(batch, "Events", "/events", ct);
     }
 
     // Accepts a real Excel date/datetime cell, or a text cell in a format

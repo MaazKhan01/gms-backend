@@ -12,7 +12,7 @@ namespace API.Controllers.v1;
 [Route("api/v1/[controller]")]
 [Authorize]
 [ApiVersion("1.0")]
-public class GuestController(IGuestService _guestService, ICurrentUser _currentUser) : Controllers.BaseApiController
+public class GuestController(IGuestService _guestService, IImportBatchService _importBatchService, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
     [HttpGet]
     //[HasPermission(PermissionCodes.GuestsView)]
@@ -66,9 +66,16 @@ public class GuestController(IGuestService _guestService, ICurrentUser _currentU
             return Ok(ApiResponse<object>.ErrorResponse("Only CSV files are allowed"));
 
         using var stream = file.OpenReadStream();
-        var result = await _guestService.ImportGuestCsvAsync(eventId, stream, _currentUser.UserId, ct);
+        var result = await _guestService.StartGuestsImportAsync(eventId, stream, file.FileName, _currentUser.UserId, ct);
         return ToResponse(result);
     }
+
+    // Polled by the frontend after StartGuestsImportAsync returns — the actual
+    // import runs as a Hangfire job, so the user never waits on this request.
+    [HttpGet("import/{batchId:guid}")]
+    [HasPermission(PermissionCodes.GuestsImport)]
+    public async Task<IActionResult> GetImportBatchStatus(Guid batchId, CancellationToken ct)
+        => ToResponse(await _importBatchService.GetStatusAsync(batchId, ct));
 
     [HttpDelete("{id:guid}")]
     [HasPermission(PermissionCodes.GuestsDelete)]

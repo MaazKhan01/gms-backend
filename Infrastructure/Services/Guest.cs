@@ -8,6 +8,7 @@ using Core.ViewModel.Invitation;
 using CsvHelper;
 using CsvHelper.Configuration;
 using DomainPersistence.Entities;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -23,7 +24,10 @@ public class GuestService(
     IMapper _mapper,
     IEmailService _emailService,
     IConfiguration _configuration,
-    ILogger<GuestService> _logger) : IGuestService
+    ILogger<GuestService> _logger,
+    IBlobService _blobService,
+    IBackgroundJobClient _backgroundJobClient,
+    IImportBatchService _importBatchService) : IGuestService
 {
     private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
 
@@ -210,11 +214,68 @@ public class GuestService(
         }
     }
 
-    public async Task<ApiResponse<ImportGuestsResult>> ImportGuestCsvAsync(Guid eventId, Stream csvStream, int createdBy, CancellationToken ct)
+    // Uploads the CSV to blob storage (so the background job can re-read it
+    // outside the request's lifetime), records an ImportBatch row, and enqueues
+    // the actual processing — the HTTP request never waits on it. The caller
+    // polls IImportBatchService.GetStatusAsync(batchId).
+    public async Task<ApiResponse<StartImportResponse>> StartGuestsImportAsync(Guid eventId, Stream csvStream, string fileName, int createdBy, CancellationToken ct)
     {
-        var result = new ImportGuestsResult();
+        string fileUrl;
         try
         {
+            fileUrl = await _blobService.UploadStreamAsync(csvStream, fileName, "imports", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload guests import file");
+            return ApiResponse<StartImportResponse>.ServerErrorResponse("Could not upload the file — please try again.");
+        }
+
+        var eventEntity = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+        if (eventEntity == null)
+            return ApiResponse<StartImportResponse>.NotFoundResponse("Event not found");
+
+        var batch = new ImportBatch
+        {
+            Kind = "guests",
+            EventId = eventEntity.Id,
+            Status = "queued",
+            FileUrl = fileUrl,
+            CreatedByUserId = createdBy,
+        };
+        await _unitOfWork.ImportBatches.AddAsync(batch, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        _backgroundJobClient.Enqueue<IGuestService>(x => x.ProcessGuestsImportBatchAsync(batch.PublicId, CancellationToken.None));
+
+        return ApiResponse<StartImportResponse>.SuccessResponse(
+            new StartImportResponse { BatchId = batch.PublicId, Status = batch.Status },
+            "Import started — you'll be notified when it's done.");
+    }
+
+    // The Hangfire job body — same CSV parsing + per-row CreateGuestAsync calls
+    // ImportGuestCsvAsync used to do synchronously, now writing outcomes to
+    // ImportBatchRow and notifying on completion instead of returning them.
+    public async Task ProcessGuestsImportBatchAsync(Guid batchId, CancellationToken ct = default)
+    {
+        var batch = await _unitOfWork.ImportBatches.Query().FirstOrDefaultAsync(b => b.PublicId == batchId, ct);
+        if (batch == null)
+        {
+            _logger.LogError("Import batch {BatchId} not found", batchId);
+            return;
+        }
+
+        batch.Status = "processing";
+        batch.StartedAt = DateTime.UtcNow;
+        _unitOfWork.ImportBatches.Update(batch);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var eventEntity = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.Id == batch.EventId, ct);
+        var rowResults = new List<ImportBatchRow>();
+
+        try
+        {
+            using var csvStream = await _blobService.DownloadAsync(batch.FileUrl, ct);
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HeaderValidated = null,
@@ -224,12 +285,19 @@ public class GuestService(
             using var csv = new CsvReader(reader, config);
 
             var rows = csv.GetRecords<GuestRow>().ToList();
+            var rowNumber = 1; // header is row 1, first data row is 2
             foreach (var row in rows)
             {
+                rowNumber++;
+                var name = $"{row.FirstName} {row.LastName}".Trim();
+
                 if (string.IsNullOrEmpty(row.FirstName) || string.IsNullOrEmpty(row.LastName))
                 {
-                    result.Skipped++;
-                    result.Errors.Add($"Record skipped - Missing First or Last Name: '{row.Email}' ");
+                    rowResults.Add(new ImportBatchRow
+                    {
+                        RowNumber = rowNumber, Title = name.Length > 0 ? name : row.Email, Success = false,
+                        Error = "Missing First or Last Name.", ErrorCategory = "validation",
+                    });
                     continue;
                 }
                 try
@@ -239,7 +307,7 @@ public class GuestService(
                         FirstName = row.FirstName.Trim(),
                         LastName = row.LastName.Trim(),
                         Email = row.Email?.Trim() ?? null,
-                        EventId = eventId,
+                        EventId = eventEntity.PublicId,
                         GuestType = string.IsNullOrEmpty(row.GuestType) ? "delegate" : row.GuestType.Trim().ToLower(),
                         Organization = row.Organization?.Trim() ?? null,
                         NationalityId = await ResolveNationalityByNameAsync(row.Nationality, ct),
@@ -249,28 +317,43 @@ public class GuestService(
                         AccreditationRequired = ParseCsvBool(row.AccreditationRequired),
                     };
                     var createResult = await CreateGuestAsync(request, ct);
-                    if (createResult.Success)
-                        result.Imported++;
-                    else
+                    rowResults.Add(new ImportBatchRow
                     {
-                        result.Skipped++;
-                        result.Errors.Add($"Row failed ({row.FirstName} {row.LastName}): {createResult.Message}");
-                        continue;
-                    }
+                        RowNumber = rowNumber, Title = name, Success = createResult.Success,
+                        Error = createResult.Success ? null : createResult.Message,
+                        ErrorCategory = createResult.Success ? null : "validation",
+                    });
                 }
                 catch (Exception ex)
                 {
-                    result.Skipped++;
-                    result.Errors.Add($"Row failed ({row.FirstName} {row.LastName}): {ex.Message}");
+                    rowResults.Add(new ImportBatchRow
+                    { RowNumber = rowNumber, Title = name, Success = false, Error = ex.Message, ErrorCategory = "validation" });
                 }
             }
-            return ApiResponse<ImportGuestsResult>.SuccessResponse(result);
+
+            foreach (var rr in rowResults) rr.ImportBatchId = batch.Id;
+            if (rowResults.Count > 0)
+                await _unitOfWork.ImportBatchRows.AddRangeAsync(rowResults, ct);
+
+            batch.Total = rowResults.Count;
+            batch.Imported = rowResults.Count(x => x.Success);
+            batch.Failed = rowResults.Count(x => !x.Success);
+            batch.Status = "completed";
+            batch.CompletedAt = DateTime.UtcNow;
+            _unitOfWork.ImportBatches.Update(batch);
+            await _unitOfWork.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "CSV import failed.");
-            return ApiResponse<ImportGuestsResult>.ErrorResponse("The uploaded CSV file contains invalid data or has an incorrect format.");
+            _logger.LogError(ex, "Error processing guests import batch {BatchId}", batchId);
+            batch.Status = "failed";
+            batch.ErrorMessage = "The uploaded CSV file contains invalid data or has an incorrect format.";
+            batch.CompletedAt = DateTime.UtcNow;
+            _unitOfWork.ImportBatches.Update(batch);
+            await _unitOfWork.SaveChangesAsync(ct);
         }
+
+        await _importBatchService.NotifyFinishedAsync(batch, "Guests", "/guests", ct);
     }
 
     // Picker feed: one projected query, no includes, no AutoMapper, no invitation

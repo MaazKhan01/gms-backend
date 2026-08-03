@@ -12,6 +12,8 @@ public partial class ApplicationDBContext
     public virtual DbSet<Event> Events { get; set; }
     public virtual DbSet<EventType> EventTypes { get; set; }
     public virtual DbSet<Session> Sessions { get; set; }
+    public virtual DbSet<ImportBatch> ImportBatches { get; set; }
+    public virtual DbSet<ImportBatchRow> ImportBatchRows { get; set; }
     public virtual DbSet<AccountRequest> AccountRequests { get; set; }
     public virtual DbSet<UserModuleGrant> UserModuleGrants { get; set; }
     public virtual DbSet<Guest> Guests { get; set; }
@@ -221,6 +223,31 @@ public partial class ApplicationDBContext
         // Most relationships use Restrict to avoid SQL Server multiple-cascade-path
         // errors; the app relies on soft-delete anyway. Only the two leaf ownership
         // edges (propâ†’seats, seatingâ†’assignments) cascade.
+        modelBuilder.Entity<ImportBatch>(ib =>
+        {
+            ib.ToTable("ImportBatches");
+            ib.HasKey(x => x.Id);
+            ib.Property(x => x.Kind).IsRequired().HasMaxLength(30);
+            ib.Property(x => x.Status).IsRequired().HasMaxLength(30);
+            ib.Property(x => x.FileUrl).HasMaxLength(1000);
+            ib.Property(x => x.ErrorMessage).HasMaxLength(1000);
+            ib.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            ib.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            ib.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ImportBatchRow>(ibr =>
+        {
+            ibr.ToTable("ImportBatchRows");
+            ibr.HasKey(x => x.Id);
+            ibr.Property(x => x.Title).HasMaxLength(300);
+            ibr.Property(x => x.Error).HasMaxLength(1000);
+            ibr.Property(x => x.ErrorCategory).HasMaxLength(30);
+            ibr.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            ibr.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            ibr.HasOne(x => x.ImportBatch).WithMany(x => x.Rows).HasForeignKey(x => x.ImportBatchId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<EventType>(et2 =>
         {
             et2.ToTable("EventTypes");

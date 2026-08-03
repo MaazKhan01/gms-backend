@@ -14,7 +14,10 @@ public interface IGuestService
     Task<ApiResponse<PaginatedResponse<GuestPickerResponse>>> GetGuestPickerAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
     Task<ApiResponse<GuestResponse>> CreateGuestAsync(CreateGuestRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> BulkGuestsDeleteAsync(Guid eventId,DeleteMultipleGuests request, CancellationToken ct = default);
-    Task<ApiResponse<ImportGuestsResult>> ImportGuestCsvAsync(Guid eventId, Stream csvStream, int createdBy, CancellationToken ct);
+    // Bulk import — uploads the CSV to blob storage and enqueues a Hangfire job
+    // (ProcessGuestsImportBatchAsync); the caller polls IImportBatchService.GetStatusAsync.
+    Task<ApiResponse<StartImportResponse>> StartGuestsImportAsync(Guid eventId, Stream csvStream, string fileName, int createdBy, CancellationToken ct);
+    Task ProcessGuestsImportBatchAsync(Guid batchId, CancellationToken ct = default);
     Task<ApiResponse<GuestResponse>> UpdateGuestAsync( CreateGuestRequest request, CancellationToken ct);
     Task<ApiResponse<bool>> IssueAccreditationAsync(Guid guestId, CancellationToken ct = default);
     Task<ApiResponse<bool>> RevokeAccreditationAsync(Guid guestId, CancellationToken ct = default);

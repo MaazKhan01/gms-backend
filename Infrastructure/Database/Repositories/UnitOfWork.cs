@@ -27,6 +27,8 @@ public class UnitOfWork : IUnitOfWork
         Events = new GenericRepository<Event>(_context);
         EventTypes = new GenericRepository<EventType>(_context);
         Sessions = new GenericRepository<Session>(_context);
+        ImportBatches = new GenericRepository<ImportBatch>(_context);
+        ImportBatchRows = new GenericRepository<ImportBatchRow>(_context);
         AccountRequests = new GenericRepository<AccountRequest>(_context);
         UserModuleGrants = new GenericRepository<UserModuleGrant>(_context);
 
@@ -114,6 +116,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<UserRefreshToken> UserRefreshTokens { get; private set; }
     public IGenericRepository<Event> Events { get; private set; }
     public IGenericRepository<EventType> EventTypes { get; private set; }
+    public IGenericRepository<ImportBatch> ImportBatches { get; private set; }
+    public IGenericRepository<ImportBatchRow> ImportBatchRows { get; private set; }
     public IGenericRepository<Session> Sessions { get; private set; }
     public IGenericRepository<AccountRequest> AccountRequests { get; private set; }
     public IGenericRepository<UserModuleGrant> UserModuleGrants { get; private set; }

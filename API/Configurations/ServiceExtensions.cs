@@ -112,6 +112,7 @@ public static class ServiceExtensions
         // Dashboard mapping + recurring job registration happens in Program.cs
         // (needs the built IApplicationBuilder / a service scope for RecurringJob).
         services.AddScoped<INotificationCleanupJob, NotificationCleanupJob>();
+        services.AddScoped<IImportBatchService, ImportBatchService>();
         services.AddHangfire(cfg => cfg
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()

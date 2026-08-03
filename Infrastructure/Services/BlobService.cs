@@ -45,6 +45,33 @@ public class BlobService : IBlobService
         return blobClient.Uri.ToString();
     }
 
+    public async Task<string> UploadStreamAsync(Stream content, string fileName, string containerName = null, CancellationToken ct = default)
+    {
+        var container = containerName ?? _defaultContainer;
+        var containerClient = _blobServiceClient.GetBlobContainerClient(container);
+        await containerClient.CreateIfNotExistsAsync(cancellationToken: ct);
+
+        var ext = Path.GetExtension(fileName);
+        var blobName = $"{Guid.NewGuid()}{ext}";
+        var blobClient = containerClient.GetBlobClient(blobName);
+
+        await blobClient.UploadAsync(content, new BlobHttpHeaders { ContentType = GetContentType(ext) }, cancellationToken: ct);
+
+        _logger.LogInformation("Uploaded blob {BlobName} to container {Container}", blobName, container);
+        return blobClient.Uri.ToString();
+    }
+
+    public async Task<Stream> DownloadAsync(string blobUrl, CancellationToken ct = default)
+    {
+        var uriBuilder = new BlobUriBuilder(new Uri(blobUrl));
+        var blobClient = _blobServiceClient
+            .GetBlobContainerClient(uriBuilder.BlobContainerName)
+            .GetBlobClient(uriBuilder.BlobName);
+
+        var download = await blobClient.DownloadStreamingAsync(cancellationToken: ct);
+        return download.Value.Content;
+    }
+
     public string GenerateSasUrl(string blobUrl, int expiryMinutes = 120)
     {
         if (string.IsNullOrWhiteSpace(blobUrl)) return blobUrl;

@@ -24,6 +24,10 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<EventType> EventTypes { get; }
     IGenericRepository<Session> Sessions { get; }
 
+    // GMS — Bulk import jobs (Events/Guests, processed by Hangfire)
+    IGenericRepository<ImportBatch> ImportBatches { get; }
+    IGenericRepository<ImportBatchRow> ImportBatchRows { get; }
+
     // GMS — Guests
     IGenericRepository<Nationality> Nationalities { get; }
     IGenericRepository<InvitationTemplate> InvitationTemplates { get; }

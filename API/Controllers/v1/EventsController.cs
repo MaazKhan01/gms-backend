@@ -16,7 +16,7 @@ namespace API.Controllers.v1;
 [Route("api/v1/[controller]")]
 [Authorize]
 [ApiVersion("1.0")]
-public class EventsController(IEventService _eventService, ICurrentUser _currentUser) : Controllers.BaseApiController
+public class EventsController(IEventService _eventService, IImportBatchService _importBatchService, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
 
     [HttpGet]
@@ -64,9 +64,16 @@ public class EventsController(IEventService _eventService, ICurrentUser _current
             return BadRequest(ApiResponse<object>.ErrorResponse("A file is required."));
 
         using var stream = file.OpenReadStream();
-        var result = await _eventService.ImportEventsAsync(stream, _currentUser.UserId, ct);
+        var result = await _eventService.StartEventsImportAsync(stream, file.FileName, _currentUser.UserId, ct);
         return ToResponse(result);
     }
+
+    // Polled by the frontend after StartEventsImportAsync returns — the actual
+    // import runs as a Hangfire job, so the user never waits on this request.
+    [HttpGet("import/{batchId:guid}")]
+    [HasPermission(PermissionCodes.EventsCreate)]
+    public async Task<IActionResult> GetImportBatchStatus(Guid batchId, CancellationToken ct)
+        => ToResponse(await _importBatchService.GetStatusAsync(batchId, ct));
 
     [HttpPost]
     [HasPermission(PermissionCodes.EventsCreate)]

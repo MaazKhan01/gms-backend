@@ -17,8 +17,11 @@ public interface IEventService
     Task<ApiResponse<bool>> DeleteEventAsync(Guid id, int userId, CancellationToken ct = default);
 
     // Bulk import — template always reflects the venues that exist right now.
+    // The upload only enqueues a Hangfire job (see ProcessEventsImportBatchAsync)
+    // and returns immediately; the caller polls IImportBatchService.GetStatusAsync.
     Task<byte[]> BuildImportTemplateAsync(CancellationToken ct = default);
-    Task<ApiResponse<ImportEventsResult>> ImportEventsAsync(Stream fileStream, int userId, CancellationToken ct = default);
+    Task<ApiResponse<StartImportResponse>> StartEventsImportAsync(Stream fileStream, string fileName, int userId, CancellationToken ct = default);
+    Task ProcessEventsImportBatchAsync(Guid batchId, CancellationToken ct = default);
 
     // Event types (admin-managed lookup — replaces the old hardcoded list).
     Task<ApiResponse<List<EventTypeDto>>> GetEventTypesAsync(CancellationToken ct = default);
