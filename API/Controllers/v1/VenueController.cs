@@ -45,6 +45,13 @@ namespace API.Controllers.v1
             var result = await _venueService.GetVenuesAsync(ct);
             return ToResponse(result);
         }
+        [HttpPut("{id:guid}")]
+        [HasPermission(PermissionCodes.VenueManage)]
+        public async Task<IActionResult> UpdateVenue(Guid id, [FromBody] UpdateVenueRequest request, CancellationToken ct)
+        {
+            var result = await _venueService.UpdateVenueAsync(id, request, _currentUser.UserId, ct);
+            return ToResponse(result);
+        }
         [HttpDelete("box/{id:guid}")]
         [HasPermission(PermissionCodes.VenueManage)]
         public async Task<IActionResult> DeleteVenueBox(

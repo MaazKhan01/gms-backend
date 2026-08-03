@@ -126,7 +126,10 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.VenueName, opt => opt.MapFrom(src => src.Name))
             .ForMember(dest => dest.VenueType, opt => opt.MapFrom(src => src.Type != null ? src.Type.PublicId : Guid.Empty))
             .ForMember(dest => dest.LocationId, opt => opt.MapFrom(src => src.Location != null ? (Guid?)src.Location.PublicId : null))
+            .ForMember(dest => dest.Location, opt => opt.MapFrom(src => src.Location))
             .ForMember(dest => dest.Category, opt => opt.MapFrom(src => src.Category ?? new List<string>()));
+        CreateMap<Location, Core.ViewModel.Travel.LocationDto>()
+            .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId));
         CreateMap<VenueBox, VenueBoxDto>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
             .ForMember(dest => dest.EventId, opt => opt.MapFrom(src => src.Event != null ? (Guid?)src.Event.PublicId : null))

@@ -10,6 +10,7 @@ namespace Core.Interfaces.Services
         Task<ApiResponse<GetVenueResonse>> CreateVenueBoxAsync(CreateVenueBoxRequest request, Guid eventId, int userId, CancellationToken ct);
         Task<ApiResponse<GetVenueResonse>> GetVenueByIdAsync(Guid venueId, CancellationToken ct);
         Task<ApiResponse<List<GetVenueResonse>>> GetVenuesAsync(CancellationToken ct);
+        Task<ApiResponse<GetVenueResonse>> UpdateVenueAsync(Guid id, UpdateVenueRequest request, int userId, CancellationToken ct);
         Task<ApiResponse<bool>> DeleteVenueAsync(Guid id, CancellationToken ct);
         Task<ApiResponse<bool>> DeleteVenueBoxAsync(Guid id, Guid venueId, Guid eventId,Guid sessionId, CancellationToken ct);
 

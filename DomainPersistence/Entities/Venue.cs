@@ -13,6 +13,7 @@ namespace DomainPersistence.Entities
         public List<string>? Category {  get; set; } 
         public string? Color { get; set; }
         public int? LocationId { get; set; }
+        public string? ImageUrl { get; set; }
         public virtual VenueType? Type { get; set; }
         public virtual Location? Location { get; set; }
         public virtual ICollection<VenueBox>? VenueBoxes { get; set; }

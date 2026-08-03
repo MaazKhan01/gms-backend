@@ -175,6 +175,50 @@ namespace Infrastructure.Services
                 return ApiResponse<bool>.ServerErrorResponse("An error occurred while deleting the venue.");
             }
         }
+        public async Task<ApiResponse<GetVenueResonse>> UpdateVenueAsync(Guid id, UpdateVenueRequest request, int userId, CancellationToken ct)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.VenueName))
+                    return ApiResponse<GetVenueResonse>.ErrorResponse("Venue name is required");
+
+                var venue = await _unitOfWork.Venues.Query()
+                    .Include(v => v.Type)
+                    .Include(v => v.Location)
+                    .FirstOrDefaultAsync(v => v.PublicId == id, ct);
+                if (venue == null)
+                    return ApiResponse<GetVenueResonse>.NotFoundResponse("Venue not found.");
+
+                int? locationId = null;
+                if (request.LocationId.HasValue && request.LocationId.Value != Guid.Empty)
+                {
+                    locationId = await _unitOfWork.Locations.Query()
+                        .Where(l => l.PublicId == request.LocationId.Value)
+                        .Select(l => (int?)l.Id)
+                        .FirstOrDefaultAsync(ct);
+                }
+
+                venue.Name = request.VenueName.Trim();
+                venue.LocationId = locationId;
+                venue.ImageUrl = request.ImageUrl;
+                if (userId != 0) venue.SetUpdateAudit(userId);
+
+                await _unitOfWork.SaveChangesAsync(ct);
+
+                // Re-include the (possibly changed) Location for the response.
+                venue = await _unitOfWork.Venues.Query()
+                    .Include(v => v.Type)
+                    .Include(v => v.Location)
+                    .FirstAsync(v => v.Id == venue.Id, ct);
+
+                return ApiResponse<GetVenueResonse>.SuccessResponse(_mapper.Map<GetVenueResonse>(venue), "Venue updated");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating venue {VenueId}", id);
+                return ApiResponse<GetVenueResonse>.ServerErrorResponse("An error occurred while updating the venue.");
+            }
+        }
         public async Task<ApiResponse<bool>> DeleteVenueBoxAsync(  Guid id, Guid venueId, Guid eventId, Guid sessionId, CancellationToken ct)
         {
             try
@@ -399,6 +443,7 @@ namespace Infrastructure.Services
                         .Select(c => c.Trim())
                         .ToList() ?? new(),
                     Color = request.Color,
+                    ImageUrl = request.ImageUrl,
                 };
                 if (creatorId.HasValue) venue.SetCreationAudit(creatorId.Value);
 
