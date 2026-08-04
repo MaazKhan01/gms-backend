@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Constants;
+using Core.Constants.Notification;
 using Core.Helpers;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -22,7 +23,7 @@ namespace Infrastructure.Services;
 // can only ever see or touch transfers assigned to them.
 public class TransportAppService(
     IUnitOfWork _unitOfWork,
-    IRealTimeAlertService _realTimeAlerts, ILogger<TransportAppService> _logger) : ITransportAppService
+    INotificationManagerService _notifications, ILogger<TransportAppService> _logger) : ITransportAppService
 {
     public async Task<ApiResponse<DriverStatsResponse>> GetStatsAsync(
         int userId, Guid? eventId = null, CancellationToken ct = default)
@@ -583,15 +584,24 @@ public class TransportAppService(
                 new TransportStatusHistory { TransportId = job.Id, Status = next, ChangedByUserId = userId }, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
-            var guestTopic = next switch
+            // Through the notification manager rather than a bare SignalR group
+            // push: the VIP app has no socket, so a guest-facing ride update has
+            // to persist and go out over FCM as well. The template keeps the same
+            // topic name the portal already listens on.
+            var guestTemplate = next switch
             {
-                TransportStatuses.Arrived => RealtimeTopics.TransportationDriverArrived,
-                TransportStatuses.InProgress => RealtimeTopics.TransportationRideStarted,
-                TransportStatuses.Completed => RealtimeTopics.TransportationRideCompleted,
+                TransportStatuses.Arrived => NotificationTemplates.TransportGuestDriverArrived,
+                TransportStatuses.InProgress => NotificationTemplates.TransportGuestRideStarted,
+                TransportStatuses.Completed => NotificationTemplates.TransportGuestRideCompleted,
                 _ => null,
             };
-            if (guestTopic != null)
-                await _realTimeAlerts.SendToGroupAsync(guestTopic, $"guest:{job.GuestId}", "Ride update", $"Your ride is now '{next}'.");
+            if (guestTemplate != null)
+                await _notifications.SendToGuestAsync(job.GuestId, guestTemplate,
+                    new Dictionary<string, string>
+                    {
+                        ["transportId"] = job.PublicId.ToString(),
+                        ["status"] = next,
+                    }, ct);
 
             var updated = await _unitOfWork.Transports.Query()
                 .Where(t => t.Id == job.Id)

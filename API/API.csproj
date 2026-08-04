@@ -35,6 +35,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <!-- Firebase service-account key. Copied so the relative
+	       Firebase:ServiceAccountKeyPath resolves from the output/publish dir too,
+	       not just when the working directory happens to be the project folder.
+	       It is a private key: gitignored, and production should override the path
+	       to a file injected by the secret store rather than ship this one. -->
+	  <None Update="Configurations\firebase.json" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <ProjectReference Include="..\Core\Core.csproj" />
 	  <ProjectReference Include="..\DomainPersistence\DomainPersistence.csproj" />
 	  <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />

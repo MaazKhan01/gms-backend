@@ -38,6 +38,11 @@ public class SupportChatService(
     ILogger<SupportChatService> _logger) : ISupportChatService
 {
     private const int MaxBodyLength = 4000;
+
+    // Body chars carried inline in a push payload. FCM's limit is ~4KB for the
+    // whole data dictionary; 1000 leaves headroom for the other keys and covers
+    // essentially every real chat message.
+    private const int MaxPushBodyLength = 1000;
     private const int PreviewLength = 200;
 
     // ============================================================
@@ -131,7 +136,9 @@ public class SupportChatService(
 
         await _unitOfWork.SaveChangesAsync(ct);
 
-        await NotifyAdminsAsync(conversation, ct);
+        // No senderName: the admin inbox shows the guest's own thread, so the
+        // sender is never ambiguous there.
+        await NotifyAdminsAsync(conversation, msg, ct);
 
         return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true), "Message sent");
     }
@@ -319,11 +326,12 @@ public class SupportChatService(
 
         await _unitOfWork.SaveChangesAsync(ct);
 
-        await NotifyGuestAsync(conversation, ct);
-
         var senderName = _currentUser.UserInfo != null
             ? $"{_currentUser.UserInfo.FirstName} {_currentUser.UserInfo.LastName}".Trim()
             : null;
+
+        await NotifyGuestAsync(conversation, msg, senderName, ct);
+
         return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true, senderName), "Message sent");
     }
 
@@ -498,13 +506,15 @@ public class SupportChatService(
 
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var recipientUserId = fromGuest ? driverUserId : guestUserId;
-        await NotifyDriverGuestRecipientAsync(recipientUserId, conversation, ct);
-
         var senderName = await _unitOfWork.Users.Query()
             .Where(u => u.Id == senderUserId)
             .Select(u => (u.FirstName + " " + u.LastName).Trim())
             .FirstOrDefaultAsync(ct);
+
+        // Notify after the name lookup, not before — the recipient renders the
+        // bubble straight from the push payload, and a bubble needs its sender.
+        var recipientUserId = fromGuest ? driverUserId : guestUserId;
+        await NotifyDriverGuestRecipientAsync(recipientUserId, conversation, msg, senderName, ct);
 
         return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true, senderName), "Message sent");
     }
@@ -572,12 +582,12 @@ public class SupportChatService(
     // admin id, so granting the permission to a second User is the entire
     // "add another admin" story. Persistence + realtime push both happen inside
     // INotificationManagerService.SendToPermissionAsync — this is just the content.
-    private async Task NotifyAdminsAsync(SupportConversation conversation, CancellationToken ct)
+    private async Task NotifyAdminsAsync(SupportConversation conversation, SupportMessage msg, CancellationToken ct)
     {
         try
         {
             await _notificationManagerService.SendToPermissionAsync(PermissionCodes.SupportChatManage,
-                NotificationTemplates.SupportMessageNew, ChatTokens(conversation), ct);
+                NotificationTemplates.SupportMessageNew, ChatTokens(conversation, msg), ct);
         }
         catch (Exception ex)
         {
@@ -585,12 +595,12 @@ public class SupportChatService(
         }
     }
 
-    private async Task NotifyGuestAsync(SupportConversation conversation, CancellationToken ct)
+    private async Task NotifyGuestAsync(SupportConversation conversation, SupportMessage msg, string senderName, CancellationToken ct)
     {
         try
         {
             await _notificationManagerService.SendToUserAsync(conversation.UserId,
-                NotificationTemplates.SupportReplyNew, ChatTokens(conversation), ct);
+                NotificationTemplates.SupportReplyNew, ChatTokens(conversation, msg, senderName), ct);
         }
         catch (Exception ex)
         {
@@ -598,12 +608,13 @@ public class SupportChatService(
         }
     }
 
-    private async Task NotifyDriverGuestRecipientAsync(int recipientUserId, SupportConversation conversation, CancellationToken ct)
+    private async Task NotifyDriverGuestRecipientAsync(
+        int recipientUserId, SupportConversation conversation, SupportMessage msg, string senderName, CancellationToken ct)
     {
         try
         {
             await _notificationManagerService.SendToUserAsync(recipientUserId,
-                NotificationTemplates.DriverGuestMessage, ChatTokens(conversation), ct);
+                NotificationTemplates.DriverGuestMessage, ChatTokens(conversation, msg, senderName), ct);
         }
         catch (Exception ex)
         {
@@ -611,11 +622,40 @@ public class SupportChatService(
         }
     }
 
-    private static Dictionary<string, string> ChatTokens(SupportConversation conversation) => new()
+    // The apps have no socket, so FCM's string-only data dictionary is the only
+    // thing a recipient with the chat screen open receives. Carrying the whole
+    // message here lets it append the bubble straight from the push — no thread
+    // fetch, no refresh. Anything omitted here forces an API round-trip.
+    private static Dictionary<string, string> ChatTokens(
+        SupportConversation conversation, SupportMessage msg = null, string senderName = null)
     {
-        ["conversationId"] = conversation.PublicId.ToString(),
-        ["preview"] = conversation.LastMessagePreview,
-    };
+        var tokens = new Dictionary<string, string>
+        {
+            ["conversationId"] = conversation.PublicId.ToString(),
+            ["preview"] = conversation.LastMessagePreview,
+        };
+        if (msg is null) return tokens;
+
+        // FCM caps the whole data payload at ~4KB while a body may be up to
+        // MaxBodyLength (4000) — a long message would blow the limit and the
+        // send would fail outright. Cap it and flag it: the client fetches the
+        // thread only in that rare case, not on every message.
+        var body = msg.Body ?? string.Empty;
+        var truncated = body.Length > MaxPushBodyLength;
+
+        tokens["messageId"] = msg.PublicId.ToString();
+        tokens["senderUserId"] = msg.SenderUserId.ToString();
+        tokens["fromGuest"] = msg.FromGuest ? "true" : "false";
+        tokens["body"] = truncated ? Truncate(body, MaxPushBodyLength) : body;
+        tokens["truncated"] = truncated ? "true" : "false";
+        // Round-trip ("o") so the client can sort by this — FCM does not
+        // guarantee delivery order, so arrival order is not message order.
+        tokens["sentAt"] = msg.SentAt.ToString("o");
+        if (senderName != null) tokens["senderName"] = senderName;
+        if (msg.AttachmentUrl != null) tokens["attachmentUrl"] = msg.AttachmentUrl;
+        if (msg.AttachmentType != null) tokens["attachmentType"] = msg.AttachmentType;
+        return tokens;
+    }
 
     // A message needs a body, an attachment, or both — never neither.
     private static string ValidateSend(SendSupportMessageRequest request)

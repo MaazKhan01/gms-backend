@@ -88,6 +88,23 @@ public class FirebaseNotificationProvider(
             // FCM data payloads are string-only.
             Data = payload.Data?.ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty)
                 ?? new Dictionary<string, string>(),
+
+            // The mobile apps have no socket — FCM is their only channel, so a
+            // delayed message is a missed message. High priority wakes the app
+            // out of Android Doze / battery-optimized OEM sleep instead of
+            // batching until the next maintenance window.
+            Android = new AndroidConfig
+            {
+                Priority = Priority.High,
+                Notification = new AndroidNotification { Sound = "default" },
+            },
+            Apns = new ApnsConfig
+            {
+                Aps = new Aps { Sound = "default", ContentAvailable = true },
+                Headers = new Dictionary<string, string> { ["apns-priority"] = "10" },
+            },
+            // No CollapseKey on purpose: FCM would drop all but the last message
+            // sharing a key, which in a chat thread means silently losing replies.
         };
 
         await messaging.SendAsync(message, ct).ConfigureAwait(false);

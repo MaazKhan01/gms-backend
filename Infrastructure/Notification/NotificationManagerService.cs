@@ -231,12 +231,30 @@ public class NotificationManagerService(
                 Title = entity.Title,
                 Body = entity.Message,
                 Topic = content.Topic ?? RealtimeTopics.NotificationNew,
-                Data = content.Data,
+                Data = BuildPushData(content, response),
                 Payload = response
             }, $"user {entity.UserId}", ct).ConfigureAwait(false);
         }
 
         return responses;
+    }
+
+    // The template tokens plus the three fields a client needs to act on a
+    // notification it received over FCM: which row it was (dedupe + mark-read),
+    // what kind it is (which screen), and where to go on tap. SignalR clients
+    // get all this inside Payload already; FCM only carries string data, and a
+    // mobile app with no socket has nothing else to go on.
+    private static Dictionary<string, string> BuildPushData(NotificationContent content, NotificationResponse response)
+    {
+        var data = content.Data is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(content.Data);
+
+        // Per-recipient, so this is built inside the send loop rather than once.
+        data["notificationId"] = response.Id.ToString();
+        if (!string.IsNullOrEmpty(response.Type)) data["type"] = response.Type;
+        if (!string.IsNullOrEmpty(response.RedirectUrl)) data["redirectUrl"] = response.RedirectUrl;
+        return data;
     }
 
     // Fans out one payload to every registered IPushNotificationProvider. Each

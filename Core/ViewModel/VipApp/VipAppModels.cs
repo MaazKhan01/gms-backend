@@ -12,7 +12,16 @@ namespace Core.ViewModel.VipApp;
 // ---------------- Auth ----------------
 public record RequestOtpRequest(string Email);
 
-public record VerifyOtpRequest(string Email, string Code);
+// Device fields are optional, so an older app build sending only (Email, Code)
+// still works — when DeviceToken is present verify-otp registers the push
+// token itself, saving a second round-trip to POST /notifications/devices.
+public record VerifyOtpRequest(
+    string Email,
+    string Code,
+    string DeviceToken = null,
+    string Platform = null,          // ios | android | web
+    string DeviceIdentifier = null,
+    string DeviceModel = null);
 public record RefreshTokenRequest(string RefreshToken);
 public record LogoutRequest(string RefreshToken);
 
@@ -23,8 +32,9 @@ public class GuestAuthResponse
     public DateTime ExpiresAt { get; set; }
     public GuestProfileResponse Guest { get; set; }
 
-    // Pulled from the guest's linked User's Device row — verify-otp never
-    // writes to Devices, only reads the caller's existing registration.
+    // The guest's linked User's Device row. verify-otp upserts it when the
+    // request carries a DeviceToken, otherwise echoes the most recently
+    // active registration.
     public string FcmToken { get; set; }
     public string DeviceId { get; set; }
 }

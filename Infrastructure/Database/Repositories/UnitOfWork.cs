@@ -54,6 +54,7 @@ public class UnitOfWork : IUnitOfWork
         Transports = new GenericRepository<Transport>(_context);
         VehicleTypes = new GenericRepository<VehicleType>(_context);
         Vehicles = new GenericRepository<Vehicle>(_context);
+        FleetProviders = new GenericRepository<FleetProvider>(_context);
         DriverProfiles = new GenericRepository<DriverProfile>(_context);
         TransportStatusHistories = new GenericRepository<TransportStatusHistory>(_context);
         GuestDriverAssignments = new GenericRepository<GuestDriverAssignment>(_context);
@@ -101,6 +102,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Transport> Transports { get; private set; }
     public IGenericRepository<VehicleType> VehicleTypes { get; private set; }
     public IGenericRepository<Vehicle> Vehicles { get; private set; }
+    public IGenericRepository<FleetProvider> FleetProviders { get; private set; }
     public IGenericRepository<DriverProfile> DriverProfiles { get; private set; }
     public IGenericRepository<TransportStatusHistory> TransportStatusHistories { get; private set; }
     public IGenericRepository<GuestDriverAssignment> GuestDriverAssignments { get; private set; }

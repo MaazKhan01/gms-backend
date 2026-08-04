@@ -19,7 +19,6 @@ namespace Infrastructure.Services;
 public class TransportationScheduleService(
     IUnitOfWork _unitOfWork,
     ITransportationConflictValidator _conflictValidator,
-    IRealTimeAlertService _realTimeAlerts,
     INotificationManagerService _notifications,
     ILogger<TransportationScheduleService> _logger) : ITransportationScheduleService
 {
@@ -195,9 +194,12 @@ public class TransportationScheduleService(
 
             await RecordStatusHistoryAsync(transport.Id, TransportStatuses.Cancelled, userId, ct);
 
-            var guestInternalId = transport.GuestId;
-            await _realTimeAlerts.SendToGroupAsync(RealtimeTopics.TransportationRideCancelled, $"guest:{guestInternalId}",
-                "Ride cancelled", "Your transportation booking has been cancelled.");
+            // Same reason as the driver notification just below — through the
+            // manager so it persists and reaches the VIP app over FCM, not just
+            // whatever portal tab happens to be connected.
+            await _notifications.SendToGuestAsync(transport.GuestId,
+                NotificationTemplates.TransportGuestRideCancelled,
+                new Dictionary<string, string> { ["transportId"] = transport.PublicId.ToString() }, ct);
 
             if (transport.DriverId.HasValue)
             {

@@ -6,6 +6,8 @@ public class CreateVehicleRequest
 {
     // Public Guid of the VehicleType row (lookup), not its internal int id.
     public Guid VehicleTypeId { get; set; }
+    // Public Guid of the FleetProvider row. Optional — null means in-house.
+    public Guid? FleetProviderId { get; set; }
     public string VehicleModel { get; set; }
     public string VehicleNumber { get; set; }
     // Relative/absolute url produced by /v1/upload/image — the API stores the
@@ -21,6 +23,8 @@ public class VehicleResponse
     public Guid Id { get; set; }
     public Guid VehicleTypeId { get; set; }
     public string VehicleTypeName { get; set; }
+    public Guid? FleetProviderId { get; set; }
+    public string FleetProviderName { get; set; }
     public string VehicleModel { get; set; }
     public string VehicleNumber { get; set; }
     public string VehicleImage { get; set; }

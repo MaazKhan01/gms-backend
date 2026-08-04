@@ -6,6 +6,9 @@ public class Vehicle : Entity
 {
     public int VehicleTypeId { get; set; }
 
+    // Optional: existing rows predate fleet providers, and an in-house car has none.
+    public int? FleetProviderId { get; set; }
+
     public string VehicleModel { get; set; }
 
     public string VehicleNumber { get; set; }
@@ -15,4 +18,6 @@ public class Vehicle : Entity
     public int? Capacity { get; set; }
 
     public virtual VehicleType VehicleType { get; set; }
+
+    public virtual FleetProvider FleetProvider { get; set; }
 }

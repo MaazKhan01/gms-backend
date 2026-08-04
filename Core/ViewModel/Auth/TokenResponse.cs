@@ -10,10 +10,9 @@ public class TokenResponse
     public string RefreshToken { get; set; }
     public UserInfo User { get; set; }
 
-    // Pulled from the User's Device row (see DomainPersistence.Entities.Device),
-    // not from the login request — login/verify-otp never write to Devices,
-    // only read the caller's existing registration (POST /notifications/devices
-    // registers/updates it).
+    // The User's Device row (see DomainPersistence.Entities.Device). Login
+    // upserts it when LoginModel carries a DeviceToken, otherwise echoes the
+    // most recently active registration. verify-otp stays read-only.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string FcmToken { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

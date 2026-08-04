@@ -143,15 +143,34 @@ public class VipAppService(
         otp.UsedAt = DateTime.UtcNow;
 
         var auth = await IssueTokensAsync(guest, ct);
-        var device = await GetLatestDeviceAsync(guest.UserId, ct);
+        // A client that sent a device token registers it here; everyone else
+        // just gets their most recent registration echoed back.
+        var device = string.IsNullOrWhiteSpace(request.DeviceToken)
+            ? await GetLatestDeviceAsync(guest.UserId, ct)
+            : await UpsertDeviceAsync(guest.UserId, request, ct);
         auth.FcmToken = device?.Token;
         auth.DeviceId = device?.DeviceIdentifier;
         return ApiResponse<GuestAuthResponse>.SuccessResponse(auth, "Signed in");
     }
 
-    // Read-only — verify-otp never writes to Devices, only reports the
-    // guest's linked User's most recently active registration (see
-    // NotificationService for the register/update endpoints that write this table).
+    private async Task<Device> UpsertDeviceAsync(int userId, VerifyOtpRequest request, CancellationToken ct)
+    {
+        try
+        {
+            return await DeviceRegistration.UpsertAsync(
+                _unitOfWork, userId, request.DeviceToken,
+                request.Platform, request.DeviceIdentifier, request.DeviceModel, ct: ct);
+        }
+        catch (Exception ex)
+        {
+            // Never fail a valid sign-in over push registration.
+            _logger.LogError(ex, "Device registration during verify-otp failed for user {UserId}", userId);
+            return null;
+        }
+    }
+
+    // Read-only fallback — reports the guest's linked User's most recently
+    // active registration when verify-otp carried no device token.
     private Task<Device> GetLatestDeviceAsync(int userId, CancellationToken ct)
         => _unitOfWork.Devices.Query()
             .Where(d => d.UserId == userId && d.IsActive)
@@ -169,6 +188,12 @@ public class VipAppService(
             if (string.IsNullOrEmpty(jti) || !int.TryParse(guestIdStr, out var guestId))
                 return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Invalid refresh token");
 
+            // The access token is signed with the same key, and its "sub" is a
+            // User.Id rather than a Guest.Id — without this check one posted here
+            // would be read as a refresh token for the wrong entity.
+            if (principal.FindFirstValue("token_type") != "refresh")
+                return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Invalid refresh token");
+
             var stored = await _unitOfWork.GuestRefreshTokens.Query()
                 .FirstOrDefaultAsync(t => t.Jti == jti && !t.IsRevoked && t.ExpiresAt > DateTime.UtcNow, ct);
             if (stored is null)
@@ -178,11 +203,24 @@ public class VipAppService(
             if (guest is null)
                 return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Guest not found");
 
-            stored.IsRevoked = true;
-            _unitOfWork.GuestRefreshTokens.Update(stored);
+            // No rotation — the refresh token stays valid for its whole
+            // RefreshTokenExpirationDays window and only the access token is
+            // reissued. Rotating made it single-use, which the mobile app can't
+            // survive: two parallel 401s after a resume, or a response lost on a
+            // flaky connection, left the client holding a token the server had
+            // already revoked — an unrecoverable logout.
+            // ponytail: no rotation means no stolen-token reuse detection either.
+            // Revocation is logout + the GuestRefreshTokens row.
+            var jwt = _configuration.GetSection("Authentication:Jwt");
+            var expiresAt = DateTime.UtcNow.AddMinutes(int.Parse(jwt["ExpirationMinutes"] ?? "60"));
 
-            var auth = await IssueTokensAsync(guest, ct);
-            return ApiResponse<GuestAuthResponse>.SuccessResponse(auth, "Token refreshed");
+            return ApiResponse<GuestAuthResponse>.SuccessResponse(new GuestAuthResponse
+            {
+                AccessToken = BuildAccessToken(guest, jwt, expiresAt),
+                RefreshToken = refreshToken,
+                ExpiresAt = expiresAt,
+                Guest = MapProfile(guest)
+            }, "Token refreshed");
         }
         catch (Exception ex)
         {

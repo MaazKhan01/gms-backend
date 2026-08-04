@@ -33,7 +33,7 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken ct)
         => ToResponse(await _vip.VerifyOtpAsync(request, ct));
 
-    [HttpPost("auth/refresh"), AllowAnonymous, EnableRateLimiting("auth")]
+    [HttpPost("auth/refresh"), AllowAnonymous, EnableRateLimiting("auth-refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request, CancellationToken ct)
         => ToResponse(await _vip.RefreshTokenAsync(request.RefreshToken, ct));
 

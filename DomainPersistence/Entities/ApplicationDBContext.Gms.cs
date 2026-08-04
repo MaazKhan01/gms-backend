@@ -42,6 +42,7 @@ public partial class ApplicationDBContext
     public virtual DbSet<Transport> Transports { get; set; }
     public virtual DbSet<VehicleType> VehicleTypes { get; set; }
     public virtual DbSet<Vehicle> Vehicles { get; set; }
+    public virtual DbSet<FleetProvider> FleetProviders { get; set; }
     public virtual DbSet<DriverProfile> DriverProfiles { get; set; }
     public virtual DbSet<TransportStatusHistory> TransportStatusHistories { get; set; }
     public virtual DbSet<GuestDriverAssignment> GuestDriverAssignments { get; set; }
@@ -690,7 +691,23 @@ public partial class ApplicationDBContext
             v.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             v.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             v.HasOne(x => x.VehicleType).WithMany().HasForeignKey(x => x.VehicleTypeId).OnDelete(DeleteBehavior.Restrict);
+            v.HasOne(x => x.FleetProvider).WithMany(x => x.Vehicles).HasForeignKey(x => x.FleetProviderId).OnDelete(DeleteBehavior.Restrict);
             v.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<FleetProvider>(fp =>
+        {
+            fp.ToTable("FleetProviders");
+            fp.HasKey(x => x.Id);
+            fp.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            fp.Property(x => x.ContactPerson).HasMaxLength(150);
+            fp.Property(x => x.Phone).HasMaxLength(30);
+            fp.Property(x => x.Email).HasMaxLength(150);
+            fp.Property(x => x.Notes).HasMaxLength(1000);
+            fp.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            fp.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            fp.HasIndex(x => x.Name).IsUnique().HasFilter("[IsDeleted] = 0");
+            fp.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<DriverProfile>(d =>

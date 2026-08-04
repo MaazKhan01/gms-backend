@@ -45,13 +45,14 @@ public class VehicleService(IUnitOfWork _unitOfWork, ILogger<VehicleService> _lo
     {
         try
         {
-            var (error, vehicleTypeId) = await ValidateAsync(request, null, ct);
+            var (error, vehicleTypeId, fleetProviderId) = await ValidateAsync(request, null, ct);
             if (error != null)
                 return ApiResponse<VehicleResponse>.ErrorResponse(error);
 
             var vehicle = new VehicleEntity
             {
                 VehicleTypeId = vehicleTypeId,
+                FleetProviderId = fleetProviderId,
                 VehicleModel = request.VehicleModel.Trim(),
                 VehicleNumber = request.VehicleNumber.Trim(),
                 VehicleImage = string.IsNullOrWhiteSpace(request.VehicleImage) ? null : request.VehicleImage.Trim(),
@@ -80,11 +81,12 @@ public class VehicleService(IUnitOfWork _unitOfWork, ILogger<VehicleService> _lo
             if (vehicle == null)
                 return ApiResponse<VehicleResponse>.NotFoundResponse("Vehicle not found");
 
-            var (error, vehicleTypeId) = await ValidateAsync(request, vehicle.Id, ct);
+            var (error, vehicleTypeId, fleetProviderId) = await ValidateAsync(request, vehicle.Id, ct);
             if (error != null)
                 return ApiResponse<VehicleResponse>.ErrorResponse(error);
 
             vehicle.VehicleTypeId = vehicleTypeId;
+            vehicle.FleetProviderId = fleetProviderId;
             vehicle.VehicleModel = request.VehicleModel.Trim();
             vehicle.VehicleNumber = request.VehicleNumber.Trim();
             vehicle.VehicleImage = string.IsNullOrWhiteSpace(request.VehicleImage) ? null : request.VehicleImage.Trim();
@@ -124,30 +126,41 @@ public class VehicleService(IUnitOfWork _unitOfWork, ILogger<VehicleService> _lo
         }
     }
 
-    // Returns (error message, resolved internal VehicleTypeId). Error is null
-    // when the request is valid.
-    private async Task<(string Error, int VehicleTypeId)> ValidateAsync(
+    // Returns (error message, resolved internal VehicleTypeId, resolved internal
+    // FleetProviderId). Error is null when the request is valid.
+    private async Task<(string Error, int VehicleTypeId, int? FleetProviderId)> ValidateAsync(
         CreateVehicleRequest request, int? excludeId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.VehicleModel))
-            return ("Vehicle model is required", 0);
+            return ("Vehicle model is required", 0, null);
         if (string.IsNullOrWhiteSpace(request.VehicleNumber))
-            return ("Vehicle number is required", 0);
+            return ("Vehicle number is required", 0, null);
         if (request.Capacity is <= 0)
-            return ("Capacity must be greater than zero", 0);
+            return ("Capacity must be greater than zero", 0, null);
 
         var vehicleType = await _unitOfWork.VehicleTypes.Query()
             .FirstOrDefaultAsync(x => x.PublicId == request.VehicleTypeId, ct);
         if (vehicleType == null)
-            return ("Vehicle type not found", 0);
+            return ("Vehicle type not found", 0, null);
+
+        // Optional — absent/empty means the vehicle isn't sourced from a provider.
+        int? fleetProviderId = null;
+        if (request.FleetProviderId is { } providerPublicId && providerPublicId != Guid.Empty)
+        {
+            var provider = await _unitOfWork.FleetProviders.Query()
+                .FirstOrDefaultAsync(x => x.PublicId == providerPublicId, ct);
+            if (provider == null)
+                return ("Fleet provider not found", 0, null);
+            fleetProviderId = provider.Id;
+        }
 
         var number = request.VehicleNumber.Trim();
         var duplicate = await _unitOfWork.Vehicles.Query()
             .AnyAsync(x => x.VehicleNumber == number && (!excludeId.HasValue || x.Id != excludeId.Value), ct);
         if (duplicate)
-            return ("A vehicle with this number already exists", 0);
+            return ("A vehicle with this number already exists", 0, null);
 
-        return (null, vehicleType.Id);
+        return (null, vehicleType.Id, fleetProviderId);
     }
 
     // Shared projection. Must stay an expression tree (not a method) so EF can
@@ -157,6 +170,8 @@ public class VehicleService(IUnitOfWork _unitOfWork, ILogger<VehicleService> _lo
         Id = x.PublicId,
         VehicleTypeId = x.VehicleType.PublicId,
         VehicleTypeName = x.VehicleType.Name,
+        FleetProviderId = x.FleetProvider == null ? (Guid?)null : x.FleetProvider.PublicId,
+        FleetProviderName = x.FleetProvider == null ? null : x.FleetProvider.Name,
         VehicleModel = x.VehicleModel,
         VehicleNumber = x.VehicleNumber,
         VehicleImage = x.VehicleImage,

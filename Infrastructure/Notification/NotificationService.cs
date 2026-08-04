@@ -568,9 +568,9 @@ public class NotificationService(
         TokenUpdatedAt = d.TokenUpdatedAt
     };
 
-    // Shared upsert for any authenticated User (staff, driver, or guest) —
-    // one row per token, re-pointed at whichever User most recently registered
-    // it (a device only ever belongs to one signed-in User at a time).
+    // Upsert for any authenticated User (staff, driver, or guest). Shares
+    // DeviceRegistration.UpsertAsync with the login / verify-otp paths, which
+    // can also carry a push token.
     private async Task<ApiResponse<bool>> RegisterDeviceForUserAsync(int userId, RegisterDeviceRequest request, CancellationToken ct)
     {
         try
@@ -578,32 +578,7 @@ public class NotificationService(
             if (string.IsNullOrWhiteSpace(request?.Token))
                 return ApiResponse<bool>.ErrorResponse("Device token is required");
 
-            var now = DateTime.UtcNow;
-            var existing = await _unitOfWork.Devices.FindFirstOrDefaultAsync(d => d.Token == request.Token, ct);
-            if (existing is null)
-            {
-                await _unitOfWork.Devices.AddAsync(new Device
-                {
-                    UserId = userId,
-                    Token = request.Token,
-                    Platform = request.Platform,
-                    IsActive = true,
-                    NotificationsEnabled = true,
-                    LastActiveAt = now,
-                    TokenUpdatedAt = now,
-                }, ct);
-            }
-            else
-            {
-                existing.UserId = userId;
-                existing.Platform = request.Platform;
-                existing.IsActive = true;
-                existing.LastActiveAt = now;
-                existing.TokenUpdatedAt = now;
-                _unitOfWork.Devices.Update(existing);
-            }
-
-            await _unitOfWork.SaveChangesAsync(ct);
+            await DeviceRegistration.UpsertAsync(_unitOfWork, userId, request.Token, request.Platform, ct: ct);
             return ApiResponse<bool>.SuccessResponse(true, "Device registered");
         }
         catch (Exception ex)

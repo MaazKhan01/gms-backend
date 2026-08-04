@@ -33,6 +33,13 @@ public static class NotificationTemplates
     public const string TransportDriverAssigned = "transport-driver-assigned";
     public const string TransportDriverUnassigned = "transport-driver-unassigned";
     public const string TransportDriverTripCancelled = "transport-driver-trip-cancelled";
+    // Transportation — guest-facing. These used to be fire-and-forget SignalR
+    // pushes; they're templates now so they persist and reach FCM too (the
+    // mobile apps have no socket — see FirebaseNotificationProvider).
+    public const string TransportGuestDriverArrived = "transport-guest-driver-arrived";
+    public const string TransportGuestRideStarted = "transport-guest-ride-started";
+    public const string TransportGuestRideCompleted = "transport-guest-ride-completed";
+    public const string TransportGuestRideCancelled = "transport-guest-ride-cancelled";
     // Support chat
     public const string SupportMessageNew = "support_message";
     public const string SupportReplyNew = "support_reply";
@@ -54,6 +61,32 @@ public static class NotificationTemplates
             "Trip cancelled",
             "The trip for {guestName} — {pickupTime} — has been cancelled.",
             RealtimeTopics.TransportationRideCancelled),
+
+        // Topics match what the portal already listens on, so migrating these
+        // off the raw SignalR calls doesn't change the wire contract.
+        [TransportGuestDriverArrived] = new(
+            "Your driver has arrived",
+            "Your driver is waiting at the pickup point.",
+            RealtimeTopics.TransportationDriverArrived,
+            "/rides/{transportId}"),
+
+        [TransportGuestRideStarted] = new(
+            "Ride started",
+            "You're on your way.",
+            RealtimeTopics.TransportationRideStarted,
+            "/rides/{transportId}"),
+
+        [TransportGuestRideCompleted] = new(
+            "Ride completed",
+            "You've arrived at your destination.",
+            RealtimeTopics.TransportationRideCompleted,
+            "/rides/{transportId}"),
+
+        [TransportGuestRideCancelled] = new(
+            "Ride cancelled",
+            "Your transportation booking has been cancelled.",
+            RealtimeTopics.TransportationRideCancelled,
+            "/rides/{transportId}"),
 
         [SupportMessageNew] = new(
             "New support message",

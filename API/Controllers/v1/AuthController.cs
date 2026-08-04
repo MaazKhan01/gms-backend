@@ -66,7 +66,7 @@ public class AuthController : Controllers.BaseApiController
 
     [HttpPost("refresh")]
     [AllowAnonymous]
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("auth-refresh")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest model, CancellationToken ct)
     {
         var result = await _authService.RefreshTokenAsync(model.RefreshToken, ct);

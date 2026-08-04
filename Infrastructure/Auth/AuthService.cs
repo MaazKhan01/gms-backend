@@ -19,6 +19,7 @@ using Core.ViewModel.Auth;
 using Core.ViewModel.Common;
 using Core.ViewModel.User;
 using DomainPersistence.Entities;
+using Infrastructure.Services;
 
 namespace Infrastructure.Auth;
 
@@ -69,16 +70,35 @@ public class AuthService(
         await _unitOfWork.SaveChangesAsync(ct);
 
         var response = BuildTokenResponse(user, accessToken, refreshToken);
-        var device = await GetLatestDeviceAsync(user.Id, ct);
+        // A client that sent a device token registers it here; everyone else
+        // just gets their most recent registration echoed back.
+        var device = string.IsNullOrWhiteSpace(model.DeviceToken)
+            ? await GetLatestDeviceAsync(user.Id, ct)
+            : await UpsertDeviceAsync(user.Id, model, ct);
         response.FcmToken = device?.Token;
         response.DeviceId = device?.DeviceIdentifier;
 
         return ApiResponse<TokenResponse>.SuccessResponse(response, "Login successful");
     }
 
-    // Read-only — login never writes to Devices, only reports the caller's
-    // most recently active registration (see NotificationService for the
-    // register/update endpoints that actually write this table).
+    private async Task<Device> UpsertDeviceAsync(int userId, LoginModel model, CancellationToken ct)
+    {
+        try
+        {
+            return await DeviceRegistration.UpsertAsync(
+                _unitOfWork, userId, model.DeviceToken,
+                model.Platform, model.DeviceIdentifier, model.DeviceModel, ct: ct);
+        }
+        catch (Exception ex)
+        {
+            // Never fail a valid login over push registration.
+            _logger.LogError(ex, "Device registration during login failed for user {UserId}", userId);
+            return null;
+        }
+    }
+
+    // Read-only fallback — reports the caller's most recently active
+    // registration when login carried no device token.
     private Task<Device> GetLatestDeviceAsync(int userId, CancellationToken ct)
         => _unitOfWork.Devices.Query()
             .Where(d => d.UserId == userId && d.IsActive)
@@ -94,6 +114,11 @@ public class AuthService(
             var jti = principal.FindFirstValue(JwtRegisteredClaimNames.Jti);
 
             if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(jti))
+                return ApiResponse<TokenResponse>.UnauthorizedResponse("Invalid refresh token");
+
+            // An access token is signed with the same key, so without this an
+            // access token posted here would be treated as a refresh token.
+            if (principal.FindFirstValue("token_type") != "refresh")
                 return ApiResponse<TokenResponse>.UnauthorizedResponse("Invalid refresh token");
 
             // Validate JTI is in DB and not revoked
@@ -124,23 +149,18 @@ public class AuthService(
             if (client == ClientApps.Portal && user.Role?.PortalAccess != true)
                 return ApiResponse<TokenResponse>.ForbiddenResponse("This account cannot sign in to the portal");
 
-            // Rotate: revoke old token, issue new one
-            storedToken.IsRevoked = true;
-            _unitOfWork.UserRefreshTokens.Update(storedToken);
+            // No rotation. The refresh token is a stable handle that stays valid for
+            // its whole RefreshTokenExpirationDays window; refreshing only mints a
+            // new access token. Rotating used to revoke the token the caller still
+            // held, so a second tab (or a retry after a dropped response) refreshed
+            // with an already-revoked token and got logged out.
+            // ponytail: no rotation also means no stolen-token reuse detection —
+            // revocation is logout + the UserRefreshTokens row. Bring rotation back
+            // only together with client-side single-flight across tabs.
+            var newAccess = GenerateAccessToken(user, client);
 
-            var (newAccess, newRefresh, newJti) = GenerateTokenPair(user, client);
-
-            await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
-            {
-                UserId = user.Id,
-                Jti = newJti,
-                ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
-                IsRevoked = false,
-                CreatedAt = DateTime.UtcNow
-            }, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-
-            return ApiResponse<TokenResponse>.SuccessResponse(BuildTokenResponse(user, newAccess, newRefresh), "Token refreshed successfully");
+            return ApiResponse<TokenResponse>.SuccessResponse(
+                BuildTokenResponse(user, newAccess, refreshToken), "Token refreshed successfully");
         }
         catch (SecurityTokenException ex)
         {

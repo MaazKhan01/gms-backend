@@ -67,6 +67,7 @@ public static class ServiceExtensions
         services.AddScoped<INationalityService, NationalityService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IVehicleService, VehicleService>();
+        services.AddScoped<IFleetProviderService, FleetProviderService>();
         services.AddScoped<ITransportAppService, TransportAppService>();
         services.AddScoped<ILookupService, LookupService>();
         services.AddScoped<IVenueService, VenueService>();
@@ -131,14 +132,35 @@ public static class ServiceExtensions
         // Fix 5: Rate limiting for auth endpoints
         services.AddRateLimiter(options =>
         {
-            options.AddSlidingWindowLimiter("auth", opt =>
-            {
-                opt.PermitLimit = 10;
-                opt.Window = TimeSpan.FromMinutes(1);
-                opt.SegmentsPerWindow = 4;
-                opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-                opt.QueueLimit = 0;
-            });
+            // Partitioned per caller IP. AddSlidingWindowLimiter has no partition
+            // key, so the old version was one global 10/min bucket shared by every
+            // user — a handful of logins/refreshes anywhere 429'd everyone else,
+            // and a 429 on refresh reads as a dead session on the client.
+            options.AddPolicy("auth", http => RateLimitPartition.GetSlidingWindowLimiter(
+                partitionKey: http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = 20,
+                    Window = TimeSpan.FromMinutes(1),
+                    SegmentsPerWindow = 4,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 0,
+                }));
+            // Refresh gets its own, far looser bucket. It already requires a signed
+            // refresh token backed by a live DB row, so it needs no brute-force
+            // guard — and mobile clients sit behind carrier NAT, where hundreds of
+            // guests share one IP and the "auth" limit would throttle them into
+            // what looks like an expired session.
+            options.AddPolicy("auth-refresh", http => RateLimitPartition.GetSlidingWindowLimiter(
+                partitionKey: http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = 300,
+                    Window = TimeSpan.FromMinutes(1),
+                    SegmentsPerWindow = 4,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 0,
+                }));
             // Support chat send/reply — cheap abuse guard against message flooding.
             options.AddSlidingWindowLimiter("chat", opt =>
             {

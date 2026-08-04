@@ -65,6 +65,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Transport> Transports { get; }
     IGenericRepository<VehicleType> VehicleTypes { get; }
     IGenericRepository<Vehicle> Vehicles { get; }
+    IGenericRepository<FleetProvider> FleetProviders { get; }
     IGenericRepository<DriverProfile> DriverProfiles { get; }
     IGenericRepository<TransportStatusHistory> TransportStatusHistories { get; }
     IGenericRepository<GuestDriverAssignment> GuestDriverAssignments { get; }
