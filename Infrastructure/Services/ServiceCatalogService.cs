@@ -74,6 +74,16 @@ public class ServiceCatalogService(
             if (ev == null)
                 return ApiResponse<ServiceResponse>.NotFoundResponse("Event not found");
 
+            // The catalogue only means anything on a fixed event. Creating levels
+            // for a flexible one would build a configuration nothing enforces, so
+            // it is refused with an explanation rather than silently accepted.
+            // Reads stay open: an event switched to flexible keeps showing its
+            // existing catalogue, and switching back restores it.
+            if (!EventGuestModels.UsesServiceLevels(ev.GuestModel))
+                return ApiResponse<ServiceResponse>.ConflictResponse(
+                    "This event uses the flexible guest model, which doesn't use service levels. "
+                    + "Switch the event to fixed to configure them.", "EVENT_MODEL_FLEXIBLE");
+
             var invalid = ValidateService(request);
             if (invalid != null)
                 return ApiResponse<ServiceResponse>.ErrorResponse(invalid);
@@ -231,6 +241,16 @@ public class ServiceCatalogService(
             var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
             if (ev == null)
                 return ApiResponse<ServiceLevelResponse>.NotFoundResponse("Event not found");
+
+            // The catalogue only means anything on a fixed event. Creating levels
+            // for a flexible one would build a configuration nothing enforces, so
+            // it is refused with an explanation rather than silently accepted.
+            // Reads stay open: an event switched to flexible keeps showing its
+            // existing catalogue, and switching back restores it.
+            if (!EventGuestModels.UsesServiceLevels(ev.GuestModel))
+                return ApiResponse<ServiceLevelResponse>.ConflictResponse(
+                    "This event uses the flexible guest model, which doesn't use service levels. "
+                    + "Switch the event to fixed to configure them.", "EVENT_MODEL_FLEXIBLE");
 
             var invalid = ValidateLevel(request);
             if (invalid != null)

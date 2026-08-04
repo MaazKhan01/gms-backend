@@ -592,14 +592,27 @@ public class GuestService(
             if (guest == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            var (serviceLevel, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, guest.EventId, ct);
-            if (levelError != null)
-                return ApiResponse<GuestResponse>.ErrorResponse(levelError);
+            // A flexible event runs the pre-service-level flow: no level is
+            // resolved, no rules are enforced, and the guest's existing
+            // ServiceLevelId is left untouched so switching the event back to
+            // fixed restores its assignments intact.
+            var usesLevels = EventGuestModels.UsesServiceLevels(guest.Event?.GuestModel);
 
-            // Duplicate guard is now (event, email, service level), not (event,
-            // email): the same person may legitimately appear once per level —
-            // e.g. as a Speaker and again as a VIP delegate — each with its own
-            // invitation/accreditation/seating/travel.
+            ServiceLevel serviceLevel = null;
+            if (usesLevels)
+            {
+                var (resolved, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, guest.EventId, ct);
+                if (levelError != null)
+                    return ApiResponse<GuestResponse>.ErrorResponse(levelError);
+                serviceLevel = resolved;
+            }
+
+            // Fixed events key a guest on (event, email, service level): the same
+            // person may legitimately appear once per level — e.g. as a Speaker
+            // and again as a VIP delegate — each with its own invitation,
+            // accreditation, seating and travel. Without levels there is nothing
+            // to tell two such rows apart, so a flexible event falls back to the
+            // original (event, email) rule.
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 var normalised = request.Email.ToLower().Trim();
@@ -607,18 +620,21 @@ public class GuestService(
                 var duplicate = await _unitOfWork.Guests.Query()
                     .FirstOrDefaultAsync(g => g.Email == normalised
                                               && g.EventId == guest.EventId
-                                              && g.ServiceLevelId == levelId
+                                              && (!usesLevels || g.ServiceLevelId == levelId)
                                               && g.Id != guest.Id, ct);
 
                 if (duplicate != null)
                     return ApiResponse<GuestResponse>.ConflictResponse(serviceLevel == null
-                        ? "A guest with this email already exists for this event with no service level"
+                        ? "A guest with this email already exists for this event"
                         : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
             }
 
-            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, guest, ct);
-            if (ruleError != null)
-                return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
+            if (usesLevels)
+            {
+                var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, guest, ct);
+                if (ruleError != null)
+                    return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
+            }
 
             var nationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct);
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
@@ -641,7 +657,10 @@ public class GuestService(
             guest.NationalityId = nationalityId;
             // Tier mirrors the level's Code so every legacy string consumer keeps
             // working; falls back to the raw Tier only when no level is set (CSV).
-            guest.ServiceLevelId = serviceLevel?.Id;
+            // Only a fixed event may move a guest between levels. On a flexible
+            // event ServiceLevelId is left as-is and Tier is the plain string it
+            // was before service levels existed.
+            if (usesLevels) guest.ServiceLevelId = serviceLevel?.Id;
             guest.Tier          = serviceLevel?.Code ?? request.Tier ?? guest.Tier;
             if (serviceLevel != null && request.OverrideServiceLevelRules
                 && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules))
@@ -707,12 +726,20 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<GuestResponse>.ErrorResponse("Event not found");
 
-            var (serviceLevel, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, ev.Id, ct);
-            if (levelError != null)
-                return ApiResponse<GuestResponse>.ErrorResponse(levelError);
+            // Flexible events skip the level flow entirely — see the Update path.
+            var usesLevels = EventGuestModels.UsesServiceLevels(ev.GuestModel);
 
-            // (event, email, service level) — not (event, email). The same person
-            // may appear once per level; see the Update path for the rationale.
+            ServiceLevel serviceLevel = null;
+            if (usesLevels)
+            {
+                var (resolved, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, ev.Id, ct);
+                if (levelError != null)
+                    return ApiResponse<GuestResponse>.ErrorResponse(levelError);
+                serviceLevel = resolved;
+            }
+
+            // (event, email, service level) on a fixed event; (event, email) on a
+            // flexible one. See the Update path for the rationale.
             if (!string.IsNullOrWhiteSpace(request.Email))
             {
                 var normalised = request.Email.ToLower().Trim();
@@ -720,17 +747,20 @@ public class GuestService(
                 var existing = await _unitOfWork.Guests.Query()
                     .FirstOrDefaultAsync(g => g.Email == normalised
                                               && g.EventId == ev.Id
-                                              && g.ServiceLevelId == levelId, ct);
+                                              && (!usesLevels || g.ServiceLevelId == levelId), ct);
 
                 if (existing != null)
                     return ApiResponse<GuestResponse>.ConflictResponse(serviceLevel == null
-                        ? "A guest with this email already exists for this event with no service level"
+                        ? "A guest with this email already exists for this event"
                         : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
             }
 
-            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, null, ct);
-            if (ruleError != null)
-                return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
+            if (usesLevels)
+            {
+                var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, null, ct);
+                if (ruleError != null)
+                    return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
+            }
 
             var overrodeRules = serviceLevel != null && request.OverrideServiceLevelRules
                                 && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);

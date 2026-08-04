@@ -1,4 +1,5 @@
 ﻿using System;
+using Core.Constants;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -90,8 +91,15 @@ public class EventService(
         if (!ValidStatuses.Contains(status))
             return ApiResponse<EventResponse>.ErrorResponse($"Invalid status '{request.Status}'");
 
+        if (!string.IsNullOrWhiteSpace(request.GuestModel) && !EventGuestModels.IsValid(request.GuestModel))
+            return ApiResponse<EventResponse>.ErrorResponse(
+                $"Invalid guest model '{request.GuestModel}'. Expected 'fixed' or 'flexible'.");
+
         var ev = _mapper.Map<Event>(request);
         ev.Status = status;
+        // Normalize rather than trust: an omitted value becomes the default
+        // (flexible) so clients that predate this field keep working.
+        ev.GuestModel = EventGuestModels.Normalize(request.GuestModel);
         ev.AppKey = await UniqueAppKeyAsync(Slugify(request.Title), ct);
 
         if (request.VenueId.HasValue && request.VenueId.Value != Guid.Empty)
@@ -123,6 +131,17 @@ public class EventService(
         ev.Title = request.Title ?? ev.Title;
         ev.Type = request.Type ?? ev.Type;
         ev.Theme = request.Theme ?? ev.Theme;
+
+        // Switching to flexible deliberately leaves existing Guest.ServiceLevelId
+        // values in place: the assignments stop being enforced, but they are not
+        // erased, so switching back restores the event exactly as it was.
+        if (!string.IsNullOrWhiteSpace(request.GuestModel))
+        {
+            if (!EventGuestModels.IsValid(request.GuestModel))
+                return ApiResponse<EventResponse>.ErrorResponse(
+                    $"Invalid guest model '{request.GuestModel}'. Expected 'fixed' or 'flexible'.");
+            ev.GuestModel = EventGuestModels.Normalize(request.GuestModel);
+        }
 
         if (request.VenueId.HasValue && request.VenueId.Value != Guid.Empty)
         {

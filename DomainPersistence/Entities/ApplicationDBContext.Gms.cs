@@ -251,6 +251,9 @@ public partial class ApplicationDBContext
             e.Property(x => x.VenueName).HasMaxLength(300);
             e.Property(x => x.Status).HasMaxLength(30);
             e.Property(x => x.AppKey).HasMaxLength(150);
+            // Defaulted in the database as well as in code so rows written by
+            // anything that bypasses the service layer still land valid.
+            e.Property(x => x.GuestModel).HasMaxLength(20).HasDefaultValue("flexible");
             // nvarchar(max): may hold a URL or an uploaded base64 data URI.
             e.Property(x => x.ImageUrl).HasColumnType("nvarchar(max)");
             e.Property(x => x.ThemeAccent).HasMaxLength(20);
