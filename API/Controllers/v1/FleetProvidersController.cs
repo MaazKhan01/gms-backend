@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Authorization;
+using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.FleetProvider;
