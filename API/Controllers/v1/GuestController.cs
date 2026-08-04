@@ -28,6 +28,13 @@ public class GuestController(IGuestService _guestService, IImportBatchService _i
     public async Task<IActionResult> GetGuestPicker([FromQuery] Guid eventId, [FromQuery] PagedRequest request, CancellationToken ct)
         => ToResponse(await _guestService.GetGuestPickerAsync(eventId, request, ct));
 
+    // "Existing Guest" tab of the Add Guest modal — guests from every OTHER
+    // event, so one can be picked to prefill a brand-new guest for this event.
+    [HttpGet("other-events")]
+    //[HasPermission(PermissionCodes.GuestsView)]
+    public async Task<IActionResult> GetGuestsFromOtherEvents([FromQuery] Guid currentEventId, [FromQuery] PagedRequest request, CancellationToken ct)
+        => ToResponse(await _guestService.GetGuestsFromOtherEventsAsync(currentEventId, request, ct));
+
     [HttpGet("{id:guid}")]
     //[HasPermission(PermissionCodes.GuestsView)]
     public async Task<IActionResult> GetGuestById(Guid id, CancellationToken ct)

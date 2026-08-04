@@ -63,6 +63,9 @@ public class FlightLegInput
     public Guid? ToAirportId { get; set; }
     public DateTime? StartTime { get; set; }
     public DateTime? EndTime { get; set; }
+    // A return booking's two legs can be on different fare classes/seats.
+    public Guid? FlightClassId { get; set; }
+    public string Seat { get; set; }
 }
 
 public class AccommodationInput
@@ -107,6 +110,7 @@ public class EventFlightRow
     public Guid Id { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
+    public string PhotoUrl { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
     public string Status { get; set; }
@@ -150,6 +154,7 @@ public class ArrivalDepartureRow
 {
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
+    public string PhotoUrl { get; set; }
     public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
@@ -191,6 +196,8 @@ public class FlightLegRow
     public string ArrivalCountry { get; set; }
     public DateTime? StartTime { get; set; }
     public DateTime? EndTime { get; set; }
+    public string FlightClass { get; set; }
+    public string Seat { get; set; }
 }
 
 public class EventAccommodationRow
@@ -198,6 +205,7 @@ public class EventAccommodationRow
     public Guid Id { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
+    public string PhotoUrl { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
     public string Hotel { get; set; }
@@ -212,6 +220,7 @@ public class EventTransportRow
     public Guid Id { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
+    public string PhotoUrl { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
     // Display label for the assigned vehicle: "AB-1234 · Toyota Land Cruiser".

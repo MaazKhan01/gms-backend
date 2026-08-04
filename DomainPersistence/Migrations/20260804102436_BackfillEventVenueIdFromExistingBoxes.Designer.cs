@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260804102436_BackfillEventVenueIdFromExistingBoxes")]
+    partial class BackfillEventVenueIdFromExistingBoxes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -898,9 +901,6 @@ namespace DomainPersistence.Migrations
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("FlightClassId")
-                        .HasColumnType("int");
-
                     b.Property<int>("FlightId")
                         .HasColumnType("int");
 
@@ -921,9 +921,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
 
-                    b.Property<string>("Seat")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime?>("StartTime")
                         .HasColumnType("datetime2");
 
@@ -937,8 +934,6 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("FlightClassId");
 
                     b.HasIndex("FlightId");
 
@@ -3694,11 +3689,6 @@ namespace DomainPersistence.Migrations
 
             modelBuilder.Entity("DomainPersistence.Entities.FlightLeg", b =>
                 {
-                    b.HasOne("DomainPersistence.Entities.FlightClass", "FlightClass")
-                        .WithMany()
-                        .HasForeignKey("FlightClassId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("DomainPersistence.Entities.Flight", "Flight")
                         .WithMany("Legs")
                         .HasForeignKey("FlightId")
@@ -3716,8 +3706,6 @@ namespace DomainPersistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Flight");
-
-                    b.Navigation("FlightClass");
 
                     b.Navigation("FromAirport");
 

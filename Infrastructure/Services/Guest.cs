@@ -411,6 +411,66 @@ public class GuestService(
         }
     }
 
+    public async Task<ApiResponse<PaginatedResponse<OtherEventGuestRow>>> GetGuestsFromOtherEventsAsync(
+        Guid currentEventId, PagedRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var ev = await _unitOfWork.Events.GetByPublicIdAsync(currentEventId, ct);
+            if (ev == null)
+                return ApiResponse<PaginatedResponse<OtherEventGuestRow>>.NotFoundResponse("Event not found");
+
+            var query = _unitOfWork.Guests.QueryNoTracking().Where(g => g.EventId != ev.Id);
+
+            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+            {
+                var term = request.SearchTerm.Trim();
+                query = query.Where(g =>
+                    g.FirstName.Contains(term) ||
+                    g.LastName.Contains(term) ||
+                    (g.Email != null && g.Email.Contains(term)) ||
+                    (g.Organization != null && g.Organization.Contains(term)) ||
+                    (g.OrganizationRef != null && g.OrganizationRef.Name.Contains(term)));
+            }
+
+            var total = await query.CountAsync(ct);
+
+            var pageSize = request.PageSize is < 1 or > 100 ? 20 : request.PageSize;
+            var pageNumber = request.PageNumber < 1 ? 1 : request.PageNumber;
+
+            var items = await query
+                .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .Select(g => new OtherEventGuestRow
+                {
+                    Id = g.PublicId,
+                    FirstName = g.FirstName,
+                    LastName = g.LastName,
+                    Email = g.Email,
+                    GuestType = g.GuestType,
+                    OrganizationId = g.OrganizationRef != null ? (Guid?)g.OrganizationRef.PublicId : null,
+                    OrganizationName = g.OrganizationRef != null ? g.OrganizationRef.Name : g.Organization,
+                    NationalityId = g.Nationality != null ? (Guid?)g.Nationality.PublicId : null,
+                    NationalityName = g.Nationality != null ? g.Nationality.Name : null,
+                    NationalityFlag = g.Nationality != null ? g.Nationality.Flag : null,
+                    PhotoUrl = g.PhotoUrl,
+                    Tier = g.Tier,
+                    EventId = g.Event.PublicId,
+                    EventTitle = g.Event.Title,
+                })
+                .ToListAsync(ct);
+
+            return ApiResponse<PaginatedResponse<OtherEventGuestRow>>.SuccessResponse(
+                new PaginatedResponse<OtherEventGuestRow>(items, total, pageNumber, pageSize));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving guests from other events for event {EventId}", currentEventId);
+            return ApiResponse<PaginatedResponse<OtherEventGuestRow>>.ServerErrorResponse("An error occurred while retrieving guests");
+        }
+    }
+
     public async Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, GuestPagedRequest request, CancellationToken ct = default)
     {
         try

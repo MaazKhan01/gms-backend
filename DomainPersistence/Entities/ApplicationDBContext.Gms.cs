@@ -588,6 +588,7 @@ public partial class ApplicationDBContext
             fl.HasOne(x => x.Flight).WithMany(x => x.Legs).HasForeignKey(x => x.FlightId).OnDelete(DeleteBehavior.Cascade);
             fl.HasOne(x => x.FromAirport).WithMany().HasForeignKey(x => x.FromAirportId).OnDelete(DeleteBehavior.Restrict);
             fl.HasOne(x => x.ToAirport).WithMany().HasForeignKey(x => x.ToAirportId).OnDelete(DeleteBehavior.Restrict);
+            fl.HasOne(x => x.FlightClass).WithMany().HasForeignKey(x => x.FlightClassId).OnDelete(DeleteBehavior.Restrict);
             fl.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 

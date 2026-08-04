@@ -12,6 +12,11 @@ public interface IGuestService
     /// <summary>Name/org/tier only, for guest pickers (travel, meetings, seating).
     /// Server-side search + paging, declined guests always excluded.</summary>
     Task<ApiResponse<PaginatedResponse<GuestPickerResponse>>> GetGuestPickerAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
+
+    /// <summary>"Existing Guest" tab of the Add Guest modal — guests that already
+    /// exist under a DIFFERENT event, so one can be picked to prefill a brand-new
+    /// guest for the current event (Guest has no cross-event identity to link to).</summary>
+    Task<ApiResponse<PaginatedResponse<OtherEventGuestRow>>> GetGuestsFromOtherEventsAsync(Guid currentEventId, PagedRequest request, CancellationToken ct = default);
     Task<ApiResponse<GuestResponse>> CreateGuestAsync(CreateGuestRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> BulkGuestsDeleteAsync(Guid eventId,DeleteMultipleGuests request, CancellationToken ct = default);
     // Bulk import — uploads the CSV to blob storage and enqueues a Hangfire job

@@ -122,6 +122,7 @@ public class TravelService(
             .Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
+            .Include(f => f.Legs).ThenInclude(l => l.FlightClass)
             .Where(f => f.GuestId == guest.Id && (bookingId == null || f.PublicId == bookingId))
             .OrderByDescending(f => f.Id)
             .FirstOrDefaultAsync(ct);
@@ -146,6 +147,8 @@ public class TravelService(
                         ToAirportId = l.ToAirport?.PublicId,
                         StartTime = l.StartTime,
                         EndTime = l.EndTime,
+                        FlightClassId = l.FlightClass?.PublicId,
+                        Seat = l.Seat,
                     }).ToList(),
             };
         }
@@ -218,6 +221,7 @@ public class TravelService(
                 Id = f.PublicId,
                 GuestId = f.Guest.PublicId,
                 GuestName = (f.Guest.FirstName + " " + f.Guest.LastName).Trim(),
+                PhotoUrl = f.Guest.PhotoUrl,
                 Organization = f.Guest.Organization,
                 Tier = f.Guest.Tier,
                 Status = f.Status,
@@ -240,6 +244,8 @@ public class TravelService(
                         ArrivalCountry = l.ToAirport.Country,
                         StartTime = l.StartTime,
                         EndTime = l.EndTime,
+                        FlightClass = l.FlightClass != null ? l.FlightClass.Name : null,
+                        Seat = l.Seat,
                     }).ToList(),
             } })
             .ToListAsync(ct);
@@ -299,6 +305,7 @@ public class TravelService(
                 Id = a.PublicId,
                 GuestId = a.Guest.PublicId,
                 GuestName = (a.Guest.FirstName + " " + a.Guest.LastName).Trim(),
+                PhotoUrl = a.Guest.PhotoUrl,
                 Organization = a.Guest.Organization,
                 Tier = a.Guest.Tier,
                 Hotel = a.Hotel.Name,
@@ -339,6 +346,7 @@ public class TravelService(
                 Id = t.PublicId,
                 GuestId = t.Guest.PublicId,
                 GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+                PhotoUrl = t.Guest.PhotoUrl,
                 Organization = t.Guest.Organization,
                 Tier = t.Guest.Tier,
                 Vehicle = t.Vehicle == null ? null : (t.Vehicle.VehicleNumber + " · " + t.Vehicle.VehicleModel),
@@ -423,6 +431,7 @@ public class TravelService(
             {
                 GuestId = g.PublicId,
                 GuestName = (g.FirstName + " " + g.LastName).Trim(),
+                PhotoUrl = g.PhotoUrl,
                 Email = g.Email,
                 Organization = g.Organization,
                 Tier = g.Tier,
@@ -462,6 +471,8 @@ public class TravelService(
                             ArrivalCountry = l.ToAirport.Country,
                             StartTime = l.StartTime,
                             EndTime = l.EndTime,
+                            FlightClass = l.FlightClass != null ? l.FlightClass.Name : null,
+                            Seat = l.Seat,
                         }).ToList(),
                     // Route + timings come from the itinerary ends: leave on the
                     // first leg, land on the last.
@@ -524,7 +535,11 @@ public class TravelService(
                     return ApiResponse<bool>.ErrorResponse(
                         $"A {FlightTypeCode(type.Value)} flight needs exactly {requiredLegs} leg(s)");
 
-                var classId = await ResolveNullableId(_unitOfWork.FlightClasses, request.Flight.FlightClassId, ct);
+                // Booking-level fallback — kept for backward compatibility with any
+                // caller that still sends a flat FlightClassId/Seat instead of
+                // per-leg ones (e.g. an older client). A real per-leg value below
+                // always wins once one exists.
+                var requestClassId = await ResolveNullableId(_unitOfWork.FlightClasses, request.Flight.FlightClassId, ct);
 
                 Flight flight = null;
                 if (request.Flight.Id is { } flightId && flightId != Guid.Empty)
@@ -535,15 +550,15 @@ public class TravelService(
                 if (isNewFlight) flight = new Flight { GuestId = guest.Id };
 
                 flight.FlightType = type.Value;
-                flight.FlightClassId = classId;
                 flight.Status = request.Flight.Status;
-                flight.Seat = request.Flight.Seat;
                 flight.DepartureTime = request.Flight.DepartureTime;
                 flight.ArrivalTime = request.Flight.ArrivalTime;
 
                 // Legs are matched on their public id so editing keeps the same
                 // rows (the guest app references legs by id); anything the payload
-                // left out is dropped.
+                // left out is dropped. A return booking's two legs can carry
+                // different fare classes/seats (e.g. Business outbound, Economy
+                // inbound) — each leg owns its own.
                 var keptLegs = new List<FlightLeg>();
                 foreach (var li in legInputs)
                 {
@@ -557,6 +572,8 @@ public class TravelService(
                     leg.ToAirportId = await ResolveNullableId(_unitOfWork.AirportData, li.ToAirportId, ct);
                     leg.StartTime = li.StartTime;
                     leg.EndTime = li.EndTime;
+                    leg.FlightClassId = await ResolveNullableId(_unitOfWork.FlightClasses, li.FlightClassId, ct);
+                    leg.Seat = li.Seat;
                     keptLegs.Add(leg);
                 }
                 foreach (var stale in flight.Legs.Except(keptLegs).ToList())
@@ -564,6 +581,14 @@ public class TravelService(
                     flight.Legs.Remove(stale);
                     _unitOfWork.FlightLegs.Remove(stale);
                 }
+
+                // Flight.FlightClassId/Seat are a "primary" copy mirrored from the
+                // first leg (travel order) — same pattern as DepartureTime/
+                // ArrivalTime — so anywhere that only shows one value (a collapsed
+                // list row) still has something to display.
+                var primaryLeg = keptLegs.FirstOrDefault();
+                flight.FlightClassId = primaryLeg?.FlightClassId ?? requestClassId;
+                flight.Seat = primaryLeg?.Seat ?? request.Flight.Seat;
 
                 if (isNewFlight) await _unitOfWork.Flights.AddAsync(flight, ct);
             }
