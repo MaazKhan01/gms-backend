@@ -15,6 +15,8 @@ public class EventResponse
     public DateOnly? EndDate { get; set; }
     public string Status { get; set; }
     public string AppKey { get; set; }
+    /// <summary>fixed | flexible — whether this event runs the Service Level flow.</summary>
+    public string GuestModel { get; set; }
     public string ImageUrl { get; set; }
     public string ThemeAccent { get; set; }
     public string ThemeSecondary { get; set; }

@@ -15,6 +15,14 @@ public partial class Event : Entity
     public string Status { get; set; }          // planning | active | completed | cancelled
     public string AppKey { get; set; }          // url-safe slug derived from the title
 
+    /// <summary>
+    /// fixed | flexible — see <c>Core.Constants.EventGuestModels</c>.
+    /// Distinct from <see cref="Type"/>, which is the kind of occasion
+    /// (Conference/Forum/…): this decides whether the event runs the Service
+    /// Level flow with its rules, or the older unrestricted one.
+    /// </summary>
+    public string GuestModel { get; set; }
+
     // Branding (replaces the localStorage "gms-event-themes" on the frontend)
     public string ImageUrl { get; set; }
     public string ThemeAccent { get; set; }

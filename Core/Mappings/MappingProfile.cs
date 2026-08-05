@@ -109,7 +109,17 @@ public class MappingProfile : Profile
                 opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null))
             // Stored as JSON on the entity, a plain int list on the wire.
             .ForMember(dest => dest.AllowedServices,
-                opt => opt.MapFrom(src => GuestServices.Parse(src.AllowedServicesJson)));
+                opt => opt.MapFrom(src => GuestServices.Parse(src.AllowedServicesJson)))
+            // Per-event grade (replaces the old hardcoded Tier). Tier itself still
+            // maps by convention, mirrored from ServiceLevel.Code by GuestService.
+            .ForMember(dest => dest.ServiceLevelId,
+                opt => opt.MapFrom(src => src.ServiceLevel != null ? (Guid?)src.ServiceLevel.PublicId : null))
+            .ForMember(dest => dest.ServiceLevelName,
+                opt => opt.MapFrom(src => src.ServiceLevel != null ? src.ServiceLevel.Name : null))
+            .ForMember(dest => dest.ServiceLevelNameAr,
+                opt => opt.MapFrom(src => src.ServiceLevel != null ? src.ServiceLevel.NameAr : null))
+            .ForMember(dest => dest.ServiceLevelColor,
+                opt => opt.MapFrom(src => src.ServiceLevel != null ? src.ServiceLevel.Color : null));
 
         // Nationality mappings
         CreateMap<Nationality, NationalityResponse>()

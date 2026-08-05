@@ -17,7 +17,16 @@ public class CreateGuestRequest
     public string Organization { get; set; }
     public Guid? OrganizationId { get; set; }
     public Guid? NationalityId { get; set; }
+    // Legacy free-text grade — only CSV import still sends this. The Add/Edit
+    // Guest UI sends ServiceLevelId, and the backend mirrors the level's Code
+    // back onto Tier so string-based consumers keep working.
     public string Tier { get; set; }
+    public Guid? ServiceLevelId { get; set; }
+    // Set by the UI when the user chose to push through a failing Service Level
+    // rule. Requires PermissionCodes.ServiceLevelsOverrideRules — the service
+    // re-checks, so a client can't grant itself the bypass.
+    public bool OverrideServiceLevelRules { get; set; }
+    public string ServiceLevelOverrideReason { get; set; }
     public List<Guid>? SessionIds { get; set; }
     public DateOnly? ArrivalDate { get; set; }
     public DateOnly? DepartureDate { get; set; }

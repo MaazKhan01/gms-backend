@@ -24,6 +24,13 @@ public partial class ApplicationDBContext
     public virtual DbSet<Location> Locations { get; set; }
     public virtual DbSet<Organization> Organizations { get; set; }
 
+    // Per-event service catalog + guest grades (replaces the old hardcoded
+    // Guest.Tier string). See Service.cs for why these are NOT the same concept
+    // as Core.Constants.GuestServiceType.
+    public virtual DbSet<Service> Services { get; set; }
+    public virtual DbSet<ServiceLevel> ServiceLevels { get; set; }
+    public virtual DbSet<ServiceLevelService> ServiceLevelServices { get; set; }
+
     // Invitation / accreditation
     public virtual DbSet<Invitation> Invitations { get; set; }
 
@@ -141,6 +148,12 @@ public partial class ApplicationDBContext
                 .WithMany()
                 .HasForeignKey(x => x.OrganizationId)
                 .OnDelete(DeleteBehavior.SetNull);
+            // SetNull, not Cascade: deleting a level must never take its guests
+            // with it — they fall back to the legacy Tier string until reassigned.
+            g.HasOne(x => x.ServiceLevel)
+                .WithMany(x => x.Guests)
+                .HasForeignKey(x => x.ServiceLevelId)
+                .OnDelete(DeleteBehavior.SetNull);
             // 1:1, same convention as DriverProfile <-> User below: EF creates the
             // unique index on Guests.UserId for us from WithOne.
             g.HasOne(x => x.User)
@@ -148,6 +161,71 @@ public partial class ApplicationDBContext
                 .HasForeignKey<Guest>(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
             g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // ── Per-event service catalog + guest grades ──────────────────────────
+        // Event edge cascades (same as Session): deleting an event takes its
+        // catalog with it. Everything else Restrict/SetNull per the convention
+        // noted in the Venue/Seating block below.
+        modelBuilder.Entity<Service>(s =>
+        {
+            s.ToTable("Services");
+            s.HasKey(x => x.Id);
+            s.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            s.Property(x => x.NameAr).HasMaxLength(200);
+            s.Property(x => x.Description).HasMaxLength(1000);
+            s.Property(x => x.FieldsSchema).HasColumnType("nvarchar(max)");
+            s.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            s.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            s.HasOne(x => x.Event)
+                .WithMany()
+                .HasForeignKey(x => x.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+            s.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<ServiceLevel>(sl =>
+        {
+            sl.ToTable("ServiceLevels");
+            sl.HasKey(x => x.Id);
+            sl.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            sl.Property(x => x.NameAr).HasMaxLength(200);
+            sl.Property(x => x.Code).HasMaxLength(50);
+            sl.Property(x => x.Description).HasMaxLength(1000);
+            sl.Property(x => x.Color).HasMaxLength(20);
+            sl.Property(x => x.RequiredGuestFieldsJson).HasColumnType("nvarchar(max)");
+            sl.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            sl.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            sl.HasOne(x => x.Event)
+                .WithMany()
+                .HasForeignKey(x => x.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+            sl.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<ServiceLevelService>(sls =>
+        {
+            sls.ToTable("ServiceLevelServices");
+            sls.HasKey(x => x.Id);
+            sls.Property(x => x.FieldValuesJson).HasColumnType("nvarchar(max)");
+            sls.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            sls.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            sls.HasOne(x => x.ServiceLevel)
+                .WithMany(x => x.Services)
+                .HasForeignKey(x => x.ServiceLevelId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Restrict, not Cascade: ServiceLevels -> ServiceLevelServices is
+            // already a cascade path from Events, and a second one via Services
+            // would trip SQL Server's multiple-cascade-path rule. The service
+            // delete flow detaches its join rows explicitly instead.
+            sls.HasOne(x => x.Service)
+                .WithMany(x => x.ServiceLevels)
+                .HasForeignKey(x => x.ServiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // One row per (level, service) — a level can't include the same
+            // service twice with two different value sets.
+            sls.HasIndex(x => new { x.ServiceLevelId, x.ServiceId }).IsUnique();
+            sls.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<GuestSession>(gs =>
@@ -174,6 +252,9 @@ public partial class ApplicationDBContext
             e.Property(x => x.VenueName).HasMaxLength(300);
             e.Property(x => x.Status).HasMaxLength(30);
             e.Property(x => x.AppKey).HasMaxLength(150);
+            // Defaulted in the database as well as in code so rows written by
+            // anything that bypasses the service layer still land valid.
+            e.Property(x => x.GuestModel).HasMaxLength(20).HasDefaultValue("flexible");
             // nvarchar(max): may hold a URL or an uploaded base64 data URI.
             e.Property(x => x.ImageUrl).HasColumnType("nvarchar(max)");
             e.Property(x => x.ThemeAccent).HasMaxLength(20);

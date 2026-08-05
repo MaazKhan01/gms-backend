@@ -12,6 +12,9 @@ public class CreateEventRequest
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public string Status { get; set; } = "planning";
+    /// <summary>fixed | flexible. Omit to keep the default (flexible), which is
+    /// the unrestricted pre-service-level flow.</summary>
+    public string GuestModel { get; set; }
     public string ImageUrl { get; set; }
     public string ThemeAccent { get; set; }
     public string ThemeSecondary { get; set; }
@@ -21,6 +24,9 @@ public class CreateEventRequest
 
 public class UpdateEventRequest
 {
+    /// <summary>fixed | flexible. Omit to keep the default (flexible), which is
+    /// the unrestricted pre-service-level flow.</summary>
+    public string GuestModel { get; set; }
     public string Title { get; set; }
     public string Type { get; set; }
     public string Theme { get; set; }

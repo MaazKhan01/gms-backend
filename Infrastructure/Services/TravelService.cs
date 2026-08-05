@@ -488,7 +488,18 @@ public class TravelService(
             .ToListAsync(ct);
 
         var byGuest = page.ToDictionary(r => r.GuestId);
-        foreach (var r in rows)
+
+        // Legacy rows exist whose FlightType is outside the enum (values 4 and 5
+        // are present on the shared server). Those matched neither the Inbound
+        // nor the Outbound exclusion below, so every one of them was added to
+        // BOTH columns and the whole tab showed each flight twice. Undefined
+        // types are separated out and placed by their timing instead: of a
+        // guest's unclassified bookings the earliest is the arrival and the
+        // latest is the departure, which is the only signal such a row carries.
+        var classified = rows.Where(r => Enum.IsDefined(r.Type)).ToList();
+        var unclassified = rows.Where(r => !Enum.IsDefined(r.Type)).ToList();
+
+        foreach (var r in classified)
         {
             if (!byGuest.TryGetValue(r.GuestPublicId, out var row)) continue;
             r.Flight.FlightType = FlightTypeCode(r.Type);
@@ -498,6 +509,30 @@ public class TravelService(
             // stays empty, so the UI can drop that column entirely.
             if (r.Type != FlightType.Outbound && direction != "outbound") row.Inbound.Add(r.Flight);
             if (r.Type != FlightType.Inbound && direction != "inbound") row.Outbound.Add(r.Flight);
+        }
+
+        foreach (var group in unclassified.GroupBy(r => r.GuestPublicId))
+        {
+            if (!byGuest.TryGetValue(group.Key, out var row)) continue;
+
+            var ordered = group.OrderBy(r => r.Flight.DepartureTime).ToList();
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var flight = ordered[i].Flight;
+                // A lone unclassified booking is treated as the arrival: it is
+                // the more common single booking, and putting it in one column
+                // is strictly better than repeating it in both.
+                var isArrival = i == 0;
+                flight.FlightType = FlightTypeCode(isArrival ? FlightType.Inbound : FlightType.Outbound);
+
+                if (isArrival && direction != "outbound") row.Inbound.Add(flight);
+                else if (!isArrival && direction != "inbound") row.Outbound.Add(flight);
+            }
+
+            _logger.LogWarning(
+                "Guest {GuestId} has {Count} flight(s) with a FlightType outside the enum; " +
+                "placed by departure time. Values: {Values}",
+                group.Key, ordered.Count, string.Join(",", ordered.Select(r => (int)r.Type)));
         }
 
         foreach (var row in page)
