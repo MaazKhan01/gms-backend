@@ -36,6 +36,7 @@ public class VipAppService(
     IUnitOfWork _unitOfWork,
     IConfiguration _configuration,
     IEmailService _emailService,
+    ITransportationConflictValidator _conflictValidator,
     ILogger<VipAppService> _logger) : IVipAppService
 {
     private const string OtpPurpose = "guest-login";
@@ -724,6 +725,18 @@ public class VipAppService(
 
             if (request.PickupTime != null && request.DropoffTime != null && request.DropoffTime < request.PickupTime)
                 return ApiResponse<TransportationResponse>.ErrorResponse("Drop-off time cannot be before pickup time");
+
+            // A guest picking a specific car can't be allowed to take one that's
+            // already out. No drop-off asked of them (they don't know it yet) —
+            // the policy's default ride duration stands in for the busy window.
+            if (vehicleId.HasValue && request.PickupTime is { } requestedPickup)
+            {
+                var vehicleConflict = await _conflictValidator.CheckVehicleConflictAsync(
+                    vehicleId.Value, requestedPickup, request.DropoffTime, ct: ct);
+                if (vehicleConflict.HasConflict)
+                    return ApiResponse<TransportationResponse>.ErrorResponse(
+                        "That vehicle is already booked for the requested time. Please choose another.");
+            }
 
             var transport = new Transport
             {

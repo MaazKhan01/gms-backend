@@ -19,8 +19,24 @@ public class VehiclesController(IVehicleService _vehicles, ICurrentUser _current
     // Reads are open to any authenticated user — transport screens need the
     // fleet dropdown. Writes require Travel.Manage (the transport module owner).
     [HttpGet]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
-        => ToResponse(await _vehicles.GetAllAsync(ct));
+    public async Task<IActionResult> GetAll([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vehicles.GetAllAsync(eventId, ct));
+
+    // Vehicles free over [from, to) — the booking forms' dropdown feed, so an
+    // already-taken car can't be picked in the first place. The server still
+    // rejects a clashing save; this only keeps the UI honest.
+    [HttpGet("available")]
+    public async Task<IActionResult> GetAvailable(
+        [FromQuery] DateTime from, [FromQuery] DateTime? to,
+        [FromQuery] Guid? eventId, [FromQuery] Guid? excludeTransportId, CancellationToken ct)
+        => ToResponse(await _vehicles.GetAvailableAsync(from, to, eventId, excludeTransportId, ct));
+
+    // Fleet › Bookings: which vehicle is booked when, and with which driver.
+    [HttpGet("bookings")]
+    public async Task<IActionResult> GetBookings(
+        [FromQuery] Guid? eventId, [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] Guid? vehicleId, [FromQuery] Guid? driverId, CancellationToken ct)
+        => ToResponse(await _vehicles.GetBookingsAsync(eventId, from, to, vehicleId, driverId, ct));
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)

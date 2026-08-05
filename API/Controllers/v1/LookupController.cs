@@ -79,6 +79,14 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public async Task<IActionResult> CreateHotel([FromBody] CreateHotelRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateHotelAsync(request, _currentUser.UserId, ct));
 
+    // Hotels are editable (unlike the name-only lookups): the VIP app reads their
+    // address and image, and rows created before the address was required have to
+    // be fixable without a DB trip.
+    [HttpPut("hotels/{id:guid}")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> UpdateHotel(Guid id, [FromBody] CreateHotelRequest request, CancellationToken ct)
+        => ToResponse(await _travel.UpdateHotelAsync(id, request, _currentUser.UserId, ct));
+
     [HttpPost("vehicle-types")]
     [HasPermission(PermissionCodes.TravelManage)]
     public async Task<IActionResult> CreateVehicleType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)

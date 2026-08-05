@@ -44,6 +44,8 @@ public partial class ApplicationDBContext
     public virtual DbSet<AccommodationHotel> AccommodationHotels { get; set; }
     public virtual DbSet<AccommodationRoomType> AccommodationRoomTypes { get; set; }
     public virtual DbSet<Accommodation> Accommodations { get; set; }
+    public virtual DbSet<EventHotelContract> EventHotelContracts { get; set; }
+    public virtual DbSet<HotelRoomInventory> HotelRoomInventories { get; set; }
 
     // Transport
     public virtual DbSet<Transport> Transports { get; set; }
@@ -695,6 +697,36 @@ public partial class ApplicationDBContext
             rt.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
         });
 
+        modelBuilder.Entity<EventHotelContract>(c =>
+        {
+            c.ToTable("EventHotelContracts");
+            c.HasKey(x => x.Id);
+            c.Property(x => x.Notes).HasMaxLength(1000);
+            c.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            c.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            c.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Restrict);
+            c.HasOne(x => x.Hotel).WithMany().HasForeignKey(x => x.AccommodationHotelId).OnDelete(DeleteBehavior.Restrict);
+            // One contract per hotel per event — a second one would split the same
+            // hotel's room blocks across two rows for no reason.
+            c.HasIndex(x => new { x.EventId, x.AccommodationHotelId }).IsUnique().HasFilter("[IsDeleted] = 0");
+            c.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<HotelRoomInventory>(i =>
+        {
+            i.ToTable("HotelRoomInventories");
+            i.HasKey(x => x.Id);
+            i.Property(x => x.Notes).HasMaxLength(500);
+            i.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            i.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            i.HasOne(x => x.Contract).WithMany(x => x.Inventory).HasForeignKey(x => x.EventHotelContractId).OnDelete(DeleteBehavior.Cascade);
+            i.HasOne(x => x.RoomType).WithMany().HasForeignKey(x => x.RoomTypeId).OnDelete(DeleteBehavior.Restrict);
+            // No unique key on the window: overlapping blocks for one room type are
+            // legal and their counts add up (see HotelRoomInventory).
+            i.HasIndex(x => new { x.EventHotelContractId, x.RoomTypeId, x.FromDate });
+            i.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
         modelBuilder.Entity<Accommodation>(a =>
         {
             a.ToTable("Accommodations");
@@ -726,6 +758,8 @@ public partial class ApplicationDBContext
             t.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.Vehicle).WithMany().HasForeignKey(x => x.VehicleId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
+            // The vehicle double-booking check filters on exactly this pair.
+            t.HasIndex(x => new { x.VehicleId, x.PickupTime });
             t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -787,7 +821,10 @@ public partial class ApplicationDBContext
             fp.Property(x => x.Notes).HasMaxLength(1000);
             fp.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             fp.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            fp.HasIndex(x => x.Name).IsUnique().HasFilter("[IsDeleted] = 0");
+            fp.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Restrict);
+            // Name is unique within one event's provider list, not globally —
+            // two events may both contract "Al Fardan Rent A Car".
+            fp.HasIndex(x => new { x.EventId, x.Name }).IsUnique().HasFilter("[IsDeleted] = 0");
             fp.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 

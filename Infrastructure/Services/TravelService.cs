@@ -16,6 +16,8 @@ namespace Infrastructure.Services;
 public class TravelService(
     IUnitOfWork _unitOfWork,
     INotificationManagerService _notifications,
+    ITransportationConflictValidator _conflictValidator,
+    IAccommodationInventoryService _inventory,
     ILogger<TravelService> _logger) : ITravelService
 {
     public async Task<ApiResponse<List<IdNameDto>>> GetFlightClassesAsync(CancellationToken ct = default)
@@ -634,18 +636,33 @@ public class TravelService(
                 if (hotelId == null) return ApiResponse<bool>.ErrorResponse("Invalid hotel");
                 var roomTypeId = await ResolveNullableId(_unitOfWork.AccommodationRoomTypes, request.Accommodation.RoomTypeId, ct);
 
+                var checkIn = request.Accommodation.CheckIn;
+                var checkOut = request.Accommodation.CheckOut;
+                if (checkIn == null) return ApiResponse<bool>.ErrorResponse("Check-in date is required");
+                if (checkOut == null) return ApiResponse<bool>.ErrorResponse("Check-out date is required");
+
                 Accommodation acc = null;
                 if (request.Accommodation.Id is { } accId && accId != Guid.Empty)
                     acc = await _unitOfWork.Accommodations.Query()
                         .FirstOrDefaultAsync(a => a.PublicId == accId && a.GuestId == guest.Id, ct);
 
                 var isNewAcc = acc == null;
+
+                // Room inventory: a hotel the event holds rooms at can't be
+                // oversold. Hotels with no blocks are unmanaged and pass straight
+                // through, which is what keeps events predating this module working.
+                // An edit excludes itself, or its own nights would count twice.
+                var full = await _inventory.CheckStayAvailabilityAsync(
+                    guest.EventId, hotelId.Value, roomTypeId, checkIn.Value, checkOut.Value, acc?.Id, ct);
+                if (full != null)
+                    return ApiResponse<bool>.ConflictResponse(full, "ACCOMMODATION_UNAVAILABLE");
+
                 if (isNewAcc) acc = new Accommodation { GuestId = guest.Id };
 
                 acc.AccommodationHotelId = hotelId.Value;
                 acc.RoomTypeId = roomTypeId;
-                acc.CheckIn = request.Accommodation.CheckIn;
-                acc.CheckOut = request.Accommodation.CheckOut;
+                acc.CheckIn = checkIn;
+                acc.CheckOut = checkOut;
 
                 if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
             }
@@ -676,6 +693,15 @@ public class TravelService(
                 if (request.Transport.DriverId is { } d && d != Guid.Empty && driverId == null)
                     return ApiResponse<bool>.ErrorResponse("Invalid driver");
 
+                var pickupTime = request.Transport.PickupTime;
+                var dropoffTime = request.Transport.DropoffTime;
+                if (pickupTime == null)
+                    return ApiResponse<bool>.ErrorResponse("Pickup time is required");
+                if (dropoffTime == null)
+                    return ApiResponse<bool>.ErrorResponse("Dropoff time is required");
+                if (dropoffTime <= pickupTime)
+                    return ApiResponse<bool>.ErrorResponse("Dropoff time must be after the pickup time");
+
                 Transport tr = null;
                 if (request.Transport.Id is { } trId && trId != Guid.Empty)
                     tr = await _unitOfWork.Transports.Query()
@@ -683,6 +709,16 @@ public class TravelService(
 
                 var isNewTransport = tr == null;
                 var previousDriverId = tr?.DriverId;
+
+                // Double-booking rules — this path had none, so the admin guest
+                // form could quietly overbook a guest, a driver or a car that the
+                // transportation screen would have refused. Editing a ride passes
+                // its own id so it never clashes with itself.
+                var conflict = await CheckTransportConflictsAsync(
+                    guest.Id, driverId, vehicleId, pickupTime.Value, dropoffTime, tr?.Id, ct);
+                if (conflict != null)
+                    return ApiResponse<bool>.ConflictResponse(conflict, "TRANSPORTATION_CONFLICT");
+
                 if (isNewTransport) tr = new Transport { GuestId = guest.Id };
 
                 tr.PickupLocationId = pickupId;
@@ -700,8 +736,8 @@ public class TravelService(
                 tr.ActualPickupTime = request.Transport.ActualPickupTime ?? tr.ActualPickupTime;
                 tr.ActualDropOffTime = request.Transport.ActualDropOffTime ?? tr.ActualDropOffTime;
 
-                tr.PickupTime = request.Transport.PickupTime;
-                tr.DropoffTime = request.Transport.DropoffTime;
+                tr.PickupTime = pickupTime;
+                tr.DropoffTime = dropoffTime;
 
                 if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
 
@@ -731,6 +767,32 @@ public class TravelService(
 
     private static async Task<int?> ResolveNullableId<T>(IGenericRepository<T> repo, Guid? publicId, CancellationToken ct) where T : Entity
         => publicId == null || publicId == Guid.Empty ? null : (await repo.GetByPublicIdAsync(publicId.Value, ct))?.Id;
+
+    // First conflict message across guest / driver / vehicle, or null if the slot
+    // is free. Same validator the transportation screen uses, so both flows
+    // enforce one rule.
+    private async Task<string> CheckTransportConflictsAsync(
+        int guestId, int? driverId, int? vehicleId,
+        DateTime pickupTime, DateTime? dropoffTime, int? excludeTransportId, CancellationToken ct)
+    {
+        var guestConflict = await _conflictValidator.CheckGuestConflictAsync(guestId, pickupTime, excludeTransportId, ct);
+        if (guestConflict.HasConflict) return guestConflict.Message;
+
+        if (driverId.HasValue)
+        {
+            var driverConflict = await _conflictValidator.CheckDriverConflictAsync(driverId.Value, pickupTime, excludeTransportId, ct);
+            if (driverConflict.HasConflict) return driverConflict.Message;
+        }
+
+        if (vehicleId.HasValue)
+        {
+            var vehicleConflict = await _conflictValidator.CheckVehicleConflictAsync(
+                vehicleId.Value, pickupTime, dropoffTime, excludeTransportId, ct);
+            if (vehicleConflict.HasConflict) return vehicleConflict.Message;
+        }
+
+        return null;
+    }
 
     // ── Remove one specific booking (a guest may have several of a kind) ────────
     public async Task<ApiResponse<bool>> DeleteFlightAsync(Guid id, CancellationToken ct = default)

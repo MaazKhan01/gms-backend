@@ -51,6 +51,8 @@ public class UnitOfWork : IUnitOfWork
         AccommodationHotels = new GenericRepository<AccommodationHotel>(_context);
         AccommodationRoomTypes = new GenericRepository<AccommodationRoomType>(_context);
         Accommodations = new GenericRepository<Accommodation>(_context);
+        EventHotelContracts = new GenericRepository<EventHotelContract>(_context);
+        HotelRoomInventories = new GenericRepository<HotelRoomInventory>(_context);
         Transports = new GenericRepository<Transport>(_context);
         VehicleTypes = new GenericRepository<VehicleType>(_context);
         Vehicles = new GenericRepository<Vehicle>(_context);
@@ -102,6 +104,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<AccommodationHotel> AccommodationHotels { get; private set; }
     public IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; private set; }
     public IGenericRepository<Accommodation> Accommodations { get; private set; }
+    public IGenericRepository<EventHotelContract> EventHotelContracts { get; private set; }
+    public IGenericRepository<HotelRoomInventory> HotelRoomInventories { get; private set; }
     public IGenericRepository<Transport> Transports { get; private set; }
     public IGenericRepository<VehicleType> VehicleTypes { get; private set; }
     public IGenericRepository<Vehicle> Vehicles { get; private set; }

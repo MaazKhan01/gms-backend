@@ -62,6 +62,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<AccommodationHotel> AccommodationHotels { get; }
     IGenericRepository<AccommodationRoomType> AccommodationRoomTypes { get; }
     IGenericRepository<Accommodation> Accommodations { get; }
+    IGenericRepository<EventHotelContract> EventHotelContracts { get; }
+    IGenericRepository<HotelRoomInventory> HotelRoomInventories { get; }
     IGenericRepository<Transport> Transports { get; }
     IGenericRepository<VehicleType> VehicleTypes { get; }
     IGenericRepository<Vehicle> Vehicles { get; }

@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260805135244_added eventId in fleetProvider")]
+    partial class addedeventIdinfleetProvider
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -706,68 +709,6 @@ namespace DomainPersistence.Migrations
                     b.ToTable("Events", (string)null);
                 });
 
-            modelBuilder.Entity("DomainPersistence.Entities.EventHotelContract", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AccommodationHotelId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<int>("EventId")
-                        .HasColumnType("int");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccommodationHotelId");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.HasIndex("EventId", "AccommodationHotelId")
-                        .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
-
-                    b.ToTable("EventHotelContracts", (string)null);
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.EventType", b =>
                 {
                     b.Property<int>("Id")
@@ -1340,75 +1281,6 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("SessionId");
 
                     b.ToTable("GuestSessions", (string)null);
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.HotelRoomInventory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<int>("EventHotelContractId")
-                        .HasColumnType("int");
-
-                    b.Property<DateOnly>("FromDate")
-                        .HasColumnType("date");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<int>("RoomCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RoomTypeId")
-                        .HasColumnType("int");
-
-                    b.Property<DateOnly>("ToDate")
-                        .HasColumnType("date");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.HasIndex("RoomTypeId");
-
-                    b.HasIndex("EventHotelContractId", "RoomTypeId", "FromDate");
-
-                    b.ToTable("HotelRoomInventories", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.ImportBatch", b =>
@@ -4112,25 +3984,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("Venue");
                 });
 
-            modelBuilder.Entity("DomainPersistence.Entities.EventHotelContract", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.AccommodationHotel", "Hotel")
-                        .WithMany()
-                        .HasForeignKey("AccommodationHotelId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("DomainPersistence.Entities.Event", "Event")
-                        .WithMany()
-                        .HasForeignKey("EventId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Event");
-
-                    b.Navigation("Hotel");
-                });
-
             modelBuilder.Entity("DomainPersistence.Entities.FleetProvider", b =>
                 {
                     b.HasOne("DomainPersistence.Entities.Event", "Event")
@@ -4279,25 +4132,6 @@ namespace DomainPersistence.Migrations
                     b.Navigation("Guest");
 
                     b.Navigation("Session");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.HotelRoomInventory", b =>
-                {
-                    b.HasOne("DomainPersistence.Entities.EventHotelContract", "Contract")
-                        .WithMany("Inventory")
-                        .HasForeignKey("EventHotelContractId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DomainPersistence.Entities.AccommodationRoomType", "RoomType")
-                        .WithMany()
-                        .HasForeignKey("RoomTypeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Contract");
-
-                    b.Navigation("RoomType");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.ImportBatch", b =>
@@ -4802,11 +4636,6 @@ namespace DomainPersistence.Migrations
             modelBuilder.Entity("DomainPersistence.Entities.Event", b =>
                 {
                     b.Navigation("Sessions");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.EventHotelContract", b =>
-                {
-                    b.Navigation("Inventory");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.FleetProvider", b =>

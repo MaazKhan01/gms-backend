@@ -29,6 +29,11 @@ public class TransportationScheduleService(
             var guest = await _unitOfWork.Guests.GetByPublicIdAsync(request.GuestId, ct);
             if (guest == null) return ApiResponse<ScheduleRow>.NotFoundResponse("Guest not found");
 
+            if (request.DropoffTime == null)
+                return ApiResponse<ScheduleRow>.ErrorResponse("Dropoff time is required");
+            if (request.DropoffTime <= request.ScheduledTime)
+                return ApiResponse<ScheduleRow>.ErrorResponse("Dropoff time must be after the pickup time");
+
             int? driverId = null;
             if (request.DriverId is { } dId && dId != Guid.Empty)
             {
@@ -36,6 +41,8 @@ public class TransportationScheduleService(
                 if (driver == null) return ApiResponse<ScheduleRow>.ErrorResponse("Invalid driver");
                 driverId = driver.Id;
             }
+
+            var vehicleId = await ResolveNullableId(_unitOfWork.Vehicles, request.VehicleId, ct);
 
             var guestConflict = await _conflictValidator.CheckGuestConflictAsync(guest.Id, request.ScheduledTime, ct: ct);
             if (guestConflict.HasConflict)
@@ -48,14 +55,23 @@ public class TransportationScheduleService(
                     return ApiResponse<ScheduleRow>.ConflictResponse(driverConflict.Message, "TRANSPORTATION_CONFLICT");
             }
 
+            if (vehicleId.HasValue)
+            {
+                var vehicleConflict = await _conflictValidator.CheckVehicleConflictAsync(
+                    vehicleId.Value, request.ScheduledTime, request.DropoffTime, ct: ct);
+                if (vehicleConflict.HasConflict)
+                    return ApiResponse<ScheduleRow>.ConflictResponse(vehicleConflict.Message, "TRANSPORTATION_CONFLICT");
+            }
+
             var transport = new Transport
             {
                 GuestId = guest.Id,
                 DriverId = driverId,
-                VehicleId = await ResolveNullableId(_unitOfWork.Vehicles, request.VehicleId, ct),
+                VehicleId = vehicleId,
                 PickupLocationId = await ResolveNullableId(_unitOfWork.Locations, request.PickupLocationId, ct),
                 DropoffLocationId = await ResolveNullableId(_unitOfWork.Locations, request.DropoffLocationId, ct),
                 PickupTime = request.ScheduledTime,
+                DropoffTime = request.DropoffTime,
                 Notes = request.Notes?.Trim(),
                 RideSource = "scheduled",
                 TripStatus = driverId.HasValue ? TransportStatuses.Assigned : TransportStatuses.Pending,
@@ -251,6 +267,7 @@ public class TransportationScheduleService(
         Pickup = t.PickupLocation == null ? null : t.PickupLocation.Address,
         Dropoff = t.DropoffLocation == null ? null : t.DropoffLocation.Address,
         ScheduledTime = t.PickupTime,
+        DropoffTime = t.DropoffTime,
         ActualPickupTime = t.ActualPickupTime,
         ActualDropOffTime = t.ActualDropOffTime,
         Status = t.TripStatus,

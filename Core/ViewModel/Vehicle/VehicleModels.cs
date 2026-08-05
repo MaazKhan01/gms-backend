@@ -25,8 +25,45 @@ public class VehicleResponse
     public string VehicleTypeName { get; set; }
     public Guid? FleetProviderId { get; set; }
     public string FleetProviderName { get; set; }
+    // Event the provider is contracted for — null for an in-house vehicle, which
+    // belongs to no provider and so serves every event.
+    public Guid? EventId { get; set; }
     public string VehicleModel { get; set; }
     public string VehicleNumber { get; set; }
     public string VehicleImage { get; set; }
     public int? Capacity { get; set; }
+}
+
+/// <summary>One booked slot on one vehicle — the Fleet › Bookings row. Flat on
+/// purpose: sorting by vehicle groups a car's slots together, sorting by driver
+/// groups a driver's day, and the table needs no nesting for either.</summary>
+public class VehicleBookingRow
+{
+    // The Transport row's public id.
+    public Guid Id { get; set; }
+
+    public Guid VehicleId { get; set; }
+    public string VehicleNumber { get; set; }
+    public string VehicleModel { get; set; }
+    public string VehicleTypeName { get; set; }
+    public string VehicleImage { get; set; }
+    public string FleetProviderName { get; set; }
+
+    public Guid? DriverId { get; set; }
+    public string DriverName { get; set; }
+    public string DriverPhone { get; set; }
+
+    public Guid GuestId { get; set; }
+    public string GuestName { get; set; }
+
+    public DateTime? PickupTime { get; set; }
+    // Null on rows created before the drop-off became required, and on guest
+    // on-demand requests. The UI shows "—" and the conflict check falls back to
+    // IConflictWindowPolicy.DefaultRideDuration.
+    public DateTime? DropoffTime { get; set; }
+    public string Pickup { get; set; }
+    public string Dropoff { get; set; }
+
+    public string Status { get; set; }
+    public string RideSource { get; set; }
 }

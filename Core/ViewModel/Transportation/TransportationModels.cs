@@ -11,8 +11,13 @@ public class CreateScheduleRequest
     public Guid? VehicleId { get; set; }
     public Guid? PickupLocationId { get; set; }
     public Guid? DropoffLocationId { get; set; }
-    // Date + time of pickup. Conflict checks only ever look at Date+Hour+Minute.
+    // Date + time of pickup. Guest/driver conflict checks only ever look at
+    // Date+Hour+Minute; the vehicle check uses the full ScheduledTime→DropoffTime
+    // window.
     public DateTime ScheduledTime { get; set; }
+    // Required: without it the vehicle's busy window is a guess, so two rides
+    // could be booked into the same car (see IConflictWindowPolicy).
+    public DateTime? DropoffTime { get; set; }
     public string Notes { get; set; }
 }
 
@@ -39,6 +44,7 @@ public class ScheduleRow
     public string Pickup { get; set; }
     public string Dropoff { get; set; }
     public DateTime? ScheduledTime { get; set; }
+    public DateTime? DropoffTime { get; set; }
     public DateTime? ActualPickupTime { get; set; }
     public DateTime? ActualDropOffTime { get; set; }
     public string Status { get; set; }
