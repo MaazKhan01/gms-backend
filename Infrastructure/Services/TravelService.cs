@@ -941,11 +941,16 @@ public class TravelService(
         {
             if (string.IsNullOrWhiteSpace(request.Name))
                 return ApiResponse<HotelDto>.ErrorResponse("Name is required");
+            // Required, not optional: the VIP app shows the hotel's address on the
+            // accommodation screen and the home check-in card. A blank one there
+            // leaves the guest with a hotel name and no way to find it.
+            if (string.IsNullOrWhiteSpace(request.Address))
+                return ApiResponse<HotelDto>.ErrorResponse("Address is required");
 
             var hotel = new AccommodationHotel
             {
                 Name = request.Name.Trim(),
-                Address = request.Address?.Trim() ?? string.Empty,
+                Address = request.Address.Trim(),
                 ImageUrl = request.ImageUrl?.Trim(),
                 LocationId = await ResolveNullableId(_unitOfWork.Locations, request.LocationId, ct)
             };
@@ -964,6 +969,48 @@ public class TravelService(
         {
             _logger.LogError(ex, "Error creating hotel");
             return ApiResponse<HotelDto>.ServerErrorResponse("An error occurred while creating the hotel");
+        }
+    }
+
+    public async Task<ApiResponse<HotelDto>> UpdateHotelAsync(
+        Guid id, CreateHotelRequest request, int userId, CancellationToken ct = default)
+    {
+        try
+        {
+            var hotel = await _unitOfWork.AccommodationHotels.GetByPublicIdAsync(id, ct);
+            if (hotel == null) return ApiResponse<HotelDto>.NotFoundResponse("Hotel not found");
+
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return ApiResponse<HotelDto>.ErrorResponse("Name is required");
+            if (string.IsNullOrWhiteSpace(request.Address))
+                return ApiResponse<HotelDto>.ErrorResponse("Address is required");
+
+            hotel.Name = request.Name.Trim();
+            hotel.Address = request.Address.Trim();
+            // Blank means "no image" — the edit form can clear one, so an empty
+            // string has to null the column rather than be ignored.
+            hotel.ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
+            // Only reassigned when the request carries one. The lookup form doesn't
+            // expose the map location, so treating "absent" as "clear it" would
+            // wipe a link the caller never saw.
+            if (request.LocationId is { } locationId && locationId != Guid.Empty)
+                hotel.LocationId = await ResolveNullableId(_unitOfWork.Locations, locationId, ct);
+
+            hotel.SetUpdateAudit(userId);
+            _unitOfWork.AccommodationHotels.Update(hotel);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<HotelDto>.SuccessResponse(
+                new HotelDto
+                {
+                    Id = hotel.PublicId, Name = hotel.Name, Address = hotel.Address,
+                    ImageUrl = hotel.ImageUrl
+                }, "Hotel updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating hotel {HotelId}", id);
+            return ApiResponse<HotelDto>.ServerErrorResponse("An error occurred while updating the hotel");
         }
     }
 

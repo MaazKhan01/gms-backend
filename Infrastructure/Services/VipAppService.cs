@@ -463,7 +463,11 @@ public class VipAppService(
             .Select(x => new AgendaCardResponse
             {
                 Flag = "UPCOMING CHECK-IN", Kind = "hotel", RefId = x.a.PublicId,
-                When = x.when!.Value, Title = "Hotel Check-In", Subtitle = x.a.Hotel?.Name
+                When = x.when!.Value, Title = "Hotel Check-In",
+                // Address alongside the name — the card is what the guest reads
+                // on the way there, and the name alone doesn't say where.
+                Subtitle = string.Join(" · ", new[] { x.a.Hotel?.Name, x.a.Hotel?.Address }
+                    .Where(s => !string.IsNullOrWhiteSpace(s)))
             }));
 
         var trips = await _unitOfWork.Transports.QueryNoTracking()
@@ -1004,10 +1008,12 @@ public class VipAppService(
         return ApiResponse<bool>.SuccessResponse(true, "Settings updated");
     }
 
+    // One mapper for every profile payload — verify-otp, refresh, GET and PUT
+    // /profile — so a field added here reaches all of them at once.
     private static GuestProfileResponse MapProfile(Guest g) => new()
     {
         Id = g.PublicId, FirstName = g.FirstName, LastName = g.LastName, Email = g.Email,
-        Organization = g.Organization, Tier = g.Tier
+        Organization = g.Organization, Tier = g.Tier, PhotoUrl = g.PhotoUrl
     };
 
     // Support chat lives entirely on SupportChatService / SupportChatController now.

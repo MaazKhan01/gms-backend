@@ -229,6 +229,12 @@ public class GuestProfileResponse
     public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
+
+    /// <summary>The guest's photo — the profile screen's avatar and the home
+    /// screen's header. Stored bare in the DB; BlobSasMiddleware attaches a
+    /// short-lived read SAS on the way out, so the app can load it directly.
+    /// Null when no photo was uploaded — fall back to initials.</summary>
+    public string PhotoUrl { get; set; }
 }
 
 public record UpdateProfileRequest(string FirstName, string LastName, string Organization);

@@ -35,6 +35,9 @@ public interface ITravelService
     Task<ApiResponse<IdNameDto>> CreateFlightClassAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateRoomTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<HotelDto>> CreateHotelAsync(CreateHotelRequest request, int userId, CancellationToken ct = default);
+    /// <summary>Same request shape as create — a hotel's name, address, image and
+    /// location are all editable. Address stays required: the VIP app shows it.</summary>
+    Task<ApiResponse<HotelDto>> UpdateHotelAsync(Guid id, CreateHotelRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateVehicleTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<AirportDto>> CreateAirportAsync(CreateAirportRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<LocationDto>> CreateLocationAsync(LocationRequest request, int userId, CancellationToken ct = default);
