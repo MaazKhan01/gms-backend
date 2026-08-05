@@ -22,9 +22,14 @@ public class OtherEventGuestRow
     public string NationalityName { get; set; }
     public string NationalityFlag { get; set; }
     public string PhotoUrl { get; set; }
-    // Display only — the picker shows what tier they held before, but it's
-    // never copied onto the new event's guest.
+    // Prefilled as the row's default in the picker table's editable Tier
+    // column — the admin can change it per-row before adding.
     public string Tier { get; set; }
+    // Display only (their previous booking's status) — never applied to the
+    // new guest, which always starts as not-sent / not-issued.
+    public bool AccreditationRequired { get; set; }
+    public string InvitationStatus { get; set; }
+    public string AccreditationStatus { get; set; }
     public Guid EventId { get; set; }
     public string EventTitle { get; set; }
 }

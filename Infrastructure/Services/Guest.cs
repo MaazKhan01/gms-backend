@@ -438,28 +438,51 @@ public class GuestService(
             var pageSize = request.PageSize is < 1 or > 100 ? 20 : request.PageSize;
             var pageNumber = request.PageNumber < 1 ? 1 : request.PageNumber;
 
-            var items = await query
+            var raw = await query
                 .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .Select(g => new OtherEventGuestRow
+                .Select(g => new
                 {
-                    Id = g.PublicId,
-                    FirstName = g.FirstName,
-                    LastName = g.LastName,
-                    Email = g.Email,
-                    GuestType = g.GuestType,
-                    OrganizationId = g.OrganizationRef != null ? (Guid?)g.OrganizationRef.PublicId : null,
-                    OrganizationName = g.OrganizationRef != null ? g.OrganizationRef.Name : g.Organization,
-                    NationalityId = g.Nationality != null ? (Guid?)g.Nationality.PublicId : null,
-                    NationalityName = g.Nationality != null ? g.Nationality.Name : null,
-                    NationalityFlag = g.Nationality != null ? g.Nationality.Flag : null,
-                    PhotoUrl = g.PhotoUrl,
-                    Tier = g.Tier,
-                    EventId = g.Event.PublicId,
-                    EventTitle = g.Event.Title,
+                    GuestId = g.Id,
+                    Row = new OtherEventGuestRow
+                    {
+                        Id = g.PublicId,
+                        FirstName = g.FirstName,
+                        LastName = g.LastName,
+                        Email = g.Email,
+                        GuestType = g.GuestType,
+                        OrganizationId = g.OrganizationRef != null ? (Guid?)g.OrganizationRef.PublicId : null,
+                        OrganizationName = g.OrganizationRef != null ? g.OrganizationRef.Name : g.Organization,
+                        NationalityId = g.Nationality != null ? (Guid?)g.Nationality.PublicId : null,
+                        NationalityName = g.Nationality != null ? g.Nationality.Name : null,
+                        NationalityFlag = g.Nationality != null ? g.Nationality.Flag : null,
+                        PhotoUrl = g.PhotoUrl,
+                        Tier = g.Tier,
+                        AccreditationRequired = g.AccreditationRequired,
+                        EventId = g.Event.PublicId,
+                        EventTitle = g.Event.Title,
+                    },
                 })
                 .ToListAsync(ct);
+
+            var items = raw.Select(r => r.Row).ToList();
+            var guestIds = raw.Select(r => r.GuestId).ToList();
+
+            if (guestIds.Count > 0)
+            {
+                var invitations = await _unitOfWork.Invitations.Query()
+                    .Where(i => guestIds.Contains(i.GuestId))
+                    .ToListAsync(ct);
+                var byGuestId = invitations.ToDictionary(i => i.GuestId, i => i);
+
+                for (var idx = 0; idx < items.Count; idx++)
+                {
+                    byGuestId.TryGetValue(guestIds[idx], out var invitation);
+                    items[idx].InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent;
+                    items[idx].AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued;
+                }
+            }
 
             return ApiResponse<PaginatedResponse<OtherEventGuestRow>>.SuccessResponse(
                 new PaginatedResponse<OtherEventGuestRow>(items, total, pageNumber, pageSize));
