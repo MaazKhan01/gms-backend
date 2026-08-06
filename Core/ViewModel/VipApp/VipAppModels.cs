@@ -108,6 +108,8 @@ public class FlightBookingResponse
     public DateTime? ArrivalTime { get; set; }
     /// <summary>Whole booking, first leg's departure to last leg's arrival.</summary>
     public string Duration { get; set; }
+    /// <summary>Ticket / boarding pass, when the organiser uploaded one.</summary>
+    public string ImageUrl { get; set; }
     public List<FlightLegResponse> Legs { get; set; } = new();
 }
 
@@ -138,6 +140,10 @@ public class AccommodationResponse
     public DateTime? CheckIn { get; set; }
     public DateTime? CheckOut { get; set; }
     public string RoomType { get; set; }
+
+    /// <summary>This booking's own image (voucher, room photo) — separate from
+    /// <see cref="HotelImageUrl"/>, which is the hotel's picture.</summary>
+    public string ImageUrl { get; set; }
 }
 
 public class TransportationResponse

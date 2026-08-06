@@ -678,20 +678,18 @@ public class GuestService(
             if (guest == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            // A flexible event runs the pre-service-level flow: no level is
-            // resolved, no rules are enforced, and the guest's existing
-            // ServiceLevelId is left untouched so switching the event back to
-            // fixed restores its assignments intact.
+            // Service levels apply to BOTH guest models now (docs/service-levels-v2.md
+            // §4): the model decides how the level's services must be COMPLETED —
+            // mandatory and in order on fixed, optional and in any order on flexible
+            // — not whether a level is assigned at all. Assigning it on flexible
+            // events too is what gives those guests a service checklist; skipping it
+            // left ServiceLevelId null and the guest with no services.
             var usesLevels = EventGuestModels.UsesServiceLevels(guest.Event?.GuestModel);
 
-            ServiceLevel serviceLevel = null;
-            if (usesLevels)
-            {
-                var (resolved, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, guest.EventId, ct);
-                if (levelError != null)
-                    return ApiResponse<GuestResponse>.ErrorResponse(levelError);
-                serviceLevel = resolved;
-            }
+            var (serviceLevel, levelError) =
+                await ResolveServiceLevelAsync(request.ServiceLevelId, guest.EventId, ct);
+            if (levelError != null)
+                return ApiResponse<GuestResponse>.ErrorResponse(levelError);
 
             // Fixed events key a guest on (event, email, service level): the same
             // person may legitimately appear once per level — e.g. as a Speaker
@@ -715,12 +713,12 @@ public class GuestService(
                         : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
             }
 
-            if (usesLevels)
-            {
-                var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, guest, ct);
-                if (ruleError != null)
-                    return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
-            }
+            // Not gated on the guest model: RequiredGuestFieldsJson validates the
+            // guest RECORD, which isn't event-specific (§5), and the wizard already
+            // checks it client-side on both models.
+            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, guest, ct);
+            if (ruleError != null)
+                return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
 
             var nationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct);
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
@@ -743,10 +741,7 @@ public class GuestService(
             guest.NationalityId = nationalityId;
             // Tier mirrors the level's Code so every legacy string consumer keeps
             // working; falls back to the raw Tier only when no level is set (CSV).
-            // Only a fixed event may move a guest between levels. On a flexible
-            // event ServiceLevelId is left as-is and Tier is the plain string it
-            // was before service levels existed.
-            if (usesLevels) guest.ServiceLevelId = serviceLevel?.Id;
+            guest.ServiceLevelId = serviceLevel?.Id;
             guest.Tier          = serviceLevel?.Code ?? request.Tier ?? guest.Tier;
             if (serviceLevel != null && request.OverrideServiceLevelRules
                 && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules))
@@ -812,17 +807,13 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<GuestResponse>.ErrorResponse("Event not found");
 
-            // Flexible events skip the level flow entirely — see the Update path.
+            // Assigned on both guest models — see the Update path for why.
             var usesLevels = EventGuestModels.UsesServiceLevels(ev.GuestModel);
 
-            ServiceLevel serviceLevel = null;
-            if (usesLevels)
-            {
-                var (resolved, levelError) = await ResolveServiceLevelAsync(request.ServiceLevelId, ev.Id, ct);
-                if (levelError != null)
-                    return ApiResponse<GuestResponse>.ErrorResponse(levelError);
-                serviceLevel = resolved;
-            }
+            var (serviceLevel, levelError) =
+                await ResolveServiceLevelAsync(request.ServiceLevelId, ev.Id, ct);
+            if (levelError != null)
+                return ApiResponse<GuestResponse>.ErrorResponse(levelError);
 
             // (event, email, service level) on a fixed event; (event, email) on a
             // flexible one. See the Update path for the rationale.
@@ -841,12 +832,9 @@ public class GuestService(
                         : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
             }
 
-            if (usesLevels)
-            {
-                var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, null, ct);
-                if (ruleError != null)
-                    return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
-            }
+            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, null, ct);
+            if (ruleError != null)
+                return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
 
             var overrodeRules = serviceLevel != null && request.OverrideServiceLevelRules
                                 && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);

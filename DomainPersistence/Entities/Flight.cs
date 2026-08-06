@@ -16,6 +16,11 @@ public class Flight : Entity
     public DateTime? DepartureTime { get; set; }
     public DateTime? ArrivalTime { get; set; }
 
+    /// <summary>Optional scan of the ticket / boarding pass, as a blob URL from
+    /// POST /api/v1/upload. Stored without its SAS token — BlobSasMiddleware
+    /// re-signs it on every read.</summary>
+    public string ImageUrl { get; set; }
+
     public virtual Guest Guest { get; set; }
     public virtual FlightClass FlightClass { get; set; }
     public virtual ICollection<FlightLeg> Legs { get; set; } = new List<FlightLeg>();

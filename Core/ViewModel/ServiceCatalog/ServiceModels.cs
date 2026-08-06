@@ -34,6 +34,12 @@ public class ServiceResponse
 
     /// <summary>How many levels currently include this service.</summary>
     public int LevelCount { get; set; }
+
+    /// <summary>Flight / Accommodation / Transport: a built-in service with a
+    /// hand-written form writing to its own table. Its code, form and existence
+    /// are fixed — the UI hides the form builder and the delete action for these.
+    /// See <see cref="Core.Constants.SystemServices"/>.</summary>
+    public bool IsSystem { get; set; }
 }
 
 // ── Service level ────────────────────────────────────────────────────────────
@@ -126,6 +132,14 @@ public class GuestServiceSlotResponse
 
     public ServiceFormDefinition Form { get; set; } = new();
     public List<GuestServiceEntryResponse> Entries { get; set; } = new();
+
+    /// <summary>
+    /// True for flight / accommodation / transport. The client must edit these
+    /// through the travel endpoints (POST /v1/travel/guest/{id}) and render the
+    /// static form — <c>Form</c> is empty and <c>Entries</c> are the guest's real
+    /// booking rows, whose <c>Id</c> is the booking's public id.
+    /// </summary>
+    public bool IsSystem { get; set; }
 
     /// <summary>pending until at least one entry is completed.</summary>
     public string Status { get; set; }

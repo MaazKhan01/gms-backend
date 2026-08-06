@@ -606,6 +606,7 @@ public class VipAppService(
                 CheckIn = ToDt(a.CheckIn),
                 CheckOut = ToDt(a.CheckOut),
                 RoomType = a.RoomType?.Name,
+                ImageUrl = a.ImageUrl,
             }).ToList(),
 
             Sessions = sessions.Select(s => MapSession(s, picks[s.Id] ?? "selected")).ToList(),
@@ -651,6 +652,7 @@ public class VipAppService(
                 DepartureTime = f.DepartureTime ?? first?.StartTime,
                 ArrivalTime = f.ArrivalTime ?? last?.EndTime,
                 Duration = FormatDuration(first?.StartTime ?? f.DepartureTime, last?.EndTime ?? f.ArrivalTime),
+                ImageUrl = f.ImageUrl,
                 Legs = legs.Select(l => new FlightLegResponse
                 {
                     Id = l.PublicId,
@@ -692,6 +694,7 @@ public class VipAppService(
             CheckIn = ToDt(acc.CheckIn),
             CheckOut = ToDt(acc.CheckOut),
             RoomType = acc.RoomType?.Name,
+            ImageUrl = acc.ImageUrl,
         };
         return ApiResponse<AccommodationResponse>.SuccessResponse(data);
     }

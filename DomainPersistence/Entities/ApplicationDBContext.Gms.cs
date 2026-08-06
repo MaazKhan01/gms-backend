@@ -658,6 +658,7 @@ public partial class ApplicationDBContext
         {
             f.ToTable("Flights");
             f.HasKey(x => x.Id);
+            f.Property(x => x.ImageUrl).HasMaxLength(1000);
             f.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             f.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             f.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
@@ -748,6 +749,7 @@ public partial class ApplicationDBContext
         {
             a.ToTable("Accommodations");
             a.HasKey(x => x.Id);
+            a.Property(x => x.ImageUrl).HasMaxLength(1000);
             a.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             a.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             a.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);

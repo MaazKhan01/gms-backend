@@ -158,6 +158,7 @@ public class TravelService(
                 Seat = flight.Seat,
                 DepartureTime = flight.DepartureTime,
                 ArrivalTime = flight.ArrivalTime,
+                ImageUrl = flight.ImageUrl,
                 Legs = flight.Legs
                     .OrderBy(l => l.StartTime).ThenBy(l => l.Id)
                     .Select(l => new FlightLegInput
@@ -187,6 +188,7 @@ public class TravelService(
                 RoomTypeId = acc.RoomType?.PublicId,
                 CheckIn = acc.CheckIn,
                 CheckOut = acc.CheckOut,
+                ImageUrl = acc.ImageUrl,
             };
 
         var tr = await _unitOfWork.Transports.Query()
@@ -250,6 +252,7 @@ public class TravelService(
                 Seat = f.Seat,
                 DepartureTime = f.DepartureTime,
                 ArrivalTime = f.ArrivalTime,
+                ImageUrl = f.ImageUrl,
                 LegCount = f.Legs.Count,
                 Legs = f.Legs
                     .OrderBy(l => l.StartTime)
@@ -334,6 +337,7 @@ public class TravelService(
                 RoomType = a.RoomType.Name,
                 CheckIn = a.CheckIn,
                 CheckOut = a.CheckOut,
+                ImageUrl = a.ImageUrl,
             })
             .ToListAsync(ct);
 
@@ -387,6 +391,18 @@ public class TravelService(
 
     // Lowercase enum name — the code the API takes and returns for FlightType.
     private static string FlightTypeCode(FlightType t) => t.ToString().ToLowerInvariant();
+
+    /// <summary>Blank → null (so a cleared image is an empty column, not ""), and
+    /// the SAS token is stripped: it expires, and BlobSasMiddleware re-signs the
+    /// bare URL on every read. Stored regardless of what the client sent, so a
+    /// caller that forgets to strip it can't persist a dead token.</summary>
+    private static string ImageOrNull(string url)
+    {
+        var clean = (url ?? string.Empty).Trim();
+        if (clean.Length == 0) return null;
+        var q = clean.IndexOf('?');
+        return q < 0 ? clean : clean[..q];
+    }
 
     private static FlightType? ParseFlightType(string code)
         => Enum.TryParse<FlightType>((code ?? string.Empty).Trim(), ignoreCase: true, out var t)
@@ -609,6 +625,11 @@ public class TravelService(
                 flight.Status = request.Flight.Status;
                 flight.DepartureTime = request.Flight.DepartureTime;
                 flight.ArrivalTime = request.Flight.ArrivalTime;
+                // Null = "not sent, leave it alone", so a client that doesn't know
+                // about the field can't wipe an image someone else uploaded. Empty
+                // string is an explicit clear.
+                if (request.Flight.ImageUrl != null)
+                    flight.ImageUrl = ImageOrNull(request.Flight.ImageUrl);
 
                 // Legs are matched on their public id so editing keeps the same
                 // rows (the guest app references legs by id); anything the payload
@@ -682,6 +703,9 @@ public class TravelService(
                 acc.RoomTypeId = roomTypeId;
                 acc.CheckIn = checkIn;
                 acc.CheckOut = checkOut;
+                // Same null-means-untouched rule as the flight image above.
+                if (request.Accommodation.ImageUrl != null)
+                    acc.ImageUrl = ImageOrNull(request.Accommodation.ImageUrl);
 
                 if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
             }

@@ -72,6 +72,14 @@ public class ServiceCatalogService(
             var invalid = await ValidateServiceAsync(request, null, ct);
             if (invalid != null) return ApiResponse<ServiceResponse>.ErrorResponse(invalid);
 
+            // The three built-ins are seeded, not created: a second "flight" would
+            // be a dynamic service wearing the name of the relational one.
+            if (SystemServices.IsSystem(Slugify(request.Code, request.Name)))
+            {
+                return ApiResponse<ServiceResponse>.ErrorResponse(
+                    "Flight, Accommodation and Transport are built-in services — pick a different name.");
+            }
+
             var service = new Service
             {
                 Code = Slugify(request.Code, request.Name),
@@ -106,17 +114,26 @@ public class ServiceCatalogService(
                 .FirstOrDefaultAsync(s => s.PublicId == serviceId, ct);
             if (service == null) return ApiResponse<ServiceResponse>.NotFoundResponse("Service not found.");
 
-            var invalid = await ValidateServiceAsync(request, service.Id, ct);
+            var isSystem = SystemServices.IsSystem(service.Code);
+
+            var invalid = await ValidateServiceAsync(request, service.Id, ct, skipForm: isSystem);
             if (invalid != null) return ApiResponse<ServiceResponse>.ErrorResponse(invalid);
 
-            service.Code = Slugify(request.Code, request.Name);
+            // A built-in keeps its code and its (empty) schema: the code is what
+            // identifies it to the travel writers, and its form is hand-written in
+            // the client, not stored. Everything cosmetic stays editable.
+            if (!isSystem)
+            {
+                service.Code = Slugify(request.Code, request.Name);
+                service.FormSchemaJson = ServiceFormSchema.Serialize(request.Form);
+            }
+
             service.Name = request.Name.Trim();
             service.NameAr = request.NameAr?.Trim();
             service.Description = request.Description?.Trim();
             service.Icon = request.Icon?.Trim();
             service.SortOrder = request.SortOrder;
             service.IsActive = request.IsActive;
-            service.FormSchemaJson = ServiceFormSchema.Serialize(request.Form);
             service.SetUpdateAudit(userId);
 
             _unitOfWork.Services.Update(service);
@@ -138,6 +155,13 @@ public class ServiceCatalogService(
             var service = await _unitOfWork.Services.Query()
                 .FirstOrDefaultAsync(s => s.PublicId == serviceId, ct);
             if (service == null) return ApiResponse<bool>.NotFoundResponse("Service not found.");
+
+            if (SystemServices.IsSystem(service.Code))
+            {
+                return ApiResponse<bool>.ConflictResponse(
+                    $"\"{service.Name}\" is a built-in service and cannot be deleted. "
+                    + "Deactivate it, or remove it from the service levels that include it.");
+            }
 
             // Guest data outlives the catalogue: deleting a service whose form
             // people have already filled in would orphan those answers, so it is
@@ -379,8 +403,28 @@ public class ServiceCatalogService(
                 .FirstOrDefaultAsync(s => s.PublicId == request.ServiceId, ct);
             if (service == null) return ApiResponse<GuestServiceEntryResponse>.NotFoundResponse("Service not found.");
 
+            // The built-ins are stored relationally, so they must not be written as
+            // JSON here — that is exactly how a booking becomes invisible to the VIP
+            // app, the driver app and conflict checking.
+            if (SystemServices.IsSystem(service.Code))
+            {
+                return ApiResponse<GuestServiceEntryResponse>.ConflictResponse(
+                    $"\"{service.Name}\" is saved through POST /api/v1/travel/guest/{{guestId}}, not as a service entry.",
+                    "SERVICE_STATIC");
+            }
+
             var form = ServiceFormSchema.Parse(service.FormSchemaJson);
             var values = ServiceFormSchema.StripUnknown(form, request.Values);
+
+            // An entry with nothing in it carries no information — absence already
+            // means pending (docs/service-levels-v2.md §2). Refused rather than
+            // stored, so a client that posts every slot in a level can't turn the
+            // guest's checklist into rows nobody filled in.
+            if (values.Count == 0 || values.Values.All(string.IsNullOrWhiteSpace))
+            {
+                return ApiResponse<GuestServiceEntryResponse>.ErrorResponse(
+                    $"Nothing was filled in for \"{service.Name}\".");
+            }
 
             // Constraints apply to whatever was supplied, draft or not: a bad
             // value is wrong even in a half-finished form, and catching it now
@@ -492,6 +536,16 @@ public class ServiceCatalogService(
             if (service == null)
                 return ApiResponse<PaginatedResponse<ServiceEntryRow>>.NotFoundResponse("Service not found.");
 
+            // Built-ins have no GuestServiceEntry rows at all — their operational
+            // listings are GET /v1/travel/event/{eventId}/{flights|accommodation|transport},
+            // which return resolved names the JSON path cannot.
+            if (SystemServices.IsSystem(service.Code))
+            {
+                return ApiResponse<PaginatedResponse<ServiceEntryRow>>.ConflictResponse(
+                    $"\"{service.Name}\" is listed by the travel endpoints, not by service entries.",
+                    "SERVICE_STATIC");
+            }
+
             var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
             if (ev == null)
                 return ApiResponse<PaginatedResponse<ServiceEntryRow>>.NotFoundResponse("Event not found.");
@@ -586,14 +640,47 @@ public class ServiceCatalogService(
             .OrderBy(e => e.CreatedAt)
             .ToListAsync(ct);
 
+        // The built-ins keep their own tables, so their slots are filled from the
+        // real bookings rather than from GuestServiceEntry. Loaded once, only when
+        // the level actually assigns one.
+        var systemCodes = assignments
+            .Where(a => a.Service != null && SystemServices.IsSystem(a.Service.Code))
+            .Select(a => a.Service.Code.Trim().ToLowerInvariant())
+            .ToHashSet();
+
+        var bookings = await LoadSystemBookingsAsync(guest.Id, systemCodes, ct);
+
         var blockedBy = (string)null;
 
         foreach (var a in assignments)
         {
             if (a.Service == null) continue;
 
-            var mine = entries.Where(e => e.ServiceId == a.ServiceId).ToList();
-            var done = mine.Any(e => e.Status == GuestServiceStatus.Completed);
+            var isSystem = SystemServices.IsSystem(a.Service.Code);
+
+            List<GuestServiceEntryResponse> slotEntries;
+            bool done;
+
+            if (isSystem)
+            {
+                // A booking row IS the completed state: the travel forms have no
+                // draft mode, so "the guest has a flight" is the whole status.
+                slotEntries = bookings.TryGetValue(a.Service.Code.Trim().ToLowerInvariant(), out var rows)
+                    ? rows
+                    : new List<GuestServiceEntryResponse>();
+                foreach (var e in slotEntries)
+                {
+                    e.ServiceId = a.Service.PublicId;
+                    e.ServiceName = a.Service.Name;
+                }
+                done = slotEntries.Count > 0;
+            }
+            else
+            {
+                var mine = entries.Where(e => e.ServiceId == a.ServiceId).ToList();
+                slotEntries = mine.Select(e => ToEntryResponse(e, a.Service)).ToList();
+                done = mine.Any(e => e.Status == GuestServiceStatus.Completed);
+            }
 
             var slot = new GuestServiceSlotResponse
             {
@@ -603,8 +690,10 @@ public class ServiceCatalogService(
                 NameAr = a.Service.NameAr,
                 Icon = a.Service.Icon,
                 SortOrder = a.SortOrder,
-                Form = ServiceFormSchema.Parse(a.Service.FormSchemaJson),
-                Entries = mine.Select(e => ToEntryResponse(e, a.Service)).ToList(),
+                IsSystem = isSystem,
+                // Empty for a built-in: the client renders that form itself.
+                Form = isSystem ? new ServiceFormDefinition() : ServiceFormSchema.Parse(a.Service.FormSchemaJson),
+                Entries = slotEntries,
                 Status = done ? GuestServiceStatus.Completed : GuestServiceStatus.Pending,
                 IsRequired = isFixed,
                 IsUnlocked = !isFixed || blockedBy == null,
@@ -624,6 +713,97 @@ public class ServiceCatalogService(
 
         return plan;
     }
+
+    /// <summary>
+    /// The guest's real bookings for whichever built-in services their level
+    /// assigns, keyed by service code, shaped as plan entries so the checklist
+    /// renders them exactly like a dynamic service's entries.
+    ///
+    /// <c>Id</c> is the BOOKING's public id — that is what the client passes to
+    /// GET /v1/travel/guest/{guestId}?bookingId= to prefill the static form and to
+    /// DELETE /v1/travel/{kind}/{id} to remove it.
+    ///
+    /// Values are display-only text (hotel name, not hotel id): nothing writes
+    /// back through them, so there is no id to preserve here.
+    /// </summary>
+    private async Task<Dictionary<string, List<GuestServiceEntryResponse>>> LoadSystemBookingsAsync(
+        int guestId, HashSet<string> codes, CancellationToken ct)
+    {
+        var result = new Dictionary<string, List<GuestServiceEntryResponse>>();
+        if (codes.Count == 0) return result;
+
+        if (codes.Contains(SystemServices.Flight))
+        {
+            var flights = await _unitOfWork.Flights.Query()
+                .Where(f => f.GuestId == guestId)
+                .Include(f => f.Legs)
+                .OrderBy(f => f.DepartureTime ?? f.CreatedAt)
+                .ToListAsync(ct);
+
+            result[SystemServices.Flight] = flights.Select(f => BookingEntry(f.PublicId, new()
+            {
+                ["Flight"] = string.Join(" / ", f.Legs
+                    .Where(l => !string.IsNullOrWhiteSpace(l.FlightNumber))
+                    .Select(l => l.FlightNumber)),
+                ["Type"] = f.FlightType.ToString(),
+                ["Departs"] = Text(f.DepartureTime),
+                ["Arrives"] = Text(f.ArrivalTime),
+                ["Status"] = f.Status,
+            })).ToList();
+        }
+
+        if (codes.Contains(SystemServices.Accommodation))
+        {
+            var stays = await _unitOfWork.Accommodations.Query()
+                .Where(a => a.GuestId == guestId)
+                .Include(a => a.Hotel)
+                .Include(a => a.RoomType)
+                .OrderBy(a => a.CheckIn)
+                .ToListAsync(ct);
+
+            result[SystemServices.Accommodation] = stays.Select(a => BookingEntry(a.PublicId, new()
+            {
+                ["Hotel"] = a.Hotel?.Name,
+                ["Room type"] = a.RoomType?.Name,
+                ["Check-in"] = a.CheckIn?.ToString("dd-MMM-yyyy"),
+                ["Check-out"] = a.CheckOut?.ToString("dd-MMM-yyyy"),
+            })).ToList();
+        }
+
+        if (codes.Contains(SystemServices.Transport))
+        {
+            var rides = await _unitOfWork.Transports.Query()
+                .Where(t => t.GuestId == guestId)
+                .Include(t => t.PickupLocation)
+                .Include(t => t.DropoffLocation)
+                .Include(t => t.Vehicle)
+                .OrderBy(t => t.PickupTime)
+                .ToListAsync(ct);
+
+            result[SystemServices.Transport] = rides.Select(t => BookingEntry(t.PublicId, new()
+            {
+                ["Pickup"] = t.PickupLocation?.Address,
+                ["Dropoff"] = t.DropoffLocation?.Address,
+                ["Pickup time"] = Text(t.PickupTime),
+                ["Vehicle"] = t.Vehicle?.VehicleNumber,
+                ["Status"] = t.TripStatus,
+            })).ToList();
+        }
+
+        return result;
+    }
+
+    private static GuestServiceEntryResponse BookingEntry(Guid bookingId, Dictionary<string, string> values)
+        => new()
+        {
+            Id = bookingId,
+            Status = GuestServiceStatus.Completed,
+            Values = values
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .ToDictionary(kv => kv.Key, kv => kv.Value),
+        };
+
+    private static string Text(DateTime? when) => when?.ToString("dd-MMM-yyyy HH:mm");
 
     /// <summary>True when any service after <paramref name="serviceId"/> in the guest's level already has a completed entry.</summary>
     private async Task<bool> HasLaterCompletedAsync(Guest guest, int serviceId, CancellationToken ct)
@@ -706,12 +886,18 @@ public class ServiceCatalogService(
         }
     }
 
-    private async Task<string> ValidateServiceAsync(CreateServiceRequest r, int? excludeId, CancellationToken ct)
+    // skipForm is set for the built-ins: their form is hand-written in the client,
+    // so the request carries an empty one that ValidateForm would rightly reject.
+    private async Task<string> ValidateServiceAsync(
+        CreateServiceRequest r, int? excludeId, CancellationToken ct, bool skipForm = false)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return "Service name is required.";
 
-        var formError = ServiceFormSchema.ValidateForm(r.Form);
-        if (formError != null) return formError;
+        if (!skipForm)
+        {
+            var formError = ServiceFormSchema.ValidateForm(r.Form);
+            if (formError != null) return formError;
+        }
 
         var code = Slugify(r.Code, r.Name);
         var clash = await _unitOfWork.Services.Query()
@@ -746,6 +932,7 @@ public class ServiceCatalogService(
     {
         Id = s.PublicId,
         Code = s.Code,
+        IsSystem = SystemServices.IsSystem(s.Code),
         Name = s.Name,
         NameAr = s.NameAr,
         Description = s.Description,

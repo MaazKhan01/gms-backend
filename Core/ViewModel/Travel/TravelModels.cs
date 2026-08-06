@@ -50,6 +50,11 @@ public class FlightInput
     public DateTime? DepartureTime { get; set; }
     public DateTime? ArrivalTime { get; set; }
 
+    /// <summary>Optional ticket / boarding-pass image. Upload it with
+    /// POST /api/v1/upload first and send back the returned url (without its SAS
+    /// token). Null leaves whatever is stored alone; "" clears it.</summary>
+    public string ImageUrl { get; set; }
+
     /// <summary>Segments, in travel order. A leg's Id is set only when editing
     /// one that already exists; legs left out of the list are deleted.</summary>
     public List<FlightLegInput> Legs { get; set; } = [];
@@ -75,6 +80,11 @@ public class AccommodationInput
     public Guid? RoomTypeId { get; set; }
     public DateOnly? CheckIn { get; set; }
     public DateOnly? CheckOut { get; set; }
+
+    /// <summary>Optional image for this stay (voucher, room photo). Upload it with
+    /// POST /api/v1/upload first and send back the returned url. Not the hotel's
+    /// own picture — that comes from the hotel lookup.</summary>
+    public string ImageUrl { get; set; }
 }
 
 public class TransportInput
@@ -129,6 +139,9 @@ public class EventFlightRow
     public DateTime? DepartureTime { get; set; }
     public DateTime? ArrivalTime { get; set; }
     public int LegCount { get; set; }
+
+    /// <summary>Ticket / boarding-pass image, if one was uploaded.</summary>
+    public string ImageUrl { get; set; }
 
     public List<FlightLegRow> Legs { get; set; } = [];
 }
@@ -213,6 +226,10 @@ public class EventAccommodationRow
     public string RoomType { get; set; }
     public DateOnly? CheckIn { get; set; }
     public DateOnly? CheckOut { get; set; }
+
+    /// <summary>This booking's own image (voucher, room photo) — separate from
+    /// <see cref="HotelImageUrl"/>, which is the hotel's picture.</summary>
+    public string ImageUrl { get; set; }
 }
 
 public class EventTransportRow
