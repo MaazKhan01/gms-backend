@@ -65,9 +65,13 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public async Task<IActionResult> GetVehicleTypes(CancellationToken ct)
         => ToResponse(await _travel.GetVehicleTypesAsync(ct));
 
+    // Pass from (+ optional to) to get only drivers free over that window — the
+    // booking form's dropdown feed, so an already-assigned driver can't be picked.
     [HttpGet("drivers")]
-    public async Task<IActionResult> GetDrivers(CancellationToken ct)
-        => ToResponse(await _travel.GetDriversAsync(ct));
+    public async Task<IActionResult> GetDrivers(
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] Guid? excludeTransportId, CancellationToken ct)
+        => ToResponse(await _travel.GetDriversAsync(from, to, excludeTransportId, ct));
 
     [HttpGet("airports")]
     public async Task<IActionResult> GetAirports(CancellationToken ct)

@@ -10,7 +10,10 @@ public interface ITravelService
     Task<ApiResponse<List<HotelDto>>> GetHotelsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<LocationDto>>> GetLocationsAsync(CancellationToken ct = default);
     Task<ApiResponse<List<IdNameDto>>> GetVehicleTypesAsync(CancellationToken ct = default);
-    Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default);
+    // from/to narrow the list to drivers free over that window (the booking form's
+    // dropdown); omit them for the full fixed-driver roster.
+    Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(
+        DateTime? from = null, DateTime? to = null, Guid? excludeTransportId = null, CancellationToken ct = default);
     Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default);
     // bookingId narrows the prefill to one specific Flight/Accommodation/Transport
     // (Services' per-booking Edit); omit it for the wizard's "most recent of each".

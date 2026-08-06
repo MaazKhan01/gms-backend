@@ -62,11 +62,30 @@ public class TravelService(
     //
     // Fixed drivers only: an Open driver isn't dispatch's to assign — they claim
     // guest requests themselves from the driver app's job pool.
-    public async Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(CancellationToken ct = default)
+    //
+    // Pass `from` to drop drivers already assigned a ride overlapping [from, to) —
+    // the booking form's dropdown feed, same rule as available vehicles. Pass the
+    // ride being edited as excludeTransportId so its own driver stays listed.
+    public async Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(
+        DateTime? from = null, DateTime? to = null, Guid? excludeTransportId = null, CancellationToken ct = default)
     {
+        if (from != null && to != null && to <= from)
+            return ApiResponse<List<IdNameDto>>.ErrorResponse("The end of the window must be after its start");
+
+        List<int> busyIds = [];
+        if (from is { } start)
+        {
+            int? excludeId = null;
+            if (excludeTransportId is { } transportId && transportId != Guid.Empty)
+                excludeId = (await _unitOfWork.Transports.GetByPublicIdAsync(transportId, ct))?.Id;
+
+            busyIds = await _conflictValidator.GetBusyDriverIdsAsync(start, to, excludeId, ct);
+        }
+
         var data = await _unitOfWork.Users.Query()
             .Where(u => u.IsActive && u.Role.Code == Roles.DRIVER && u.DriverProfile != null
-                     && u.DriverProfile.DriverType == DriverType.Fixed)
+                     && u.DriverProfile.DriverType == DriverType.Fixed
+                     && !busyIds.Contains(u.DriverProfile.Id))
             .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
             .Select(u => new IdNameDto
             {

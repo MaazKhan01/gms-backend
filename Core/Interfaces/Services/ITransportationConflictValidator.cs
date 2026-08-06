@@ -55,4 +55,11 @@ public interface ITransportationConflictValidator
     /// what the "available vehicles" dropdown feed subtracts.</summary>
     Task<List<int>> GetBusyVehicleIdsAsync(
         DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default);
+
+    /// <summary>DriverProfile ids of every driver already assigned a ride over
+    /// [start, end) — what the "available drivers" dropdown feed subtracts. This
+    /// is the interval rule (same as vehicles), so it hides more than the
+    /// point-in-time <see cref="CheckDriverConflictAsync"/> would reject on save.</summary>
+    Task<List<int>> GetBusyDriverIdsAsync(
+        DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default);
 }
