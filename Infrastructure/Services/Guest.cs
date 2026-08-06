@@ -463,6 +463,9 @@ public class GuestService(
                         NationalityFlag = g.Nationality != null ? g.Nationality.Flag : null,
                         PhotoUrl = g.PhotoUrl,
                         Tier = g.Tier,
+                        ServiceLevelId = g.ServiceLevel != null ? (Guid?)g.ServiceLevel.PublicId : null,
+                        ServiceLevelName = g.ServiceLevel != null ? g.ServiceLevel.Name : null,
+                        ServiceLevelColor = g.ServiceLevel != null ? g.ServiceLevel.Color : null,
                         AccreditationRequired = g.AccreditationRequired,
                         EventId = g.Event.PublicId,
                         EventTitle = g.Event.Title,
@@ -995,7 +998,7 @@ public class GuestService(
             .FirstOrDefaultAsync(l => l.PublicId == publicId.Value, ct);
 
         if (level == null) return (null, "Service level not found");
-        if (level.EventId != eventId) return (null, "That service level belongs to a different event");
+        if (!level.IsActive) return (null, $"\"{level.Name}\" is no longer available.");
 
         return (level, null);
     }
@@ -1015,21 +1018,10 @@ public class GuestService(
     {
         if (level == null) return null;
 
-        // Unchanged level on an edit: the guest is already here, so re-validating
-        // (and failing on a since-lowered capacity) would block unrelated edits.
-        var isNewAssignment = existing == null || existing.ServiceLevelId != level.Id;
-
+        // Capacity was dropped in v2: a level is global, so a single "max guests"
+        // number cannot mean anything across events. Required guest fields remain,
+        // because they validate the guest record itself.
         var violations = new List<string>();
-
-        if (isNewAssignment && level.Capacity.HasValue)
-        {
-            var query = _unitOfWork.Guests.Query().Where(g => g.ServiceLevelId == level.Id);
-            if (existing != null) query = query.Where(g => g.Id != existing.Id);
-
-            var count = await query.CountAsync(ct);
-            if (count >= level.Capacity.Value)
-                violations.Add($"\"{level.Name}\" is at capacity ({count} / {level.Capacity}).");
-        }
 
         var required = ServiceLevelRules.ParseRequiredFields(level.RequiredGuestFieldsJson);
         var missing = required.Where(key => !IsGuestFieldFilled(key, request)).ToList();

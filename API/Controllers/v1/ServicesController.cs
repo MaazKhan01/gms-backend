@@ -1,4 +1,5 @@
 using System;
+using Core.ViewModel.Common;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Authorization;
@@ -11,75 +12,97 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers.v1;
 
-// ============================================================================
-// Per-event service catalog. Nested under the event because a Service only ever
-// exists within one event — there is no global catalog (unlike VenueType /
-// EventType, which are global lookups).
-//
-// GETs are open to any signed-in user, matching LookupController/Organizations:
-// the Service Levels builder and the guest form both need to populate dropdowns
-// without requiring the catalog-management permission.
-// ============================================================================
-[Route("api/v1/events/{eventId:guid}/services")]
+/// <summary>
+/// The global service catalogue. Not event-scoped — see docs/service-levels-v2.md.
+/// </summary>
+[ApiController]
+[Route("api/v1/services")]
 [Authorize]
-[ApiVersion("1.0")]
-public class ServicesController(IServiceCatalogService _catalog, ICurrentUser _currentUser) : Controllers.BaseApiController
+public class ServicesController(IServiceCatalogService _catalog, ICurrentUser _currentUser) : BaseApiController
 {
+    // Reads stay open to any signed-in user: the service level builder, the guest
+    // form and the guest's services tab all need the catalogue, and gating them
+    // behind Services.View would 403 users who only manage guests.
     [HttpGet]
-    public async Task<IActionResult> GetServices(Guid eventId, CancellationToken ct)
-        => ToResponse(await _catalog.GetServicesAsync(eventId, ct));
+    public async Task<IActionResult> GetAll([FromQuery] bool includeInactive, CancellationToken ct)
+        => ToResponse(await _catalog.GetServicesAsync(includeInactive, ct));
+
+    [HttpGet("{serviceId:guid}")]
+    public async Task<IActionResult> GetById(Guid serviceId, CancellationToken ct)
+        => ToResponse(await _catalog.GetServiceByIdAsync(serviceId, ct));
 
     [HttpPost]
     [HasPermission(PermissionCodes.ServicesManage)]
-    public async Task<IActionResult> CreateService(Guid eventId, [FromBody] CreateServiceRequest request, CancellationToken ct)
-        => ToResponse(await _catalog.CreateServiceAsync(eventId, request, _currentUser.UserId, ct));
+    public async Task<IActionResult> Create([FromBody] CreateServiceRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.CreateServiceAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{serviceId:guid}")]
     [HasPermission(PermissionCodes.ServicesManage)]
-    public async Task<IActionResult> UpdateService(Guid eventId, Guid serviceId, [FromBody] UpdateServiceRequest request, CancellationToken ct)
-        => ToResponse(await _catalog.UpdateServiceAsync(eventId, serviceId, request, _currentUser.UserId, ct));
+    public async Task<IActionResult> Update(Guid serviceId, [FromBody] UpdateServiceRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.UpdateServiceAsync(serviceId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{serviceId:guid}")]
     [HasPermission(PermissionCodes.ServicesManage)]
-    public async Task<IActionResult> DeleteService(Guid eventId, Guid serviceId, CancellationToken ct)
-        => ToResponse(await _catalog.DeleteServiceAsync(eventId, serviceId, _currentUser.UserId, ct));
+    public async Task<IActionResult> Delete(Guid serviceId, CancellationToken ct)
+        => ToResponse(await _catalog.DeleteServiceAsync(serviceId, _currentUser.UserId, ct));
+
+    // Every guest in an event who has this service — the operational listing
+    // that replaces the fixed Flights / Hotel / Transfers tabs.
+    [HttpGet("{serviceId:guid}/entries")]
+    public async Task<IActionResult> GetEntries(
+        Guid serviceId, [FromQuery] Guid eventId, [FromQuery] PagedRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.GetServiceEntriesAsync(serviceId, eventId, request, ct));
 }
 
-// ============================================================================
-// Per-event guest grades, built from the catalog above. Replaces the old
-// hardcoded 6-value Guest.Tier list.
-// ============================================================================
-[Route("api/v1/events/{eventId:guid}/service-levels")]
+/// <summary>Global service levels, and the services assigned to each.</summary>
+[ApiController]
+[Route("api/v1/service-levels")]
 [Authorize]
-[ApiVersion("1.0")]
-public class ServiceLevelsController(IServiceCatalogService _catalog, ICurrentUser _currentUser) : Controllers.BaseApiController
+public class ServiceLevelsController(IServiceCatalogService _catalog, ICurrentUser _currentUser) : BaseApiController
 {
     [HttpGet]
-    public async Task<IActionResult> GetServiceLevels(Guid eventId, CancellationToken ct)
-        => ToResponse(await _catalog.GetServiceLevelsAsync(eventId, ct));
+    public async Task<IActionResult> GetAll([FromQuery] bool includeInactive, CancellationToken ct)
+        => ToResponse(await _catalog.GetServiceLevelsAsync(includeInactive, ct));
 
     [HttpGet("{levelId:guid}")]
-    public async Task<IActionResult> GetServiceLevel(Guid eventId, Guid levelId, CancellationToken ct)
-        => ToResponse(await _catalog.GetServiceLevelByIdAsync(eventId, levelId, ct));
-
-    /// <summary>Dry-run of the assignment rules — lets the guest form warn (and
-    /// offer an override) before the user hits save.</summary>
-    [HttpGet("{levelId:guid}/rule-check")]
-    public async Task<IActionResult> CheckRules(Guid eventId, Guid levelId, [FromQuery] Guid? excludeGuestId, CancellationToken ct)
-        => ToResponse(await _catalog.CheckRulesAsync(levelId, excludeGuestId, ct));
+    public async Task<IActionResult> GetById(Guid levelId, CancellationToken ct)
+        => ToResponse(await _catalog.GetServiceLevelByIdAsync(levelId, ct));
 
     [HttpPost]
     [HasPermission(PermissionCodes.ServiceLevelsManage)]
-    public async Task<IActionResult> CreateServiceLevel(Guid eventId, [FromBody] CreateServiceLevelRequest request, CancellationToken ct)
-        => ToResponse(await _catalog.CreateServiceLevelAsync(eventId, request, _currentUser.UserId, ct));
+    public async Task<IActionResult> Create([FromBody] CreateServiceLevelRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.CreateServiceLevelAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{levelId:guid}")]
     [HasPermission(PermissionCodes.ServiceLevelsManage)]
-    public async Task<IActionResult> UpdateServiceLevel(Guid eventId, Guid levelId, [FromBody] UpdateServiceLevelRequest request, CancellationToken ct)
-        => ToResponse(await _catalog.UpdateServiceLevelAsync(eventId, levelId, request, _currentUser.UserId, ct));
+    public async Task<IActionResult> Update(Guid levelId, [FromBody] UpdateServiceLevelRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.UpdateServiceLevelAsync(levelId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{levelId:guid}")]
     [HasPermission(PermissionCodes.ServiceLevelsManage)]
-    public async Task<IActionResult> DeleteServiceLevel(Guid eventId, Guid levelId, CancellationToken ct)
-        => ToResponse(await _catalog.DeleteServiceLevelAsync(eventId, levelId, _currentUser.UserId, ct));
+    public async Task<IActionResult> Delete(Guid levelId, CancellationToken ct)
+        => ToResponse(await _catalog.DeleteServiceLevelAsync(levelId, _currentUser.UserId, ct));
+}
+
+/// <summary>A guest's service checklist and the entries completed against it.</summary>
+[ApiController]
+[Route("api/v1/guests/{guestId:guid}/services")]
+[Authorize]
+public class GuestServicesController(IServiceCatalogService _catalog, ICurrentUser _currentUser) : BaseApiController
+{
+    [HttpGet]
+    public async Task<IActionResult> GetPlan(Guid guestId, CancellationToken ct)
+        => ToResponse(await _catalog.GetGuestServicePlanAsync(guestId, ct));
+
+    // Guarded by the guest permission, not a service one: filling in a guest's
+    // flight is guest work. Services.Manage governs the catalogue itself.
+    [HttpPost]
+    [HasPermission(PermissionCodes.GuestsUpdate)]
+    public async Task<IActionResult> Save(Guid guestId, [FromBody] SaveGuestServiceEntryRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.SaveGuestServiceEntryAsync(guestId, request, _currentUser.UserId, ct));
+
+    [HttpDelete("{entryId:guid}")]
+    [HasPermission(PermissionCodes.GuestsUpdate)]
+    public async Task<IActionResult> Delete(Guid guestId, Guid entryId, CancellationToken ct)
+        => ToResponse(await _catalog.DeleteGuestServiceEntryAsync(guestId, entryId, _currentUser.UserId, ct));
 }

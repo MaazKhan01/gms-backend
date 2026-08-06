@@ -4,33 +4,37 @@ using System.Collections.Generic;
 namespace DomainPersistence.Entities
 {
     /// <summary>
-    /// An offerable service in one event's catalog — "Lounge Access", "Airport
-    /// Transfer", "Prayer Room Access". Per-event (not a global lookup): event A
-    /// defines its own catalog, independent of event B.
+    /// A globally-defined offerable service — "Flight", "Transport", "Lounge Access".
+    /// Created once and usable by every event, Fixed or Flexible.
+    /// See docs/service-levels-v2.md.
     /// </summary>
-    /// <remarks>
-    /// NOT the same concept as <c>Core.Constants.GuestServiceType</c>
-    /// (Flight/Accommodation/Transport), which is the fixed list of things a
-    /// guest may self-REQUEST from the VIP app and is stored on
-    /// <c>Guest.AllowedServicesJson</c>. That one is a permission list; this is
-    /// an admin-authored entitlement catalog. They are deliberately unrelated.
-    /// </remarks>
     public class Service : Entity
     {
-        public int EventId { get; set; }
+        /// <summary>Stable slug, unique across the catalogue.</summary>
+        public string Code { get; set; }
+
         public string Name { get; set; }
         public string NameAr { get; set; }
         public string Description { get; set; }
+
+        /// <summary>Icon key the UI renders on the service chip.</summary>
+        public string Icon { get; set; }
+
         public int SortOrder { get; set; }
 
-        // JSON array of field definitions this service asks for when attached to
-        // a Service Level — e.g. [{"key":"loungeName","label":"Lounge Name",
-        // "type":"text","required":true}]. Dynamic by design: each service
-        // defines its own attributes, so there is no fixed column set.
-        // Read/written via Core.Constants.ServiceFieldSchema, never raw.
-        public string FieldsSchema { get; set; }
+        /// <summary>
+        /// Retired services stop being assignable but stay readable, so guest
+        /// entries already completed against them keep rendering.
+        /// </summary>
+        public bool IsActive { get; set; } = true;
 
-        public virtual Event Event { get; set; }
+        /// <summary>
+        /// The form a user completes for a guest, as sections of fields.
+        /// Read and written through <c>Core.Constants.ServiceFormSchema</c>.
+        /// </summary>
+        public string FormSchemaJson { get; set; }
+
         public virtual ICollection<ServiceLevelService> ServiceLevels { get; set; } = new List<ServiceLevelService>();
+        public virtual ICollection<GuestServiceEntry> GuestEntries { get; set; } = new List<GuestServiceEntry>();
     }
 }

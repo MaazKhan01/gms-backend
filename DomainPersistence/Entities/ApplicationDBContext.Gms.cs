@@ -30,6 +30,7 @@ public partial class ApplicationDBContext
     public virtual DbSet<Service> Services { get; set; }
     public virtual DbSet<ServiceLevel> ServiceLevels { get; set; }
     public virtual DbSet<ServiceLevelService> ServiceLevelServices { get; set; }
+    public virtual DbSet<GuestServiceEntry> GuestServiceEntries { get; set; }
 
     // Invitation / accreditation
     public virtual DbSet<Invitation> Invitations { get; set; }
@@ -173,16 +174,17 @@ public partial class ApplicationDBContext
         {
             s.ToTable("Services");
             s.HasKey(x => x.Id);
+            s.Property(x => x.Code).IsRequired().HasMaxLength(60);
             s.Property(x => x.Name).IsRequired().HasMaxLength(200);
             s.Property(x => x.NameAr).HasMaxLength(200);
             s.Property(x => x.Description).HasMaxLength(1000);
-            s.Property(x => x.FieldsSchema).HasColumnType("nvarchar(max)");
+            s.Property(x => x.Icon).HasMaxLength(40);
+            s.Property(x => x.FormSchemaJson).HasColumnType("nvarchar(max)");
+            s.Property(x => x.IsActive).HasDefaultValue(true);
             s.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             s.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            s.HasOne(x => x.Event)
-                .WithMany()
-                .HasForeignKey(x => x.EventId)
-                .OnDelete(DeleteBehavior.Cascade);
+            // Filtered so a soft-deleted service frees its code for reuse.
+            s.HasIndex(x => x.Code).IsUnique().HasFilter("[IsDeleted] = 0");
             s.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -190,18 +192,16 @@ public partial class ApplicationDBContext
         {
             sl.ToTable("ServiceLevels");
             sl.HasKey(x => x.Id);
+            sl.Property(x => x.Code).IsRequired().HasMaxLength(60);
             sl.Property(x => x.Name).IsRequired().HasMaxLength(200);
             sl.Property(x => x.NameAr).HasMaxLength(200);
-            sl.Property(x => x.Code).HasMaxLength(50);
             sl.Property(x => x.Description).HasMaxLength(1000);
             sl.Property(x => x.Color).HasMaxLength(20);
             sl.Property(x => x.RequiredGuestFieldsJson).HasColumnType("nvarchar(max)");
+            sl.Property(x => x.IsActive).HasDefaultValue(true);
             sl.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             sl.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            sl.HasOne(x => x.Event)
-                .WithMany()
-                .HasForeignKey(x => x.EventId)
-                .OnDelete(DeleteBehavior.Cascade);
+            sl.HasIndex(x => x.Code).IsUnique().HasFilter("[IsDeleted] = 0");
             sl.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -209,25 +209,42 @@ public partial class ApplicationDBContext
         {
             sls.ToTable("ServiceLevelServices");
             sls.HasKey(x => x.Id);
-            sls.Property(x => x.FieldValuesJson).HasColumnType("nvarchar(max)");
             sls.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             sls.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             sls.HasOne(x => x.ServiceLevel)
                 .WithMany(x => x.Services)
                 .HasForeignKey(x => x.ServiceLevelId)
                 .OnDelete(DeleteBehavior.Cascade);
-            // Restrict, not Cascade: ServiceLevels -> ServiceLevelServices is
-            // already a cascade path from Events, and a second one via Services
-            // would trip SQL Server's multiple-cascade-path rule. The service
-            // delete flow detaches its join rows explicitly instead.
+            // Restrict on the service side: deleting a service that levels still
+            // reference should fail loudly rather than silently reshape levels.
             sls.HasOne(x => x.Service)
                 .WithMany(x => x.ServiceLevels)
                 .HasForeignKey(x => x.ServiceId)
                 .OnDelete(DeleteBehavior.Restrict);
-            // One row per (level, service) — a level can't include the same
-            // service twice with two different value sets.
             sls.HasIndex(x => new { x.ServiceLevelId, x.ServiceId }).IsUnique();
             sls.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<GuestServiceEntry>(e =>
+        {
+            e.ToTable("GuestServiceEntries");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Status).IsRequired().HasMaxLength(20);
+            e.Property(x => x.ValuesJson).HasColumnType("nvarchar(max)");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            e.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            e.HasOne(x => x.Guest)
+                .WithMany(x => x.ServiceEntries)
+                .HasForeignKey(x => x.GuestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Service)
+                .WithMany(x => x.GuestEntries)
+                .HasForeignKey(x => x.ServiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Every read is "this guest's entries", usually narrowed to one
+            // service; no unique constraint because repeats are allowed.
+            e.HasIndex(x => new { x.GuestId, x.ServiceId });
+            e.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<GuestSession>(gs =>

@@ -77,6 +77,7 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Service> Services { get; }
     IGenericRepository<ServiceLevel> ServiceLevels { get; }
     IGenericRepository<ServiceLevelService> ServiceLevelServices { get; }
+    IGenericRepository<GuestServiceEntry> GuestServiceEntries { get; }
 
     // Notifications
     IGenericRepository<Notification> Notifications { get; }

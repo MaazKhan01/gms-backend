@@ -1,4 +1,7 @@
 using Core.Authorization;
+using System.Collections.Generic;
+using Core.ViewModel.Common;
+using Core.Constants;
 using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
@@ -28,6 +31,13 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     [HttpGet("enums/transport-statuses")]
     public IActionResult GetTransportStatuses()
         => ToResponse(_lookupService.GetTransportStatuses());
+
+    // Lookup tables a service form field can draw its options from. Lets the
+    // form builder offer "Airports", "Hotels" … without hardcoding the list in
+    // the client. See Core.Constants.ServiceLookupSources.
+    [HttpGet("service-sources")]
+    public IActionResult GetServiceLookupSources()
+        => ToResponse(ApiResponse<IReadOnlyList<ServiceLookupSource>>.SuccessResponse(ServiceLookupSources.All));
 
     // Flight directions — a code-defined enum, not a table.
     [HttpGet("flight-types")]

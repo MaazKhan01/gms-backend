@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 
 namespace DomainPersistence.Entities
@@ -42,6 +43,7 @@ namespace DomainPersistence.Entities
         public virtual Nationality Nationality { get; set; }
         public virtual Organization OrganizationRef { get; set; }
         public virtual ServiceLevel ServiceLevel { get; set; }
+        public virtual ICollection<GuestServiceEntry> ServiceEntries { get; set; } = new List<GuestServiceEntry>();
         public virtual Event Event { get; set; }
         public virtual User User { get; set; }
     }

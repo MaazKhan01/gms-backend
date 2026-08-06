@@ -83,8 +83,9 @@ namespace Infrastructure.Services
 
                 // Lookups for the breakdown charts, pulled as dictionaries rather
                 // than joined per guest so a list of any size costs three queries.
+                // Levels are global in v2, so the breakdown lists every level and
+                // drops the ones with no guests in this event further down.
                 var serviceLevels = await _unitOfWork.ServiceLevels.Query()
-                    .Where(sl => sl.EventId == ev.Id)
                     .OrderBy(sl => sl.SortOrder).ToListAsync(ct);
                 var nationalityNames = await _unitOfWork.Nationalities.Query()
                     .ToDictionaryAsync(n => n.Id, n => new { n.Name, n.NameAr }, ct);

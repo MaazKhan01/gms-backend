@@ -64,6 +64,7 @@ public class UnitOfWork : IUnitOfWork
         Services = new GenericRepository<Service>(_context);
         ServiceLevels = new GenericRepository<ServiceLevel>(_context);
         ServiceLevelServices = new GenericRepository<ServiceLevelService>(_context);
+        GuestServiceEntries = new GenericRepository<GuestServiceEntry>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
@@ -117,6 +118,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<Service> Services { get; private set; }
     public IGenericRepository<ServiceLevel> ServiceLevels { get; private set; }
     public IGenericRepository<ServiceLevelService> ServiceLevelServices { get; private set; }
+    public IGenericRepository<GuestServiceEntry> GuestServiceEntries { get; private set; }
     public IGenericRepository<Nationality> Nationalities { get; private set; }
     public IGenericRepository<InvitationTemplate> InvitationTemplates { get; private set; }
     public IGenericRepository<VenueType> VenueTypes { get; private set; }

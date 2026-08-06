@@ -2,108 +2,181 @@ using System;
 using System.Collections.Generic;
 using Core.Constants;
 
-// Namespace is ServiceCatalog, not ServiceLevel: a namespace sharing a name with
-// the ServiceLevel entity makes every `ServiceLevel` reference ambiguous wherever
-// both are in scope.
 namespace Core.ViewModel.ServiceCatalog;
 
-// ── Service catalog (per event) ──────────────────────────────────────────────
-
-public class ServiceResponse
-{
-    public Guid Id { get; set; }
-    public Guid EventId { get; set; }
-    public string Name { get; set; }
-    public string NameAr { get; set; }
-    public string Description { get; set; }
-    public int SortOrder { get; set; }
-    /// <summary>Parsed field definitions — the API never hands back the raw JSON
-    /// string, so the frontend doesn't have to parse it defensively.</summary>
-    public List<ServiceFieldDefinition> Fields { get; set; } = new();
-    /// <summary>How many of this event's levels currently include this service —
-    /// shown in the catalog list and used to warn before deleting.</summary>
-    public int UsedByLevelCount { get; set; }
-}
+// ── Service ──────────────────────────────────────────────────────────────────
 
 public class CreateServiceRequest
 {
+    public string Code { get; set; }
     public string Name { get; set; }
     public string NameAr { get; set; }
     public string Description { get; set; }
+    public string Icon { get; set; }
     public int SortOrder { get; set; }
-    public List<ServiceFieldDefinition> Fields { get; set; } = new();
+    public bool IsActive { get; set; } = true;
+    public ServiceFormDefinition Form { get; set; } = new();
 }
 
 public class UpdateServiceRequest : CreateServiceRequest { }
 
-// ── Service levels (per event) ───────────────────────────────────────────────
-
-public class ServiceLevelResponse
+public class ServiceResponse
 {
     public Guid Id { get; set; }
-    public Guid EventId { get; set; }
+    public string Code { get; set; }
     public string Name { get; set; }
     public string NameAr { get; set; }
-    public string Code { get; set; }
     public string Description { get; set; }
-    public string Color { get; set; }
+    public string Icon { get; set; }
     public int SortOrder { get; set; }
+    public bool IsActive { get; set; }
+    public ServiceFormDefinition Form { get; set; } = new();
 
-    // Rules
-    public int? Capacity { get; set; }
-    public List<string> RequiredGuestFields { get; set; } = new();
-
-    /// <summary>Guests currently on this level (live count, drives the capacity
-    /// rule and the "38 / 50" display).</summary>
-    public int GuestCount { get; set; }
-
-    /// <summary>The services this level includes, with their configured values.</summary>
-    public List<ServiceLevelServiceResponse> Services { get; set; } = new();
+    /// <summary>How many levels currently include this service.</summary>
+    public int LevelCount { get; set; }
 }
 
-public class ServiceLevelServiceResponse
-{
-    public Guid ServiceId { get; set; }
-    public string ServiceName { get; set; }
-    public string ServiceNameAr { get; set; }
-    /// <summary>The service's own field definitions, echoed so the UI can render
-    /// label + type alongside each value without a second lookup.</summary>
-    public List<ServiceFieldDefinition> Fields { get; set; } = new();
-    /// <summary>Configured values, keyed by field key.</summary>
-    public Dictionary<string, string> Values { get; set; } = new();
-}
+// ── Service level ────────────────────────────────────────────────────────────
 
 public class CreateServiceLevelRequest
 {
+    public string Code { get; set; }
     public string Name { get; set; }
     public string NameAr { get; set; }
-    public string Code { get; set; }
     public string Description { get; set; }
     public string Color { get; set; }
     public int SortOrder { get; set; }
-    public int? Capacity { get; set; }
+    public bool IsActive { get; set; } = true;
     public List<string> RequiredGuestFields { get; set; } = new();
-    /// <summary>Full replacement set of included services on update — omit to
-    /// leave the existing set untouched.</summary>
-    public List<ServiceLevelServiceInput> Services { get; set; }
+
+    /// <summary>
+    /// Assigned services, in the order given. Index becomes SortOrder, which is
+    /// the completion sequence a Fixed event enforces.
+    /// </summary>
+    public List<Guid> ServiceIds { get; set; } = new();
 }
 
 public class UpdateServiceLevelRequest : CreateServiceLevelRequest { }
 
-public class ServiceLevelServiceInput
+public class ServiceLevelServiceResponse
 {
     public Guid ServiceId { get; set; }
-    public Dictionary<string, string> Values { get; set; } = new();
+    public string Code { get; set; }
+    public string Name { get; set; }
+    public string NameAr { get; set; }
+    public string Icon { get; set; }
+    public int SortOrder { get; set; }
 }
 
-/// <summary>Returned by the guest-assignment rule check so the UI can show what
-/// would be violated and offer an override to whoever is allowed to use it.</summary>
-public class ServiceLevelRuleCheckResponse
+public class ServiceLevelResponse
 {
-    public bool Passes { get; set; }
-    /// <summary>Human-readable violations, e.g. "Gold is at capacity (50 / 50)."</summary>
-    public List<string> Violations { get; set; } = new();
-    /// <summary>Guest field keys that are required but missing, so the form can
-    /// highlight them inline rather than only showing a message.</summary>
-    public List<string> MissingFields { get; set; } = new();
+    public Guid Id { get; set; }
+    public string Code { get; set; }
+    public string Name { get; set; }
+    public string NameAr { get; set; }
+    public string Description { get; set; }
+    public string Color { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; }
+    public List<string> RequiredGuestFields { get; set; } = new();
+    public List<ServiceLevelServiceResponse> Services { get; set; } = new();
+
+    /// <summary>Guests currently on this level, across all events.</summary>
+    public int GuestCount { get; set; }
+}
+
+// ── Guest service entries ────────────────────────────────────────────────────
+
+public class SaveGuestServiceEntryRequest
+{
+    /// <summary>Omit to create a new entry; supply to update an existing one.</summary>
+    public Guid? Id { get; set; }
+    public Guid ServiceId { get; set; }
+    public Dictionary<string, string> Values { get; set; } = new();
+
+    /// <summary>
+    /// False saves progress without completing, which leaves the next service in
+    /// a Fixed sequence still locked.
+    /// </summary>
+    public bool MarkCompleted { get; set; } = true;
+}
+
+public class GuestServiceEntryResponse
+{
+    public Guid Id { get; set; }
+    public Guid ServiceId { get; set; }
+    public string ServiceName { get; set; }
+    public string Status { get; set; }
+    public Dictionary<string, string> Values { get; set; } = new();
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>
+/// One row of the guest's service checklist: the service, its form, what has
+/// been filled in, and whether the user may open it yet.
+/// </summary>
+public class GuestServiceSlotResponse
+{
+    public Guid ServiceId { get; set; }
+    public string Code { get; set; }
+    public string Name { get; set; }
+    public string NameAr { get; set; }
+    public string Icon { get; set; }
+    public int SortOrder { get; set; }
+
+    public ServiceFormDefinition Form { get; set; } = new();
+    public List<GuestServiceEntryResponse> Entries { get; set; } = new();
+
+    /// <summary>pending until at least one entry is completed.</summary>
+    public string Status { get; set; }
+
+    /// <summary>
+    /// False on a Fixed event while an earlier service is still pending. Always
+    /// true on a Flexible event.
+    /// </summary>
+    public bool IsUnlocked { get; set; }
+
+    /// <summary>Mandatory on Fixed events, optional on Flexible ones.</summary>
+    public bool IsRequired { get; set; }
+
+    /// <summary>Why it is locked, ready to show in a tooltip.</summary>
+    public string LockedReason { get; set; }
+}
+
+public class GuestServicePlanResponse
+{
+    public Guid GuestId { get; set; }
+    public Guid? ServiceLevelId { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
+
+    /// <summary>fixed | flexible — the event's guest model.</summary>
+    public string GuestModel { get; set; }
+
+    /// <summary>True once every required service has a completed entry.</summary>
+    public bool IsComplete { get; set; }
+
+    public List<GuestServiceSlotResponse> Slots { get; set; } = new();
+}
+
+
+// ── Service entries across an event (Travel & Logistics style listings) ─────
+
+/// <summary>
+/// One guest's completed entry for a service, flattened for a table. Values are
+/// the raw {fieldKey: value} map — the client already has the form schema, so
+/// it knows how to label and format each column.
+/// </summary>
+public class ServiceEntryRow
+{
+    public Guid EntryId { get; set; }
+    public Guid GuestId { get; set; }
+    public string GuestName { get; set; }
+    public string Email { get; set; }
+    public string Organization { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
+    public string Status { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public Dictionary<string, string> Values { get; set; } = new();
 }

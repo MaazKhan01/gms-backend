@@ -22,9 +22,15 @@ public class OtherEventGuestRow
     public string NationalityName { get; set; }
     public string NationalityFlag { get; set; }
     public string PhotoUrl { get; set; }
-    // Prefilled as the row's default in the picker table's editable Tier
-    // column — the admin can change it per-row before adding.
+    // Legacy display string — no longer editable in the picker; superseded by
+    // ServiceLevelId below. Kept for guests who predate service levels.
     public string Tier { get; set; }
+    // Prefilled as the row's default in the picker table's editable Service
+    // Level column — the admin can change it per-row before adding. Not
+    // carried as an assignment on the new guest row; it is just the default.
+    public Guid? ServiceLevelId { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
     // Display only (their previous booking's status) — never applied to the
     // new guest, which always starts as not-sent / not-issued.
     public bool AccreditationRequired { get; set; }
