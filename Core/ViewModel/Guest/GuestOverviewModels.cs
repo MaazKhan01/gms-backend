@@ -43,6 +43,10 @@ public class GuestOverviewPagedRequest : PagedRequest
 
 public class GuestOverviewRow
 {
+    /// <summary>The PublicId of this person's most recent Guest row (their most
+    /// recent event participation) — used to resolve the full cross-event detail
+    /// via GET /v1/guest-overview/{id}. Not a stable "person id": there isn't
+    /// one, see GroupByEmail below.</summary>
     public Guid Id { get; set; }
     public string FirstName { get; set; }
     public string LastName { get; set; }
@@ -51,8 +55,18 @@ public class GuestOverviewRow
     public string PhotoUrl { get; set; }
     public string GuestType { get; set; }
 
+    /// <summary>Most recent event participation — shown as the row's "Event"
+    /// column. See <see cref="EventsCount"/>/<see cref="EventTitles"/> for the
+    /// full spread when a person is in more than one.</summary>
     public Guid EventId { get; set; }
     public string EventTitle { get; set; }
+
+    /// <summary>How many distinct events this person (by email) participates
+    /// in, and each one's title — a guest can legitimately be a brand-new Guest
+    /// row per event (no shared person identity in the data model), so the list
+    /// groups by email to show one row per person rather than one per booking.</summary>
+    public int EventsCount { get; set; }
+    public List<string> EventTitles { get; set; } = new();
 
     public string Organization { get; set; }
     public string NationalityName { get; set; }
@@ -85,33 +99,53 @@ public class GuestOverviewRow
 // ── Detail: fetched only when a row expands ─────────────────────────────────
 // One section per data source, matching the accordion's Events / Sessions /
 // Flights / Seatings / Accommodations / Transport / Other services layout.
+//
+// Scoped to a PERSON (every Guest row sharing the anchor guest's email), not
+// to the single Guest row `id` names — the data model has no shared identity
+// across events, so this is where that gets stitched back together. Events is
+// therefore a list (one block per event participation); every other section
+// flattens across all of that person's events, each item tagged with which
+// event it came from.
 public class GuestOverviewDetailResponse
 {
+    /// <summary>The anchor guest row's id — kept for reference, not a stable
+    /// person id (there isn't one; see Email).</summary>
     public Guid Id { get; set; }
-    public GuestOverviewEventSection Event { get; set; }
+    public string Email { get; set; }
+    public List<GuestOverviewEventBlock> Events { get; set; } = new();
     public List<GuestOverviewSessionRow> Sessions { get; set; } = new();
     public List<GuestOverviewFlightRow> Flights { get; set; } = new();
     public List<GuestOverviewAccommodationRow> Accommodations { get; set; } = new();
     public List<GuestOverviewTransportRow> Transport { get; set; } = new();
     public List<GuestOverviewSeatRow> Seatings { get; set; } = new();
 
-    /// <summary>Every service on the guest's level that isn't Flight/Accommodation/
+    /// <summary>Every service on each event's level that isn't Flight/Accommodation/
     /// Transport — those three already have their own sections above.</summary>
-    public List<GuestServiceSlotResponse> OtherServices { get; set; } = new();
+    public List<GuestOverviewOtherServiceRow> OtherServices { get; set; } = new();
 }
 
-public class GuestOverviewEventSection
+public class GuestOverviewEventBlock
 {
-    public Guid Id { get; set; }
-    public string Title { get; set; }
-    public string Type { get; set; }
+    /// <summary>This specific event participation's own Guest row id — the one
+    /// to use if some future action needs to edit that particular booking.</summary>
+    public Guid GuestId { get; set; }
+    public Guid EventId { get; set; }
+    public string EventTitle { get; set; }
+    public string EventType { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public string VenueName { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
+    public string InvitationStatus { get; set; }
+    public string AccreditationStatus { get; set; }
+    public DateOnly? ArrivalDate { get; set; }
+    public DateOnly? DepartureDate { get; set; }
 }
 
 public class GuestOverviewSessionRow
 {
+    public string EventTitle { get; set; }
     public Guid Id { get; set; }
     public string Title { get; set; }
     public DateOnly? Date { get; set; }
@@ -123,6 +157,7 @@ public class GuestOverviewSessionRow
 
 public class GuestOverviewFlightRow
 {
+    public string EventTitle { get; set; }
     public Guid Id { get; set; }
     public string FlightType { get; set; }
     public string Status { get; set; }
@@ -149,6 +184,7 @@ public class GuestOverviewFlightLegRow
 
 public class GuestOverviewAccommodationRow
 {
+    public string EventTitle { get; set; }
     public Guid Id { get; set; }
     public string Hotel { get; set; }
     public string HotelImageUrl { get; set; }
@@ -160,6 +196,7 @@ public class GuestOverviewAccommodationRow
 
 public class GuestOverviewTransportRow
 {
+    public string EventTitle { get; set; }
     public Guid Id { get; set; }
     public string TripStatus { get; set; }
     public string Vehicle { get; set; }
@@ -175,4 +212,19 @@ public class GuestOverviewSeatRow
     public string EventTitle { get; set; }
     public string SessionTitle { get; set; }
     public string SeatCode { get; set; }
+}
+
+// Flattened GuestServiceSlotResponse + which event it came from — a person can
+// hold this same dynamic service independently on more than one event's level.
+public class GuestOverviewOtherServiceRow
+{
+    public string EventTitle { get; set; }
+    public Guid ServiceId { get; set; }
+    public string Name { get; set; }
+    public string NameAr { get; set; }
+    public string Icon { get; set; }
+    public string Status { get; set; }
+    public bool IsUnlocked { get; set; }
+    public string LockedReason { get; set; }
+    public List<GuestServiceEntryResponse> Entries { get; set; } = new();
 }
