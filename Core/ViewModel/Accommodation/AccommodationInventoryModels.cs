@@ -61,6 +61,17 @@ public class UpdateRoomInventoryRequest
     public string Notes { get; set; }
 }
 
+/// <summary>Set the rooms held on ONE night of a block, from the availability
+/// grid. The block is split around that night so the neighbours keep their old
+/// count — see SetNightRoomCountAsync.</summary>
+public class SetNightRoomCountRequest
+{
+    /// <summary>The night to change. Must fall inside the block's window.</summary>
+    public DateOnly? Date { get; set; }
+    /// <summary>Rooms held on that night. 0 leaves the night uncovered.</summary>
+    public int RoomCount { get; set; }
+}
+
 public class RoomInventoryResponse
 {
     public Guid Id { get; set; }

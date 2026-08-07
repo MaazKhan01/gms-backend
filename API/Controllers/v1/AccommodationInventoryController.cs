@@ -61,6 +61,14 @@ public class AccommodationInventoryController(
     public async Task<IActionResult> UpdateInventory(Guid eventId, Guid inventoryId, [FromBody] UpdateRoomInventoryRequest request, CancellationToken ct)
         => ToResponse(await _inventory.UpdateInventoryAsync(eventId, inventoryId, request, _currentUser.UserId, ct));
 
+    /// <summary>Set the rooms held on one night of a block — the availability
+    /// grid's editable cells. Splits the block so the other nights keep their
+    /// count.</summary>
+    [HttpPut("inventory/{inventoryId:guid}/night")]
+    [HasPermission(PermissionCodes.TravelManage)]
+    public async Task<IActionResult> SetNightRoomCount(Guid eventId, Guid inventoryId, [FromBody] SetNightRoomCountRequest request, CancellationToken ct)
+        => ToResponse(await _inventory.SetNightRoomCountAsync(eventId, inventoryId, request, _currentUser.UserId, ct));
+
     [HttpDelete("inventory/{inventoryId:guid}")]
     [HasPermission(PermissionCodes.TravelManage)]
     public async Task<IActionResult> DeleteInventory(Guid eventId, Guid inventoryId, CancellationToken ct)

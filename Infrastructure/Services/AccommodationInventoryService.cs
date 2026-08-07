@@ -256,6 +256,74 @@ public class AccommodationInventoryService(
         }
     }
 
+    public async Task<ApiResponse<bool>> SetNightRoomCountAsync(
+        Guid eventId, Guid inventoryId, SetNightRoomCountRequest request, int userId, CancellationToken ct = default)
+    {
+        try
+        {
+            var block = await FindInventoryAsync(eventId, inventoryId, ct);
+            if (block == null) return ApiResponse<bool>.NotFoundResponse("Room block not found");
+
+            if (request.Date == null) return ApiResponse<bool>.ErrorResponse("Date is required");
+            var night = request.Date.Value;
+            if (night < block.FromDate || night > block.ToDate)
+                return ApiResponse<bool>.ErrorResponse("That night is outside this room block");
+            if (request.RoomCount < 0) return ApiResponse<bool>.ErrorResponse("Number of rooms cannot be negative");
+            if (request.RoomCount == block.RoomCount) return ApiResponse<bool>.SuccessResponse(true, "No change");
+
+            // What this block becomes: the edited night on its own, the untouched
+            // ends carrying their old count. Zero rooms drops the middle piece —
+            // the night is then simply not held.
+            var after = new List<Block>();
+            if (night > block.FromDate) after.Add(new Block(block.FromDate, night.AddDays(-1), block.RoomCount));
+            if (request.RoomCount > 0) after.Add(new Block(night, night, request.RoomCount));
+            if (night < block.ToDate) after.Add(new Block(night.AddDays(1), block.ToDate, block.RoomCount));
+
+            var breach = await FindBreachAsync(block, block.RoomTypeId, after, ct);
+            if (breach != null) return ApiResponse<bool>.ErrorResponse(breach);
+
+            // The existing row narrows to the edited night rather than being
+            // replaced, so its id (and audit trail) stays with the change that was
+            // actually made; the ends become new rows. One SaveChanges, so a
+            // failure can't leave the block half-split.
+            if (request.RoomCount > 0)
+            {
+                block.FromDate = night;
+                block.ToDate = night;
+                block.RoomCount = request.RoomCount;
+                block.SetUpdateAudit(userId);
+            }
+            else
+            {
+                block.MarkAsDeleted(userId);
+            }
+            _unitOfWork.HotelRoomInventories.Update(block);
+
+            foreach (var seg in after.Where(s => s.FromDate != night || s.ToDate != night))
+            {
+                var row = new HotelRoomInventory
+                {
+                    EventHotelContractId = block.EventHotelContractId,
+                    RoomTypeId = block.RoomTypeId,
+                    RoomCount = seg.RoomCount,
+                    FromDate = seg.FromDate,
+                    ToDate = seg.ToDate,
+                    Notes = block.Notes,
+                };
+                row.SetCreationAudit(userId);
+                await _unitOfWork.HotelRoomInventories.AddAsync(row, ct);
+            }
+
+            await _unitOfWork.SaveChangesAsync(ct);
+            return ApiResponse<bool>.SuccessResponse(true, "Rooms updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting night room count on inventory {InventoryId}", inventoryId);
+            return ApiResponse<bool>.ServerErrorResponse("An error occurred while updating the room block");
+        }
+    }
+
     // ── Booking-form feeds ───────────────────────────────────────────────────
 
     public async Task<ApiResponse<List<HotelDto>>> GetContractedHotelsAsync(Guid eventId, CancellationToken ct = default)
@@ -457,11 +525,20 @@ public class AccommodationInventoryService(
     /// <summary>Would this edit leave a night short? Recomputes the affected room
     /// type's capacity with `block` replaced by (newRoomCount, newFrom..newTo) —
     /// pass 0 rooms to model a delete — and reports the first night where
-    /// bookings would exceed it. Only the block's OLD window is at risk: nights
-    /// outside it keep the capacity they had.</summary>
-    private async Task<string> FindBreachAsync(
+    /// bookings would exceed it.</summary>
+    private Task<string> FindBreachAsync(
         HotelRoomInventory block, int newRoomTypeId, int newRoomCount,
         DateOnly newFrom, DateOnly newTo, CancellationToken ct)
+        => FindBreachAsync(block, newRoomTypeId,
+            newRoomCount > 0 ? [new Block(newFrom, newTo, newRoomCount)] : [],
+            ct);
+
+    /// <summary>Same check, for edits that leave more than one piece behind (a
+    /// per-night change splits a block in up to three). `replacements` is what
+    /// `block` becomes; an empty list models a delete. Only the block's OLD
+    /// window is at risk: nights outside it keep the capacity they had.</summary>
+    private async Task<string> FindBreachAsync(
+        HotelRoomInventory block, int newRoomTypeId, List<Block> replacements, CancellationToken ct)
     {
         var contract = await _unitOfWork.EventHotelContracts.Query()
             .FirstOrDefaultAsync(c => c.Id == block.EventHotelContractId, ct);
@@ -478,8 +555,8 @@ public class AccommodationInventoryService(
             .Select(i => new Block(i.FromDate, i.ToDate, i.RoomCount))
             .ToListAsync(ct);
 
-        if (newRoomTypeId == affectedRoomTypeId && newRoomCount > 0)
-            others.Add(new Block(newFrom, newTo, newRoomCount));
+        if (newRoomTypeId == affectedRoomTypeId)
+            others.AddRange(replacements);
 
         var stays = await LoadStaysAsync(contract.EventId, contract.AccommodationHotelId, affectedRoomTypeId, null, ct);
 

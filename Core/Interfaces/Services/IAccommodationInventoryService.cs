@@ -27,6 +27,13 @@ public interface IAccommodationInventoryService
     Task<ApiResponse<RoomInventoryResponse>> UpdateInventoryAsync(Guid eventId, Guid inventoryId, UpdateRoomInventoryRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteInventoryAsync(Guid eventId, Guid inventoryId, int userId, CancellationToken ct = default);
 
+    /// <summary>Change the rooms held on ONE night of a block, leaving every other
+    /// night of it as it was. The block is split around that night — the row keeps
+    /// its identity as the single-night piece and the untouched ends become new
+    /// rows. This is what the availability grid's editable cells call.</summary>
+    Task<ApiResponse<bool>> SetNightRoomCountAsync(
+        Guid eventId, Guid inventoryId, SetNightRoomCountRequest request, int userId, CancellationToken ct = default);
+
     // ── Booking-form feeds ───────────────────────────────────────────────────
     /// <summary>Hotels this event has a contract with — what the accommodation
     /// form's hotel dropdown should show instead of every hotel in the system.</summary>
