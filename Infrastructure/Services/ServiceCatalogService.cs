@@ -747,8 +747,12 @@ public class ServiceCatalogService(
                     .Where(l => !string.IsNullOrWhiteSpace(l.FlightNumber))
                     .Select(l => l.FlightNumber)),
                 ["Type"] = f.FlightType.ToString(),
-                ["Departs"] = Text(f.DepartureTime),
-                ["Arrives"] = Text(f.ArrivalTime),
+                ["Departs"] = f.Legs.Count > 0
+                    ? string.Join(" / ", f.Legs.Select(l => Text(l.StartTime)))
+                    : Text(f.DepartureTime),
+                ["Arrives"] = f.Legs.Count > 0
+                    ? string.Join(" / ", f.Legs.Select(l => Text(l.EndTime)))
+                    : Text(f.ArrivalTime),
                 ["Status"] = f.Status,
             })).ToList();
         }
