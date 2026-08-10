@@ -399,6 +399,7 @@ public class GuestService(
                 {
                     Id = g.PublicId,
                     FullName = (g.FirstName + " " + g.LastName).Trim(),
+                    Email = g.Email,
                     Organization = g.Organization,
                     Tier = g.Tier,
                     PhotoUrl = g.PhotoUrl,
