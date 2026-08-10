@@ -55,6 +55,8 @@ public class VehicleBookingRow
 
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
+    public string GuestEmail { get; set; }
+    public string GuestPhotoUrl { get; set; }
 
     public DateTime? PickupTime { get; set; }
     // Null on rows created before the drop-off became required, and on guest

@@ -257,6 +257,8 @@ public class VehicleService(
         DriverPhone = t.Driver == null ? null : t.Driver.User.Phone,
         GuestId = t.Guest.PublicId,
         GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+        GuestEmail = t.Guest.Email,
+        GuestPhotoUrl = t.Guest.PhotoUrl,
         PickupTime = t.PickupTime,
         DropoffTime = t.DropoffTime,
         Pickup = t.PickupLocation == null ? null : t.PickupLocation.Address,
