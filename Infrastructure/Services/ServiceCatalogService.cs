@@ -577,6 +577,7 @@ public class ServiceCatalogService(
                 EntryId = e.PublicId,
                 GuestId = e.Guest.PublicId,
                 GuestName = ($"{e.Guest.FirstName} {e.Guest.LastName}").Trim(),
+                PhotoUrl = e.Guest.PhotoUrl,
                 Email = e.Guest.Email,
                 Organization = e.Guest.Organization,
                 ServiceLevelName = e.Guest.ServiceLevel?.Name,

@@ -694,6 +694,7 @@ public class SupportChatService(
             GuestId = guestProfile?.PublicId ?? Guid.Empty,
             GuestName = $"{c.User.FirstName} {c.User.LastName}".Trim(),
             GuestEmail = guestProfile?.Email,
+            GuestPhotoUrl = guestProfile?.PhotoUrl,
             Status = c.Status,
             LastMessagePreview = c.LastMessagePreview,
             LastMessageAt = c.LastMessageAt,

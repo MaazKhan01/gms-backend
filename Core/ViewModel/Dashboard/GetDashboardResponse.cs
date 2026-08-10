@@ -124,6 +124,8 @@ namespace Core.ViewModel.Dashboard
     {
         public Guid Id { get; set; }
         public string Name { get; set; }
+        public string? Email { get; set; }
+        public string? PhotoUrl { get; set; }
         public string? Organization { get; set; }
         public string? Tier { get; set; }
         public string? InvitationStatus { get; set; }

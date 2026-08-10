@@ -186,6 +186,7 @@ public class ServiceEntryRow
     public Guid EntryId { get; set; }
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
+    public string PhotoUrl { get; set; }
     public string Email { get; set; }
     public string Organization { get; set; }
     public string ServiceLevelName { get; set; }

@@ -141,6 +141,8 @@ namespace Infrastructure.Services
                         {
                             Id = g.PublicId,
                             Name = $"{g.FirstName} {g.LastName}".Trim(),
+                            Email = g.Email,
+                            PhotoUrl = g.PhotoUrl,
                             Organization = g.Organization,
                             Tier = g.Tier,
                             InvitationStatus = invitations.TryGetValue(g.Id, out var inv) ? inv.InvitationStatus : null,

@@ -15,6 +15,7 @@ public class SupportConversationSummaryResponse
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string GuestEmail { get; set; }
+    public string GuestPhotoUrl { get; set; }
     public string Status { get; set; }        // Open / Closed
     public string LastMessagePreview { get; set; }
     public DateTime? LastMessageAt { get; set; }

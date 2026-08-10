@@ -84,7 +84,7 @@ namespace Infrastructure.Services
                     MeetingAgenda = meeting.MeetingAgenda,
                     EventId = request.EventId,
                     Guests = guests
-                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim() })
+                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim(), Email = g.Email, PhotoUrl = g.PhotoUrl })
                         .ToList(),
                 };
 
@@ -127,7 +127,7 @@ namespace Infrastructure.Services
                     MeetingAgenda = m.MeetingAgenda,
                     EventId = eventId,
                     Guests = m.Guests
-                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim() })
+                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim(), Email = g.Email, PhotoUrl = g.PhotoUrl })
                         .ToList(),
                 }).ToList();
 
@@ -220,7 +220,7 @@ namespace Infrastructure.Services
                     MeetingAgenda = meeting.MeetingAgenda,
                     EventId = request.EventId,
                     Guests = meeting.Guests
-                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim() })
+                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim(), Email = g.Email, PhotoUrl = g.PhotoUrl })
                         .ToList(),
                 };
 

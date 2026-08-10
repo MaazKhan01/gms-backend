@@ -121,6 +121,7 @@ public class EventFlightRow
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
+    public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
     public string Status { get; set; }
@@ -219,6 +220,7 @@ public class EventAccommodationRow
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
+    public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
     public string Hotel { get; set; }
@@ -238,6 +240,7 @@ public class EventTransportRow
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
+    public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
     // Display label for the assigned vehicle: "AB-1234 · Toyota Land Cruiser".

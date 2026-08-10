@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Constants;
@@ -78,20 +80,40 @@ namespace Infrastructure.Services
         {
             var invitation = await _unitOfWork.Invitations.Query()
                 .Include(i => i.Guest).ThenInclude(g => g.Event)
+                .Include(i => i.Guest).ThenInclude(g => g.ServiceLevel).ThenInclude(l => l.Services).ThenInclude(a => a.Service)
                 .FirstOrDefaultAsync(i => i.InvitationToken == token, ct);
             if (invitation?.Guest == null) return null;
 
             var guest = invitation.Guest;
             var ev = guest.Event;
+            var level = guest.ServiceLevel;
 
             return new InvitationDetailResponse
             {
                 GuestName = $"{guest.FirstName} {guest.LastName}".Trim(),
+                GuestEmail = guest.Email,
+                GuestPhotoUrl = guest.PhotoUrl,
+                Organization = guest.Organization,
                 Tier = guest.Tier,
+                ServiceLevelName = level?.Name,
+                ServiceLevelNameAr = level?.NameAr,
+                ServiceLevelColor = level?.Color,
+                ArrivalDate = guest.ArrivalDate,
+                DepartureDate = guest.DepartureDate,
                 EventTitle = ev?.Title,
                 EventVenue = ev?.VenueName,
                 EventStartDate = ev?.StartDate,
                 EventEndDate = ev?.EndDate,
+                Services = (level?.Services ?? new List<DomainPersistence.Entities.ServiceLevelService>())
+                    .Where(a => a.Service != null)
+                    .OrderBy(a => a.SortOrder)
+                    .Select(a => new InvitationServiceItem
+                    {
+                        Name = a.Service.Name,
+                        NameAr = a.Service.NameAr,
+                        Icon = a.Service.Icon,
+                    })
+                    .ToList(),
                 InvitationStatus = invitation.InvitationStatus,
                 AlreadyResponded = invitation.InvitationStatus == GuestInvitationStatus.Accepted
                                 || invitation.InvitationStatus == GuestInvitationStatus.Declined,
