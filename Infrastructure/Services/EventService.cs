@@ -324,6 +324,7 @@ public class EventService(
 
         session.Room = request.Room ?? session.Room;
         session.Speaker = request.Speaker ?? session.Speaker;
+        session.ImageUrl = request.ImageUrl ?? session.ImageUrl;
         if (request.Capacity > 0) session.Capacity = request.Capacity;
 
         session.SetUpdateAudit(userId);

@@ -37,4 +37,5 @@ public class SessionResponse
     public string Room { get; set; }
     public string Speaker { get; set; }
     public int Capacity { get; set; }
+    public string ImageUrl { get; set; }
 }

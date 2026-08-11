@@ -93,6 +93,7 @@ namespace Core.ViewModel.Dashboard
         public DateOnly? Date { get; set; }
         public string Time { get; set; }
         public string? Room { get; set; }
+        public string? ImageUrl { get; set; }
     }
 
     // All counts are scoped to the event's own guest list.
@@ -127,7 +128,9 @@ namespace Core.ViewModel.Dashboard
         public string? Email { get; set; }
         public string? PhotoUrl { get; set; }
         public string? Organization { get; set; }
-        public string? Tier { get; set; }
+        // Guest.Tier is a legacy mirror string — this is the real per-event grade
+        // (Core/Constants ServiceLevel), null when the guest has none assigned.
+        public string? ServiceLevelName { get; set; }
         public string? InvitationStatus { get; set; }
         public DateOnly? ArrivalDate { get; set; }
     }

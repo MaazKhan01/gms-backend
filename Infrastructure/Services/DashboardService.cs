@@ -59,6 +59,7 @@ namespace Infrastructure.Services
 
                 var guests = await _unitOfWork.Guests.Query()
                     .Where(g => g.EventId == ev.Id)
+                    .Include(g => g.ServiceLevel)
                     .ToListAsync(ct);
 
                 var meetings = await _unitOfWork.Meetings.Query()
@@ -109,6 +110,7 @@ namespace Infrastructure.Services
                             Date = s.Date,
                             Time = s.Time,
                             Room = s.Room,
+                            ImageUrl = s.ImageUrl,
                         })
                         .ToList(),
 
@@ -144,7 +146,7 @@ namespace Infrastructure.Services
                             Email = g.Email,
                             PhotoUrl = g.PhotoUrl,
                             Organization = g.Organization,
-                            Tier = g.Tier,
+                            ServiceLevelName = g.ServiceLevel?.Name,
                             InvitationStatus = invitations.TryGetValue(g.Id, out var inv) ? inv.InvitationStatus : null,
                         })
                         .ToList(),
