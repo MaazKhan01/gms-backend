@@ -7,8 +7,7 @@ using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Guest;
 using Core.ViewModel.Invitation;
-using CsvHelper;
-using CsvHelper.Configuration;
+using ClosedXML.Excel;
 using DomainPersistence.Entities;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
@@ -257,9 +256,33 @@ public class GuestService(
             "Import started — you'll be notified when it's done.");
     }
 
-    // The Hangfire job body — same CSV parsing + per-row CreateGuestAsync calls
-    // ImportGuestCsvAsync used to do synchronously, now writing outcomes to
-    // ImportBatchRow and notifying on completion instead of returning them.
+    // A guest's booked stay can start a bit before the event and run a bit
+    // after it — same slack the guest wizard's own Arrival/Departure fields
+    // use (GuestModal.jsx DATE_MARGIN_DAYS), so the template's date validation
+    // agrees with what the UI would accept.
+    private const int GuestImportDateMarginDays = 7;
+
+    // The header row IS the version check: an older template (still carrying
+    // a "Tier" column, no "Service Level") or a hand-edited file fails right
+    // here with one clear message, instead of every row quietly reading from
+    // the wrong column. Keep this in lockstep with BuildGuestImportTemplateAsync.
+    private static readonly string[] GuestImportHeaders =
+    {
+        "First Name*", "Last Name*", "Email*", "Guest Type", "Organization",
+        "Nationality", "Service Level", "Arrival Date (YYYY-MM-DD)",
+        "Departure Date (YYYY-MM-DD)", "Accreditation Required",
+    };
+
+    // Same shape the guest wizard uses (GuestModal.jsx handleNext) — kept in
+    // lockstep so a row that would fail the wizard's own validation fails the
+    // same way here instead of silently creating an emailless guest.
+    private static readonly System.Text.RegularExpressions.Regex GuestImportEmailPattern =
+        new(@"^[^\s@]+@[^\s@]+\.[^\s@]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // The Hangfire job body — reads the .xlsx template back, resolving every
+    // dropdown column against what currently exists (so a value that existed
+    // when the template was downloaded but was since renamed/deleted fails
+    // that one row with a clear reason), then calls CreateGuestAsync per row.
     public async Task ProcessGuestsImportBatchAsync(Guid batchId, CancellationToken ct = default)
     {
         var batch = await _unitOfWork.ImportBatches.Query().FirstOrDefaultAsync(b => b.PublicId == batchId, ct);
@@ -279,59 +302,128 @@ public class GuestService(
 
         try
         {
-            using var csvStream = await _blobService.DownloadAsync(batch.FileUrl, ct);
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                HeaderValidated = null,
-                MissingFieldFound = null,
-            };
-            using var reader = new StreamReader(csvStream);
-            using var csv = new CsvReader(reader, config);
+            using var fileStream = await _blobService.DownloadAsync(batch.FileUrl, ct);
+            using var wb = new XLWorkbook(fileStream);
+            var ws = wb.Worksheets.FirstOrDefault(w => w.Visibility == XLWorksheetVisibility.Visible) ?? wb.Worksheet(1);
 
-            var rows = csv.GetRecords<GuestRow>().ToList();
-            var rowNumber = 1; // header is row 1, first data row is 2
-            foreach (var row in rows)
+            var actualHeaders = Enumerable.Range(1, GuestImportHeaders.Length)
+                .Select(i => ws.Row(1).Cell(i).GetString().Trim())
+                .ToArray();
+            if (!actualHeaders.SequenceEqual(GuestImportHeaders, StringComparer.OrdinalIgnoreCase))
             {
-                rowNumber++;
-                var name = $"{row.FirstName} {row.LastName}".Trim();
+                batch.Status = "failed";
+                batch.ErrorMessage = "This file doesn't match the current import template — please download a fresh template and try again.";
+                batch.CompletedAt = DateTime.UtcNow;
+                _unitOfWork.ImportBatches.Update(batch);
+                await _unitOfWork.SaveChangesAsync(ct);
+                return;
+            }
 
-                if (string.IsNullOrEmpty(row.FirstName) || string.IsNullOrEmpty(row.LastName))
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            var guestTypeByName = GuestEnumCatalog.All[GuestEnumCatalog.Type]
+                .ToDictionary(o => o.Name, o => o.Code, StringComparer.OrdinalIgnoreCase);
+            var orgByName = (await _unitOfWork.Organizations.Query()
+                    .Select(o => new { o.PublicId, o.Name })
+                    .ToListAsync(ct))
+                .GroupBy(o => o.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().PublicId, StringComparer.OrdinalIgnoreCase);
+            var levelByName = (await _unitOfWork.ServiceLevels.Query()
+                    .Where(l => l.IsActive)
+                    .Select(l => new { l.PublicId, l.Name })
+                    .ToListAsync(ct))
+                .GroupBy(l => l.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().PublicId, StringComparer.OrdinalIgnoreCase);
+
+            var minDate = eventEntity?.StartDate?.AddDays(-GuestImportDateMarginDays);
+            var maxDate = eventEntity?.EndDate?.AddDays(GuestImportDateMarginDays);
+
+            for (var r = 2; r <= lastRow; r++)
+            {
+                var row = ws.Row(r);
+                var firstName = row.Cell(1).GetString().Trim();
+                var lastName = row.Cell(2).GetString().Trim();
+                var email = row.Cell(3).GetString().Trim();
+                var guestTypeName = row.Cell(4).GetString().Trim();
+                var orgName = row.Cell(5).GetString().Trim();
+                var nationalityName = row.Cell(6).GetString().Trim();
+                var levelName = row.Cell(7).GetString().Trim();
+                var arrivalCell = row.Cell(8);
+                var departureCell = row.Cell(9);
+                var accredText = row.Cell(10).GetString().Trim();
+
+                var rowIsBlank = firstName.Length == 0 && lastName.Length == 0 && email.Length == 0
+                    && guestTypeName.Length == 0 && orgName.Length == 0 && nationalityName.Length == 0
+                    && levelName.Length == 0 && arrivalCell.IsEmpty() && departureCell.IsEmpty() && accredText.Length == 0;
+                if (rowIsBlank) continue;
+
+                var name = $"{firstName} {lastName}".Trim();
+                void Fail(string error) => rowResults.Add(new ImportBatchRow
                 {
-                    rowResults.Add(new ImportBatchRow
-                    {
-                        RowNumber = rowNumber, Title = name.Length > 0 ? name : row.Email, Success = false,
-                        Error = "Missing First or Last Name.", ErrorCategory = "validation",
-                    });
-                    continue;
+                    RowNumber = r, Title = name.Length > 0 ? name : email, Success = false,
+                    Error = error, ErrorCategory = "validation",
+                });
+
+                if (firstName.Length == 0 || lastName.Length == 0) { Fail("Missing First or Last Name."); continue; }
+                if (email.Length == 0) { Fail("Missing Email."); continue; }
+                if (!GuestImportEmailPattern.IsMatch(email)) { Fail($"\"{email}\" is not a valid email address."); continue; }
+
+                var guestTypeCode = "delegate";
+                if (guestTypeName.Length > 0 && !guestTypeByName.TryGetValue(guestTypeName, out guestTypeCode))
+                { Fail($"\"{guestTypeName}\" is not a recognized Guest Type — pick one from the dropdown."); continue; }
+
+                Guid? organizationId = null;
+                if (orgName.Length > 0)
+                {
+                    if (!orgByName.TryGetValue(orgName, out var oid))
+                    { Fail($"Organization \"{orgName}\" was not found — pick one from the dropdown, or leave it blank."); continue; }
+                    organizationId = oid;
                 }
+
+                Guid? serviceLevelId = null;
+                if (levelName.Length > 0)
+                {
+                    if (!levelByName.TryGetValue(levelName, out var lid))
+                    { Fail($"Service Level \"{levelName}\" was not found — pick one from the dropdown, or leave it blank."); continue; }
+                    serviceLevelId = lid;
+                }
+
+                if (!TryReadDateCell(arrivalCell, out var arrivalDate)) { Fail("Arrival Date is not a valid date."); continue; }
+                if (!TryReadDateCell(departureCell, out var departureDate)) { Fail("Departure Date is not a valid date."); continue; }
+                if (arrivalDate.HasValue && ((minDate.HasValue && arrivalDate < minDate) || (maxDate.HasValue && arrivalDate > maxDate)))
+                { Fail($"Arrival Date must be between {minDate:yyyy-MM-dd} and {maxDate:yyyy-MM-dd}."); continue; }
+                if (departureDate.HasValue && ((minDate.HasValue && departureDate < minDate) || (maxDate.HasValue && departureDate > maxDate)))
+                { Fail($"Departure Date must be between {minDate:yyyy-MM-dd} and {maxDate:yyyy-MM-dd}."); continue; }
+                if (arrivalDate.HasValue && departureDate.HasValue && departureDate < arrivalDate)
+                { Fail("Departure Date can't be before Arrival Date."); continue; }
+
                 try
                 {
                     var request = new CreateGuestRequest
                     {
-                        FirstName = row.FirstName.Trim(),
-                        LastName = row.LastName.Trim(),
-                        Email = row.Email?.Trim() ?? null,
+                        FirstName = firstName,
+                        LastName = lastName,
+                        Email = email.Length > 0 ? email : null,
                         EventId = eventEntity.PublicId,
-                        GuestType = string.IsNullOrEmpty(row.GuestType) ? "delegate" : row.GuestType.Trim().ToLower(),
-                        Organization = row.Organization?.Trim() ?? null,
-                        NationalityId = await ResolveNationalityByNameAsync(row.Nationality, ct),
-                        Tier = string.IsNullOrWhiteSpace(row.Tier) ? "Delegate" : row.Tier.Trim(),
-                        ArrivalDate = ParseCsvDate(row.ArrivalDate),
-                        DepartureDate = ParseCsvDate(row.DepartureDate),
-                        AccreditationRequired = ParseCsvBool(row.AccreditationRequired),
+                        GuestType = guestTypeCode,
+                        OrganizationId = organizationId,
+                        NationalityId = await ResolveNationalityByNameAsync(nationalityName, ct),
+                        ServiceLevelId = serviceLevelId,
+                        ArrivalDate = arrivalDate,
+                        DepartureDate = departureDate,
+                        AccreditationRequired = ParseCsvBool(accredText),
                     };
                     var createResult = await CreateGuestAsync(request, ct);
                     rowResults.Add(new ImportBatchRow
                     {
-                        RowNumber = rowNumber, Title = name, Success = createResult.Success,
+                        RowNumber = r, Title = name, Success = createResult.Success,
                         Error = createResult.Success ? null : createResult.Message,
                         ErrorCategory = createResult.Success ? null : "validation",
                     });
                 }
                 catch (Exception ex)
                 {
-                    rowResults.Add(new ImportBatchRow
-                    { RowNumber = rowNumber, Title = name, Success = false, Error = ex.Message, ErrorCategory = "validation" });
+                    Fail(ex.Message);
                 }
             }
 
@@ -351,7 +443,7 @@ public class GuestService(
         {
             _logger.LogError(ex, "Error processing guests import batch {BatchId}", batchId);
             batch.Status = "failed";
-            batch.ErrorMessage = "The uploaded CSV file contains invalid data or has an incorrect format.";
+            batch.ErrorMessage = "The uploaded file isn't a valid .xlsx import — make sure it's the template downloaded from this portal.";
             batch.CompletedAt = DateTime.UtcNow;
             _unitOfWork.ImportBatches.Update(batch);
             await _unitOfWork.SaveChangesAsync(ct);
@@ -1058,8 +1150,121 @@ public class GuestService(
         return nat?.PublicId;
     }
 
-    private static DateOnly? ParseCsvDate(string value)
-        => DateOnly.TryParse(value, out var d) ? d : null;
+    // A real Excel date cell reads via GetDateTime(); a plain typed string
+    // (or a value pasted from an older, unvalidated file) falls back to
+    // DateOnly.TryParse. Empty is valid (no date given) — only unparseable
+    // text fails.
+    private static bool TryReadDateCell(IXLCell cell, out DateOnly? date)
+    {
+        date = null;
+        if (cell.IsEmpty()) return true;
+
+        if (cell.DataType == XLDataType.DateTime)
+        {
+            date = DateOnly.FromDateTime(cell.GetDateTime());
+            return true;
+        }
+
+        var s = cell.GetString().Trim();
+        if (s.Length == 0) return true;
+
+        if (DateOnly.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+        {
+            date = parsed;
+            return true;
+        }
+        return false;
+    }
+
+    // 500 blank validated rows, same as the Events import template — plenty
+    // for one batch without the file ballooning in size.
+    private const int GuestImportTemplateRows = 500;
+
+    public async Task<byte[]> BuildGuestImportTemplateAsync(Guid eventId, CancellationToken ct = default)
+    {
+        var eventEntity = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+
+        var guestTypeNames = GuestEnumCatalog.All[GuestEnumCatalog.Type].Select(o => o.Name).ToList();
+        var orgNames = await _unitOfWork.Organizations.Query().OrderBy(o => o.Name).Select(o => o.Name).ToListAsync(ct);
+        var nationalityNames = await _unitOfWork.Nationalities.Query().OrderBy(n => n.Name).Select(n => n.Name).ToListAsync(ct);
+        var levelNames = await _unitOfWork.ServiceLevels.Query().Where(l => l.IsActive)
+            .OrderBy(l => l.SortOrder).ThenBy(l => l.Name).Select(l => l.Name).ToListAsync(ct);
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Guests");
+
+        for (var i = 0; i < GuestImportHeaders.Length; i++)
+        {
+            var cell = ws.Cell(1, i + 1);
+            cell.Value = GuestImportHeaders[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Font.FontColor = XLColor.White;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#8d0134");
+        }
+        ws.SheetView.FreezeRows(1);
+        for (var i = 1; i <= GuestImportHeaders.Length; i++) ws.Column(i).Width = 22;
+        ws.Column(3).Width = 28; // Email
+
+        // Hidden helper sheet for the dropdown columns' source lists — same
+        // pattern as the Events import template. Each list gets its own
+        // column on "Lists" (A, B, C, D — in the same order as `lists`).
+        var listSheet = wb.Worksheets.Add("Lists");
+        var lists = new[] { guestTypeNames, orgNames, nationalityNames, levelNames };
+        for (var c = 0; c < lists.Length; c++)
+            for (var i = 0; i < lists[c].Count; i++)
+                listSheet.Cell(i + 1, c + 1).Value = lists[c][i];
+        listSheet.Visibility = XLWorksheetVisibility.VeryHidden;
+
+        void Dropdown(int col, int listCol, List<string> values, string title, string error)
+        {
+            if (values.Count == 0) return;
+            var letter = (char)('A' + listCol);
+            var range = $"Lists!${letter}$1:${letter}${values.Count}";
+            var dv = ws.Range(2, col, GuestImportTemplateRows, col).SetDataValidation();
+            dv.List(range, true);
+            dv.IgnoreBlanks = true;
+            dv.ErrorStyle = XLErrorStyle.Stop;
+            dv.ErrorTitle = title;
+            dv.ErrorMessage = error;
+        }
+
+        Dropdown(4, 0, guestTypeNames, "Invalid Guest Type", "Please pick a Guest Type from the dropdown — typing a value that isn't listed is not allowed.");
+        Dropdown(5, 1, orgNames, "Invalid Organization", "Please pick an Organization from the dropdown, or leave this blank.");
+        Dropdown(6, 2, nationalityNames, "Invalid Nationality", "Please pick a Nationality from the dropdown, or leave this blank.");
+        Dropdown(7, 3, levelNames, "Invalid Service Level", "Please pick a Service Level from the dropdown, or leave this blank — you can assign one later from the Travel & Logistics page.");
+
+        // Accreditation Required — a fixed TRUE/FALSE choice, not tied to a
+        // live list, so it goes straight on the sheet rather than through Lists.
+        var accredDv = ws.Range(2, 10, GuestImportTemplateRows, 10).SetDataValidation();
+        accredDv.List("TRUE,FALSE", true);
+        accredDv.IgnoreBlanks = true;
+        accredDv.ErrorStyle = XLErrorStyle.Stop;
+        accredDv.ErrorTitle = "Invalid value";
+        accredDv.ErrorMessage = "Please pick TRUE or FALSE from the dropdown.";
+
+        // Date validation (not just number formatting) is what makes Excel show
+        // the calendar picker on these cells, bounded to this event's own dates
+        // (with a week's slack either side — see GuestImportDateMarginDays).
+        var minDate = eventEntity?.StartDate?.AddDays(-GuestImportDateMarginDays);
+        var maxDate = eventEntity?.EndDate?.AddDays(GuestImportDateMarginDays);
+        foreach (var col in new[] { 8, 9 })
+        {
+            ws.Column(col).Style.DateFormat.Format = "yyyy-mm-dd";
+            if (minDate.HasValue && maxDate.HasValue)
+            {
+                var dvDate = ws.Range(2, col, GuestImportTemplateRows, col).SetDataValidation();
+                dvDate.Date.Between(minDate.Value.ToDateTime(TimeOnly.MinValue), maxDate.Value.ToDateTime(TimeOnly.MinValue));
+                dvDate.IgnoreBlanks = true;
+                dvDate.ErrorStyle = XLErrorStyle.Stop;
+                dvDate.ErrorTitle = "Invalid Date";
+                dvDate.ErrorMessage = $"Date must be between {minDate:yyyy-MM-dd} and {maxDate:yyyy-MM-dd} — this event's dates, with a week's slack either side.";
+            }
+        }
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return stream.ToArray();
+    }
 
     private static bool ParseCsvBool(string value)
     {
@@ -1078,18 +1283,4 @@ public class GuestService(
             .Select(s => s.Id)
             .ToListAsync(ct);
     }
-}
-
-sealed class GuestRow
-{
-    public string FirstName { get; set; }
-    public string LastName { get; set; }
-    public string Email { get; set; }
-    public string GuestType { get; set; }
-    public string Organization { get; set; }
-    public string Nationality { get; set; }  // matched by Name or Code
-    public string Tier { get; set; }
-    public string ArrivalDate { get; set; }  // "YYYY-MM-DD" string
-    public string DepartureDate { get; set; }  // "YYYY-MM-DD" string
-    public string AccreditationRequired { get; set; }  // "true"/"yes"/"1"/"required"
 }

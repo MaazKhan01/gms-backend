@@ -69,8 +69,8 @@ public class GuestController(IGuestService _guestService, IImportBatchService _i
         if (file == null || file.Length == 0)
             return Ok(ApiResponse<object>.ErrorResponse("Please upload a file"));
 
-        if (!file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-            return Ok(ApiResponse<object>.ErrorResponse("Only CSV files are allowed"));
+        if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            return Ok(ApiResponse<object>.ErrorResponse("Only the .xlsx import template is allowed — download a fresh one from this dialog."));
 
         using var stream = file.OpenReadStream();
         var result = await _guestService.StartGuestsImportAsync(eventId, stream, file.FileName, _currentUser.UserId, ct);
@@ -83,6 +83,17 @@ public class GuestController(IGuestService _guestService, IImportBatchService _i
     [HasPermission(PermissionCodes.GuestsImport)]
     public async Task<IActionResult> GetImportBatchStatus(Guid batchId, CancellationToken ct)
         => ToResponse(await _importBatchService.GetStatusAsync(batchId, ct));
+
+    // The downloadable .xlsx template — dropdowns and the date columns' valid
+    // range are built from this event's own current data every time it's
+    // exported, so it can never go stale the way a static file would.
+    [HttpGet("import-template")]
+    [HasPermission(PermissionCodes.GuestsImport)]
+    public async Task<IActionResult> GetImportTemplate([FromQuery] Guid eventId, CancellationToken ct)
+    {
+        var bytes = await _guestService.BuildGuestImportTemplateAsync(eventId, ct);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "guest-import-template.xlsx");
+    }
 
     [HttpDelete("{id:guid}")]
     [HasPermission(PermissionCodes.GuestsDelete)]

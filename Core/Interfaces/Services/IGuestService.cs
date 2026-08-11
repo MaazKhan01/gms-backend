@@ -19,10 +19,14 @@ public interface IGuestService
     Task<ApiResponse<PaginatedResponse<OtherEventGuestRow>>> GetGuestsFromOtherEventsAsync(Guid currentEventId, PagedRequest request, CancellationToken ct = default);
     Task<ApiResponse<GuestResponse>> CreateGuestAsync(CreateGuestRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> BulkGuestsDeleteAsync(Guid eventId,DeleteMultipleGuests request, CancellationToken ct = default);
-    // Bulk import — uploads the CSV to blob storage and enqueues a Hangfire job
+    // Bulk import — uploads the file to blob storage and enqueues a Hangfire job
     // (ProcessGuestsImportBatchAsync); the caller polls IImportBatchService.GetStatusAsync.
-    Task<ApiResponse<StartImportResponse>> StartGuestsImportAsync(Guid eventId, Stream csvStream, string fileName, int createdBy, CancellationToken ct);
+    Task<ApiResponse<StartImportResponse>> StartGuestsImportAsync(Guid eventId, Stream fileStream, string fileName, int createdBy, CancellationToken ct);
     Task ProcessGuestsImportBatchAsync(Guid batchId, CancellationToken ct = default);
+    // The downloadable .xlsx template — dropdowns (Guest Type, Organization,
+    // Nationality, Service Level) and the date columns' valid range are all
+    // built from this event's own current data, not a static file.
+    Task<byte[]> BuildGuestImportTemplateAsync(Guid eventId, CancellationToken ct = default);
     Task<ApiResponse<GuestResponse>> UpdateGuestAsync( CreateGuestRequest request, CancellationToken ct);
     Task<ApiResponse<bool>> IssueAccreditationAsync(Guid guestId, CancellationToken ct = default);
     Task<ApiResponse<bool>> RevokeAccreditationAsync(Guid guestId, CancellationToken ct = default);
