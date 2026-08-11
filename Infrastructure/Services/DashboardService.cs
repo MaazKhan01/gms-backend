@@ -82,6 +82,13 @@ namespace Infrastructure.Services
                 var seatedGuestIds = (await _unitOfWork.SeatAssigns.Query()
                     .Where(sa => guestIds.Contains(sa.GuestId)).Select(sa => sa.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
 
+                var sessionGuestCounts = (await _unitOfWork.GuestSessions.Query()
+                        .Where(gs => guestIds.Contains(gs.GuestId))
+                        .GroupBy(gs => gs.SessionId)
+                        .Select(gr => new { SessionId = gr.Key, Count = gr.Count() })
+                        .ToListAsync(ct))
+                    .ToDictionary(x => x.SessionId, x => x.Count);
+
                 // Lookups for the breakdown charts, pulled as dictionaries rather
                 // than joined per guest so a list of any size costs three queries.
                 // Levels are global in v2, so the breakdown lists every level and
@@ -111,6 +118,7 @@ namespace Infrastructure.Services
                             Time = s.Time,
                             Room = s.Room,
                             ImageUrl = s.ImageUrl,
+                            GuestCount = sessionGuestCounts.TryGetValue(s.Id, out var gc) ? gc : 0,
                         })
                         .ToList(),
 

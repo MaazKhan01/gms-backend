@@ -94,6 +94,10 @@ namespace Core.ViewModel.Dashboard
         public string Time { get; set; }
         public string? Room { get; set; }
         public string? ImageUrl { get; set; }
+
+        /// <summary>Guests checked into this session (GuestSession rows), scoped
+        /// to this event's guest list.</summary>
+        public int GuestCount { get; set; }
     }
 
     // All counts are scoped to the event's own guest list.
