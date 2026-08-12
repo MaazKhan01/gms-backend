@@ -177,10 +177,7 @@ public class TransportRequest
 {
     public Guid PickupLocationId { get; set; }
     public Guid DropoffLocationId { get; set; }
-    /// <summary>Chosen vehicle (GET /v1/vehicles). Optional — dispatch can fill it later.</summary>
-    public Guid? VehicleId { get; set; }
     public DateTime? PickupTime { get; set; }
-    public DateTime? DropoffTime { get; set; }
 }
 
 public class DriverResponse

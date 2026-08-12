@@ -112,7 +112,7 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
         => ToResponse(await _travel.CreateAirportAsync(request, _currentUser.UserId, ct));
 
     [HttpPost("locations")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    //[HasPermission(PermissionCodes.TravelManage)]
     public async Task<IActionResult> CreateLocation([FromBody] LocationRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateLocationAsync(request, _currentUser.UserId, ct));
 

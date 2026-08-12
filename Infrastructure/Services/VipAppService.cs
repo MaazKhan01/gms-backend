@@ -37,6 +37,7 @@ public class VipAppService(
     IConfiguration _configuration,
     IEmailService _emailService,
     ITransportationConflictValidator _conflictValidator,
+    IRideMirror _rideMirror,
     ILogger<VipAppService> _logger) : IVipAppService
 {
     private const string OtpPurpose = "guest-login";
@@ -722,37 +723,12 @@ public class VipAppService(
             var dropoffId = await ResolveLocationIdAsync(request.DropoffLocationId, ct);
             if (dropoffId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid drop-off location");
 
-            int? vehicleId = null;
-            if (request.VehicleId is { } vid && vid != Guid.Empty)
-            {
-                vehicleId = (await _unitOfWork.Vehicles.Query()
-                    .Where(v => v.PublicId == vid).Select(v => (int?)v.Id).FirstOrDefaultAsync(ct));
-                if (vehicleId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid vehicle");
-            }
-
-            if (request.PickupTime != null && request.DropoffTime != null && request.DropoffTime < request.PickupTime)
-                return ApiResponse<TransportationResponse>.ErrorResponse("Drop-off time cannot be before pickup time");
-
-            // A guest picking a specific car can't be allowed to take one that's
-            // already out. No drop-off asked of them (they don't know it yet) —
-            // the policy's default ride duration stands in for the busy window.
-            if (vehicleId.HasValue && request.PickupTime is { } requestedPickup)
-            {
-                var vehicleConflict = await _conflictValidator.CheckVehicleConflictAsync(
-                    vehicleId.Value, requestedPickup, request.DropoffTime, ct: ct);
-                if (vehicleConflict.HasConflict)
-                    return ApiResponse<TransportationResponse>.ErrorResponse(
-                        "That vehicle is already booked for the requested time. Please choose another.");
-            }
-
             var transport = new Transport
             {
                 GuestId = guest.Id,
                 PickupLocationId = pickupId,
                 DropoffLocationId = dropoffId,
-                VehicleId = vehicleId,
                 PickupTime = request.PickupTime,
-                DropoffTime = request.DropoffTime,
                 // No driver yet — "new" is the pool drivers accept from.
                 TripStatus = TransportStatuses.New,
                 // Mirrors "scheduled" set by TransportationScheduleService.
@@ -761,6 +737,11 @@ public class VipAppService(
 
             await _unitOfWork.Transports.AddAsync(transport, ct);
             await _unitOfWork.SaveChangesAsync(ct);
+
+            // Into Firestore as status "new" — this is what puts the request in
+            // front of the drivers. Best-effort: a Firestore outage still leaves
+            // the row in SQL, where the driver app's /available-jobs also finds it.
+            await _rideMirror.SyncAsync(transport.PublicId, ct);
 
             var created = await _unitOfWork.Transports.QueryNoTracking()
                 .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
@@ -800,7 +781,11 @@ public class VipAppService(
                     .SetProperty(t => t.UpdatedAt, DateTime.UtcNow), ct);
 
             if (cancelled > 0)
+            {
+                // Drops it out of the drivers' pool listener as well.
+                await _rideMirror.SyncAsync(transportId, ct);
                 return ApiResponse<bool>.SuccessResponse(true, "Transport request cancelled");
+            }
 
             // 0 rows — separate "not yours/not there" from "too late", so the app
             // can tell the guest why the button did nothing.

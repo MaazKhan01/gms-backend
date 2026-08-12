@@ -23,7 +23,9 @@ namespace Infrastructure.Services;
 // can only ever see or touch transfers assigned to them.
 public class TransportAppService(
     IUnitOfWork _unitOfWork,
-    INotificationManagerService _notifications, ILogger<TransportAppService> _logger) : ITransportAppService
+    INotificationManagerService _notifications,
+    IRideMirror _rideMirror,
+    ILogger<TransportAppService> _logger) : ITransportAppService
 {
     public async Task<ApiResponse<DriverStatsResponse>> GetStatsAsync(
         int userId, Guid? eventId = null, CancellationToken ct = default)
@@ -513,6 +515,10 @@ public class TransportAppService(
                     : ApiResponse<DriverJobResponse>.NotFoundResponse("Job not found");
             }
 
+            // Same Firestore doc the guest is listening on: status flips to
+            // "assigned" and the driver block (id/name/phone/photo) appears.
+            await _rideMirror.SyncAsync(jobId, ct);
+
             var job = await _unitOfWork.Transports.QueryNoTracking()
                 .Where(t => t.PublicId == jobId)
                 .Select(Project)
@@ -602,6 +608,10 @@ public class TransportAppService(
                         ["transportId"] = job.PublicId.ToString(),
                         ["status"] = next,
                     }, ct);
+
+            // Keep the mirrored doc walking the same lifecycle — otherwise it
+            // freezes at "assigned" and the guest's live screen goes stale.
+            await _rideMirror.SyncAsync(job.PublicId, ct);
 
             var updated = await _unitOfWork.Transports.Query()
                 .Where(t => t.Id == job.Id)

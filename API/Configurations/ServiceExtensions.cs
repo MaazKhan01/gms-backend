@@ -91,6 +91,9 @@ public static class ServiceExtensions
         services.AddScoped<IConflictWindowPolicy, ZeroBufferConflictWindowPolicy>();
         services.AddScoped<ITransportationConflictValidator, TransportationConflictValidator>();
         services.AddScoped<ITransportationScheduleService, TransportationScheduleService>();
+        // Firestore projection of rides, so the driver/VIP apps can listen instead
+        // of poll. Best-effort — no-ops when Firebase isn't configured.
+        services.AddScoped<IRideMirror, RideMirror>();
 
         // Notification services
         services.AddScoped<INotificationService, NotificationService>();
