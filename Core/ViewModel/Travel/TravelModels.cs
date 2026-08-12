@@ -124,6 +124,8 @@ public class EventFlightRow
     public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
     public string Status { get; set; }
     public string FlightType { get; set; }
     public string FlightClass { get; set; }
@@ -172,6 +174,8 @@ public class ArrivalDepartureRow
     public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
 
     // A guest may hold more than one booking in either direction.
     public List<ArrivalDepartureFlight> Inbound { get; set; } = [];
@@ -223,6 +227,8 @@ public class EventAccommodationRow
     public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
     public string Hotel { get; set; }
     public string HotelImageUrl { get; set; }
     public string RoomType { get; set; }
@@ -243,6 +249,8 @@ public class EventTransportRow
     public string Email { get; set; }
     public string Organization { get; set; }
     public string Tier { get; set; }
+    public string ServiceLevelName { get; set; }
+    public string ServiceLevelColor { get; set; }
     // Display label for the assigned vehicle: "AB-1234 · Toyota Land Cruiser".
     public string Vehicle { get; set; }
     public Guid? DriverId { get; set; }

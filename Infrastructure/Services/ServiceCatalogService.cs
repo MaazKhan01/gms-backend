@@ -753,7 +753,7 @@ public class ServiceCatalogService(
                 ["Arrives"] = f.Legs.Count > 0
                     ? string.Join(" / ", f.Legs.Select(l => Text(l.EndTime)))
                     : Text(f.ArrivalTime),
-                ["Status"] = f.Status,
+                ["Flight Status"] = f.Status,
             })).ToList();
         }
 

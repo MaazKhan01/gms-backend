@@ -248,6 +248,8 @@ public class TravelService(
                 Email = f.Guest.Email,
                 Organization = f.Guest.Organization,
                 Tier = f.Guest.Tier,
+                ServiceLevelName = f.Guest.ServiceLevel != null ? f.Guest.ServiceLevel.Name : null,
+                ServiceLevelColor = f.Guest.ServiceLevel != null ? f.Guest.ServiceLevel.Color : null,
                 Status = f.Status,
                 FlightClass = f.FlightClass.Name,
                 Seat = f.Seat,
@@ -334,7 +336,9 @@ public class TravelService(
                 Email = a.Guest.Email,
                 Organization = a.Guest.Organization,
                 Tier = a.Guest.Tier,
+                ServiceLevelName = a.Guest.ServiceLevel != null ? a.Guest.ServiceLevel.Name : null,
                 Hotel = a.Hotel.Name,
+                ServiceLevelColor = a.Guest.ServiceLevel != null ? a.Guest.ServiceLevel.Color : null,
                 HotelImageUrl = a.Hotel.ImageUrl,
                 RoomType = a.RoomType.Name,
                 CheckIn = a.CheckIn,
@@ -377,8 +381,10 @@ public class TravelService(
                 Email = t.Guest.Email,
                 Organization = t.Guest.Organization,
                 Tier = t.Guest.Tier,
+                ServiceLevelName = t.Guest.ServiceLevel != null ? t.Guest.ServiceLevel.Name : null,
                 Vehicle = t.Vehicle == null ? null : (t.Vehicle.VehicleNumber + " · " + t.Vehicle.VehicleModel),
                 DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
+                ServiceLevelColor = t.Guest.ServiceLevel != null ? t.Guest.ServiceLevel.Color : null,
                 DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
                 DriverType = t.Driver == null ? null : (int?)t.Driver.DriverType,
                 Pickup = t.PickupLocation.Address,
@@ -475,6 +481,8 @@ public class TravelService(
                 Email = g.Email,
                 Organization = g.Organization,
                 Tier = g.Tier,
+                ServiceLevelName = g.ServiceLevel != null ? g.ServiceLevel.Name : null,
+                ServiceLevelColor = g.ServiceLevel != null ? g.ServiceLevel.Color : null,
             })
             .ToListAsync(ct);
 
