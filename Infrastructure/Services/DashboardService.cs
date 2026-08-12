@@ -155,6 +155,7 @@ namespace Infrastructure.Services
                             PhotoUrl = g.PhotoUrl,
                             Organization = g.Organization,
                             ServiceLevelName = g.ServiceLevel?.Name,
+                            ServiceLevelColor = g.ServiceLevel?.Color,
                             InvitationStatus = invitations.TryGetValue(g.Id, out var inv) ? inv.InvitationStatus : null,
                         })
                         .ToList(),

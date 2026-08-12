@@ -135,6 +135,7 @@ namespace Core.ViewModel.Dashboard
         // Guest.Tier is a legacy mirror string — this is the real per-event grade
         // (Core/Constants ServiceLevel), null when the guest has none assigned.
         public string? ServiceLevelName { get; set; }
+        public string? ServiceLevelColor { get; set; }
         public string? InvitationStatus { get; set; }
         public DateOnly? ArrivalDate { get; set; }
     }
