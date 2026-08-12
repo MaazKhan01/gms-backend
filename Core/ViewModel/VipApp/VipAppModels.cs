@@ -177,7 +177,7 @@ public class TransportRequest
 {
     public Guid PickupLocationId { get; set; }
     public Guid DropoffLocationId { get; set; }
-    public DateTime? PickupTime { get; set; }
+    public Guid EventId { get; set; }
 }
 
 public class DriverResponse

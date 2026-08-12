@@ -728,7 +728,7 @@ public class VipAppService(
                 GuestId = guest.Id,
                 PickupLocationId = pickupId,
                 DropoffLocationId = dropoffId,
-                PickupTime = request.PickupTime,
+                PickupTime = DateTime.Now,
                 // No driver yet — "new" is the pool drivers accept from.
                 TripStatus = TransportStatuses.New,
                 // Mirrors "scheduled" set by TransportationScheduleService.
