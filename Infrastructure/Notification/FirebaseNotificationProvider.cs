@@ -131,7 +131,12 @@ public class FirebaseNotificationProvider(
 
             try
             {
+                // Same base-directory resolution as RideMirror — a relative path from
+                // config must not depend on the working directory being the app folder.
                 var keyPath = _configuration["Firebase:ServiceAccountKeyPath"];
+                if (!string.IsNullOrWhiteSpace(keyPath) && !Path.IsPathRooted(keyPath))
+                    keyPath = Path.Combine(AppContext.BaseDirectory, keyPath);
+
                 var inlineJson = _configuration["Firebase:ServiceAccountJson"];
                 var projectId = _configuration["Firebase:ProjectId"];
 

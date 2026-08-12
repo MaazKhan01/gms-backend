@@ -147,10 +147,13 @@ public class RideMirror(
                 ["updatedAt"] = DateTime.UtcNow,
             };
 
-            // Whole-document write, not a merge: the doc is rebuilt from SQL every
-            // time, so a field that went null (driver unassigned) actually clears.
+            // MergeAll, not a plain overwrite. Every field above is present on each
+            // sync, so one that went null (driver unassigned) still clears — but
+            // `currentLocation` is owned by the driver app, which writes it straight
+            // into this document from the client SDK. A plain SetAsync would wipe
+            // the driver's live position on the next status change.
             await db.Collection(Collection).Document(t.PublicId.ToString())
-                .SetAsync(doc, cancellationToken: ct);
+                .SetAsync(doc, SetOptions.MergeAll, ct);
         }
         catch (Exception ex)
         {
@@ -184,7 +187,13 @@ public class RideMirror(
                     return null;
                 }
 
+                // Resolved against the assembly's folder, not the working directory:
+                // deployed as a service the CWD can be System32, where the relative
+                // path from config never finds the key that publish did copy.
                 var keyPath = _configuration["Firebase:ServiceAccountKeyPath"];
+                if (!string.IsNullOrWhiteSpace(keyPath) && !Path.IsPathRooted(keyPath))
+                    keyPath = Path.Combine(AppContext.BaseDirectory, keyPath);
+
                 var inlineJson = _configuration["Firebase:ServiceAccountJson"];
 
                 // Unset => "(default)", which is what the console creates unless you
