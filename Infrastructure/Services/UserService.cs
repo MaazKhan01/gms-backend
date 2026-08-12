@@ -466,18 +466,6 @@ public class UserService(
         }
     }
 
-    // Awaited, not a detached Task.Run — a fire-and-forget task here outlives
-    // the request's DI scope (IEmailService is Scoped) and isn't tied to the
-    // request lifetime at all, so on a process recycle/idle-shutdown it can be
-    // abandoned mid-send with no exception ever thrown and nothing logged.
-    // Awaiting it keeps the send inside the request, and any failure is both
-    // logged at Error level and reflected in the response message so it's
-    // never silently lost.
-    // Returns the provider's own reason on failure, not just false — it's the only
-    // way an admin ever learns WHY (the portal drops the response message, and
-    // "no email arrived" is indistinguishable from a throttled/rejected send
-    // without it). Azure Communication Services surfaces quota/throttling as a
-    // RequestFailedException, so its status + error code are worth keeping.
     private async Task<(bool Sent, string Error)> TrySendInviteEmailAsync(User user, string roleName, CancellationToken ct)
     {
         var acceptUrl = $"{FrontendUrl}/?screen=userInvite&token={user.InviteToken}";
