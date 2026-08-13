@@ -180,6 +180,12 @@ public class TransportRequest
     public Guid EventId { get; set; }
 }
 
+/// <summary>Guest cancelling their own transport request.</summary>
+public class CancelTransportRequest
+{
+    public Guid Id { get; set; }
+}
+
 public class DriverResponse
 {
     public string Name { get; set; }
