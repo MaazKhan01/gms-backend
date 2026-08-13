@@ -92,26 +92,34 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.ReviewedBy, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedUserId, opt => opt.Ignore());
 
-        // Guest mappings
-        CreateMap<Guest, GuestResponse>()
+        // Guest mappings — sourced from EventGuest (the participation), not Guest
+        // (the person), because that is what GuestResponse describes: one person's
+        // involvement in one event. Person-level fields come through src.Guest.
+        CreateMap<EventGuest, GuestResponse>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
+            .ForMember(dest => dest.PersonId, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.PublicId : Guid.Empty))
             .ForMember(dest => dest.EventId, opt => opt.MapFrom(src => src.Event != null ? src.Event.PublicId : Guid.Empty))
-            .ForMember(dest => dest.NationalityId, opt => opt.MapFrom(src => src.Nationality != null ? (Guid?)src.Nationality.PublicId : null))
+            // ── person-level, reached through the join ─────────────────────────
+            .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.FirstName : null))
+            .ForMember(dest => dest.LastName, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.LastName : null))
+            .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.Email : null))
+            .ForMember(dest => dest.PhotoUrl, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.PhotoUrl : null))
+            .ForMember(dest => dest.NationalityId,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? (Guid?)src.Guest.Nationality.PublicId : null))
+            .ForMember(dest => dest.NationalityName,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Name : null))
+            .ForMember(dest => dest.NationalityCode,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Code : null))
+            .ForMember(dest => dest.NationalityFlag,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Flag : null))
+            // ── per-event ─────────────────────────────────────────────────────
             .ForMember(dest => dest.SessionIds,
                 opt => opt.MapFrom(src => src.GuestSessions.Select(gs => gs.Session.PublicId).ToList()))
-            .ForMember(dest => dest.NationalityName,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Name : null))
-            .ForMember(dest => dest.NationalityCode,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Code : null))
-            .ForMember(dest => dest.NationalityFlag,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Flag : null))
             .ForMember(dest => dest.OrganizationId,
                 opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null))
             // Stored as JSON on the entity, a plain int list on the wire.
             .ForMember(dest => dest.AllowedServices,
                 opt => opt.MapFrom(src => GuestServices.Parse(src.AllowedServicesJson)))
-            // Per-event grade (replaces the old hardcoded Tier). Tier itself still
-            // maps by convention, mirrored from ServiceLevel.Code by GuestService.
             .ForMember(dest => dest.ServiceLevelId,
                 opt => opt.MapFrom(src => src.ServiceLevel != null ? (Guid?)src.ServiceLevel.PublicId : null))
             .ForMember(dest => dest.ServiceLevelName,

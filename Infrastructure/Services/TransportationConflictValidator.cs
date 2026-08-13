@@ -32,7 +32,7 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
         // still waiting for a driver — a guest can't be in two cars at one time
         // regardless of which flow booked them.
         var bookedTimes = await _unitOfWork.Transports.Query()
-            .Where(t => t.GuestId == guestId
+            .Where(t => t.EventGuestId == guestId
                 && TransportStatuses.Live.Contains(t.TripStatus)
                 && t.PickupTime >= dayStart && t.PickupTime < dayEnd
                 && (excludeTransportId == null || t.Id != excludeTransportId))

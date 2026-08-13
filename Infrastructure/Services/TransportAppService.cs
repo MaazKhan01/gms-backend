@@ -315,15 +315,15 @@ public class TransportAppService(
                 Id = t.PublicId,
                 JobNumber = "VIP-" + t.Id,
                 Status = t.TripStatus,
-                EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
-                EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,
-                GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
-                GuestUserId = t.Guest.User.PublicId,
-                GuestTier = t.Guest.Tier,
-                GuestType = t.Guest.GuestType,
-                GuestOrganization = t.Guest.Organization,
-                GuestEmail = t.Guest.Email,
-                GuestPhotoUrl = t.Guest.PhotoUrl,
+                EventId = t.EventGuest.Event == null ? null : t.EventGuest.Event.PublicId,
+                EventName = t.EventGuest.Event == null ? null : t.EventGuest.Event.Title,
+                GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+                GuestUserId = t.EventGuest.Guest.User.PublicId,
+                GuestTier = t.EventGuest.ServiceLevel == null ? null : t.EventGuest.ServiceLevel.Name,
+                GuestType = t.EventGuest.GuestType,
+                GuestOrganization = t.EventGuest.Organization,
+                GuestEmail = t.EventGuest.Guest.Email,
+                GuestPhotoUrl = t.EventGuest.Guest.PhotoUrl,
                 Pickup = t.PickupLocation == null ? null : new JobLocationResponse
                 {
                     Id = t.PickupLocation.PublicId,
@@ -376,9 +376,9 @@ public class TransportAppService(
             {
                 Id = t.PublicId,
                 JobNumber = "VIP-" + t.Id,
-                EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
-                EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,
-                GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+                EventId = t.EventGuest.Event == null ? null : t.EventGuest.Event.PublicId,
+                EventName = t.EventGuest.Event == null ? null : t.EventGuest.Event.Title,
+                GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
                 Pickup = t.PickupLocation == null ? null : t.PickupLocation.Address,
                 Dropoff = t.DropoffLocation == null ? null : t.DropoffLocation.Address,
                 PickupTime = t.PickupTime,
@@ -426,13 +426,13 @@ public class TransportAppService(
         // Only events the driver actually has transfers on — grouped so the app
         // gets the job count per event without a second call.
         var events = await ScopedJobs(driverId, null)
-            .Where(t => t.Guest.Event != null)
+            .Where(t => t.EventGuest.Event != null)
             .GroupBy(t => new
             {
-                t.Guest.Event.PublicId,
-                t.Guest.Event.Title,
-                t.Guest.Event.StartDate,
-                t.Guest.Event.EndDate
+                t.EventGuest.Event.PublicId,
+                t.EventGuest.Event.Title,
+                t.EventGuest.Event.StartDate,
+                t.EventGuest.Event.EndDate
             })
             .Select(g => new DriverEventResponse
             {
@@ -465,7 +465,7 @@ public class TransportAppService(
             .Where(t => t.TripStatus == TransportStatuses.New && t.DriverId == null);
 
         if (eventId != null)
-            query = query.Where(t => t.Guest.Event.PublicId == eventId.Value);
+            query = query.Where(t => t.EventGuest.Event.PublicId == eventId.Value);
 
         var jobs = await query
             .OrderBy(t => t.PickupTime == null)
@@ -602,7 +602,7 @@ public class TransportAppService(
                 _ => null,
             };
             if (guestTemplate != null)
-                await _notifications.SendToGuestAsync(job.GuestId, guestTemplate,
+                await _notifications.SendToGuestAsync(job.EventGuestId, guestTemplate,
                     new Dictionary<string, string>
                     {
                         ["transportId"] = job.PublicId.ToString(),
@@ -664,7 +664,7 @@ public class TransportAppService(
     private IQueryable<Transport> ScopedJobs(int? driverId, Guid? eventId)
     {
         var q = _unitOfWork.Transports.Query().Where(t => t.DriverId == driverId);
-        return eventId == null ? q : q.Where(t => t.Guest.Event.PublicId == eventId.Value);
+        return eventId == null ? q : q.Where(t => t.EventGuest.Event.PublicId == eventId.Value);
     }
 
     // The caller's driver profile in the two shapes the open-job pool needs:
@@ -690,10 +690,10 @@ public class TransportAppService(
         Id = t.PublicId,
         JobNumber = "VIP-" + t.Id,
         Status = t.TripStatus,
-        EventId = t.Guest.Event == null ? null : t.Guest.Event.PublicId,
-        EventName = t.Guest.Event == null ? null : t.Guest.Event.Title,
-        GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
-        GuestTier = t.Guest.Tier,
+        EventId = t.EventGuest.Event == null ? null : t.EventGuest.Event.PublicId,
+        EventName = t.EventGuest.Event == null ? null : t.EventGuest.Event.Title,
+        GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+        GuestTier = t.EventGuest.ServiceLevel == null ? null : t.EventGuest.ServiceLevel.Name,
         Pickup = t.PickupLocation == null ? null : t.PickupLocation.Address,
         Dropoff = t.DropoffLocation == null ? null : t.DropoffLocation.Address,
         PickupTime = t.PickupTime,

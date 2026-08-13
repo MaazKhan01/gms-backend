@@ -126,7 +126,7 @@ public class TravelService(
     public async Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(
         Guid guestId, Guid? bookingId = null, CancellationToken ct = default)
     {
-        var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+        var guest = await _unitOfWork.EventGuests.GetByPublicIdAsync(guestId, ct);
         if (guest == null) return ApiResponse<GuestTravelResponse>.NotFoundResponse("Guest not found");
 
         var data = new GuestTravelResponse
@@ -144,7 +144,7 @@ public class TravelService(
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
             .Include(f => f.Legs).ThenInclude(l => l.FlightClass)
-            .Where(f => f.GuestId == guest.Id && (bookingId == null || f.PublicId == bookingId))
+            .Where(f => f.EventGuestId == guest.Id && (bookingId == null || f.PublicId == bookingId))
             .OrderByDescending(f => f.Id)
             .FirstOrDefaultAsync(ct);
         if (flight != null)
@@ -177,7 +177,7 @@ public class TravelService(
 
         var acc = await _unitOfWork.Accommodations.Query()
             .Include(a => a.Hotel).Include(a => a.RoomType)
-            .Where(a => a.GuestId == guest.Id && (bookingId == null || a.PublicId == bookingId))
+            .Where(a => a.EventGuestId == guest.Id && (bookingId == null || a.PublicId == bookingId))
             .OrderByDescending(a => a.Id)
             .FirstOrDefaultAsync(ct);
         if (acc != null)
@@ -194,7 +194,7 @@ public class TravelService(
         var tr = await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation).Include(t => t.Vehicle)
             .Include(t => t.Driver)
-            .Where(t => t.GuestId == guest.Id && (bookingId == null || t.PublicId == bookingId))
+            .Where(t => t.EventGuestId == guest.Id && (bookingId == null || t.PublicId == bookingId))
             .OrderByDescending(t => t.Id)
             .FirstOrDefaultAsync(ct);
         if (tr != null)
@@ -221,13 +221,13 @@ public class TravelService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev == null) return ApiResponse<PaginatedResponse<EventFlightRow>>.NotFoundResponse("Event not found");
 
-        var query = _unitOfWork.Flights.Query().Where(f => f.Guest.EventId == ev.Id);
+        var query = _unitOfWork.Flights.Query().Where(f => f.EventGuest.EventId == ev.Id);
 
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
         {
             var term = request.SearchTerm.Trim();
             query = query.Where(f =>
-                (f.Guest.FirstName + " " + f.Guest.LastName).Contains(term) ||
+                (f.EventGuest.Guest.FirstName + " " + f.EventGuest.Guest.LastName).Contains(term) ||
                 f.Legs.Any(l => l.FlightNumber.Contains(term)));
         }
 
@@ -236,20 +236,20 @@ public class TravelService(
         // FlightType is an enum column — projected raw and turned into its code
         // in memory, since EF can't translate the mapping.
         var rawRows = await query
-            .OrderBy(f => f.Guest.FirstName).ThenBy(f => f.Guest.LastName)
+            .OrderBy(f => f.EventGuest.Guest.FirstName).ThenBy(f => f.EventGuest.Guest.LastName)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .Select(f => new { Type = f.FlightType, Row = new EventFlightRow
             {
                 Id = f.PublicId,
-                GuestId = f.Guest.PublicId,
-                GuestName = (f.Guest.FirstName + " " + f.Guest.LastName).Trim(),
-                PhotoUrl = f.Guest.PhotoUrl,
-                Email = f.Guest.Email,
-                Organization = f.Guest.Organization,
-                Tier = f.Guest.Tier,
-                ServiceLevelName = f.Guest.ServiceLevel != null ? f.Guest.ServiceLevel.Name : null,
-                ServiceLevelColor = f.Guest.ServiceLevel != null ? f.Guest.ServiceLevel.Color : null,
+                GuestId = f.EventGuest.PublicId,
+                GuestName = (f.EventGuest.Guest.FirstName + " " + f.EventGuest.Guest.LastName).Trim(),
+                PhotoUrl = f.EventGuest.Guest.PhotoUrl,
+                Email = f.EventGuest.Guest.Email,
+                Organization = f.EventGuest.Organization,
+                Tier = f.EventGuest.ServiceLevel == null ? null : f.EventGuest.ServiceLevel.Name,
+                ServiceLevelName = f.EventGuest.ServiceLevel != null ? f.EventGuest.ServiceLevel.Name : null,
+                ServiceLevelColor = f.EventGuest.ServiceLevel != null ? f.EventGuest.ServiceLevel.Color : null,
                 Status = f.Status,
                 FlightClass = f.FlightClass.Name,
                 Seat = f.Seat,
@@ -311,34 +311,34 @@ public class TravelService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev == null) return ApiResponse<PaginatedResponse<EventAccommodationRow>>.NotFoundResponse("Event not found");
 
-        var query = _unitOfWork.Accommodations.Query().Where(a => a.Guest.EventId == ev.Id);
+        var query = _unitOfWork.Accommodations.Query().Where(a => a.EventGuest.EventId == ev.Id);
 
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
         {
             var term = request.SearchTerm.Trim();
             query = query.Where(a =>
-                (a.Guest.FirstName + " " + a.Guest.LastName).Contains(term) ||
+                (a.EventGuest.Guest.FirstName + " " + a.EventGuest.Guest.LastName).Contains(term) ||
                 a.Hotel.Name.Contains(term));
         }
 
         var total = await query.CountAsync(ct);
 
         var data = await query
-            .OrderBy(a => a.Guest.FirstName).ThenBy(a => a.Guest.LastName)
+            .OrderBy(a => a.EventGuest.Guest.FirstName).ThenBy(a => a.EventGuest.Guest.LastName)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .Select(a => new EventAccommodationRow
             {
                 Id = a.PublicId,
-                GuestId = a.Guest.PublicId,
-                GuestName = (a.Guest.FirstName + " " + a.Guest.LastName).Trim(),
-                PhotoUrl = a.Guest.PhotoUrl,
-                Email = a.Guest.Email,
-                Organization = a.Guest.Organization,
-                Tier = a.Guest.Tier,
-                ServiceLevelName = a.Guest.ServiceLevel != null ? a.Guest.ServiceLevel.Name : null,
+                GuestId = a.EventGuest.PublicId,
+                GuestName = (a.EventGuest.Guest.FirstName + " " + a.EventGuest.Guest.LastName).Trim(),
+                PhotoUrl = a.EventGuest.Guest.PhotoUrl,
+                Email = a.EventGuest.Guest.Email,
+                Organization = a.EventGuest.Organization,
+                Tier = a.EventGuest.ServiceLevel == null ? null : a.EventGuest.ServiceLevel.Name,
+                ServiceLevelName = a.EventGuest.ServiceLevel != null ? a.EventGuest.ServiceLevel.Name : null,
                 Hotel = a.Hotel.Name,
-                ServiceLevelColor = a.Guest.ServiceLevel != null ? a.Guest.ServiceLevel.Color : null,
+                ServiceLevelColor = a.EventGuest.ServiceLevel != null ? a.EventGuest.ServiceLevel.Color : null,
                 HotelImageUrl = a.Hotel.ImageUrl,
                 RoomType = a.RoomType.Name,
                 CheckIn = a.CheckIn,
@@ -356,35 +356,35 @@ public class TravelService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev == null) return ApiResponse<PaginatedResponse<EventTransportRow>>.NotFoundResponse("Event not found");
 
-        var query = _unitOfWork.Transports.Query().Where(t => t.Guest.EventId == ev.Id);
+        var query = _unitOfWork.Transports.Query().Where(t => t.EventGuest.EventId == ev.Id);
 
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
         {
             var term = request.SearchTerm.Trim();
             query = query.Where(t =>
-                (t.Guest.FirstName + " " + t.Guest.LastName).Contains(term) ||
+                (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Contains(term) ||
                 (t.Driver != null && (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Contains(term)));
         }
 
         var total = await query.CountAsync(ct);
 
         var data = await query
-            .OrderBy(t => t.Guest.FirstName).ThenBy(t => t.Guest.LastName)
+            .OrderBy(t => t.EventGuest.Guest.FirstName).ThenBy(t => t.EventGuest.Guest.LastName)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .Select(t => new EventTransportRow
             {
                 Id = t.PublicId,
-                GuestId = t.Guest.PublicId,
-                GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
-                PhotoUrl = t.Guest.PhotoUrl,
-                Email = t.Guest.Email,
-                Organization = t.Guest.Organization,
-                Tier = t.Guest.Tier,
-                ServiceLevelName = t.Guest.ServiceLevel != null ? t.Guest.ServiceLevel.Name : null,
+                GuestId = t.EventGuest.PublicId,
+                GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+                PhotoUrl = t.EventGuest.Guest.PhotoUrl,
+                Email = t.EventGuest.Guest.Email,
+                Organization = t.EventGuest.Organization,
+                Tier = t.EventGuest.ServiceLevel == null ? null : t.EventGuest.ServiceLevel.Name,
+                ServiceLevelName = t.EventGuest.ServiceLevel != null ? t.EventGuest.ServiceLevel.Name : null,
                 Vehicle = t.Vehicle == null ? null : (t.Vehicle.VehicleNumber + " · " + t.Vehicle.VehicleModel),
                 DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
-                ServiceLevelColor = t.Guest.ServiceLevel != null ? t.Guest.ServiceLevel.Color : null,
+                ServiceLevelColor = t.EventGuest.ServiceLevel != null ? t.EventGuest.ServiceLevel.Color : null,
                 DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
                 DriverType = t.Driver == null ? null : (int?)t.Driver.DriverType,
                 Pickup = t.PickupLocation.Address,
@@ -444,43 +444,43 @@ public class TravelService(
 
         // One row per guest, so paging is over guests that actually have a
         // flight in the requested direction — not over flights.
-        var guests = _unitOfWork.Guests.Query().Where(g => g.EventId == ev.Id);
+        var guests = _unitOfWork.EventGuests.Query().Where(g => g.EventId == ev.Id);
 
         // A Return booking is both an arrival and a departure, so it belongs to
         // either direction.
         guests = direction switch
         {
-            "inbound"  => guests.Where(g => flights.Any(f => f.GuestId == g.Id
+            "inbound"  => guests.Where(g => flights.Any(f => f.EventGuestId == g.Id
                             && (f.FlightType == FlightType.Inbound || f.FlightType == FlightType.Return))),
-            "outbound" => guests.Where(g => flights.Any(f => f.GuestId == g.Id
+            "outbound" => guests.Where(g => flights.Any(f => f.EventGuestId == g.Id
                             && (f.FlightType == FlightType.Outbound || f.FlightType == FlightType.Return))),
-            _          => guests.Where(g => flights.Any(f => f.GuestId == g.Id)),
+            _          => guests.Where(g => flights.Any(f => f.EventGuestId == g.Id)),
         };
 
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
         {
             var term = request.SearchTerm.Trim();
             guests = guests.Where(g =>
-                (g.FirstName + " " + g.LastName).Contains(term) ||
-                (g.Email != null && g.Email.Contains(term)) ||
+                (g.Guest.FirstName + " " + g.Guest.LastName).Contains(term) ||
+                (g.Guest.Email != null && g.Guest.Email.Contains(term)) ||
                 (g.Organization != null && g.Organization.Contains(term)) ||
-                flights.Any(f => f.GuestId == g.Id && f.Legs.Any(l => l.FlightNumber.Contains(term))));
+                flights.Any(f => f.EventGuestId == g.Id && f.Legs.Any(l => l.FlightNumber.Contains(term))));
         }
 
         var total = await guests.CountAsync(ct);
 
         var page = await guests
-            .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
+            .OrderBy(g => g.Guest.FirstName).ThenBy(g => g.Guest.LastName)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .Select(g => new ArrivalDepartureRow
             {
                 GuestId = g.PublicId,
-                GuestName = (g.FirstName + " " + g.LastName).Trim(),
-                PhotoUrl = g.PhotoUrl,
-                Email = g.Email,
+                GuestName = (g.Guest.FirstName + " " + g.Guest.LastName).Trim(),
+                PhotoUrl = g.Guest.PhotoUrl,
+                Email = g.Guest.Email,
                 Organization = g.Organization,
-                Tier = g.Tier,
+                Tier = g.ServiceLevel != null ? g.ServiceLevel.Name : null,
                 ServiceLevelName = g.ServiceLevel != null ? g.ServiceLevel.Name : null,
                 ServiceLevelColor = g.ServiceLevel != null ? g.ServiceLevel.Color : null,
             })
@@ -496,10 +496,10 @@ public class TravelService(
         // then split by direction in memory.
         var guestIds = page.Select(r => r.GuestId).ToList();
         var rows = await flights
-            .Where(f => guestIds.Contains(f.Guest.PublicId))
+            .Where(f => guestIds.Contains(f.EventGuest.PublicId))
             .Select(f => new
             {
-                GuestPublicId = f.Guest.PublicId,
+                GuestPublicId = f.EventGuest.PublicId,
                 Type = f.FlightType,
                 Flight = new ArrivalDepartureFlight
                 {
@@ -597,7 +597,7 @@ public class TravelService(
     {
         try
         {
-            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+            var guest = await _unitOfWork.EventGuests.GetByPublicIdAsync(guestId, ct);
             if (guest == null) return ApiResponse<bool>.NotFoundResponse("Guest not found");
 
             // A guest can hold more than one flight/hotel/transport booking. Each
@@ -627,10 +627,10 @@ public class TravelService(
                 Flight flight = null;
                 if (request.Flight.Id is { } flightId && flightId != Guid.Empty)
                     flight = await _unitOfWork.Flights.Query().Include(f => f.Legs)
-                        .FirstOrDefaultAsync(f => f.PublicId == flightId && f.GuestId == guest.Id, ct);
+                        .FirstOrDefaultAsync(f => f.PublicId == flightId && f.EventGuestId == guest.Id, ct);
 
                 var isNewFlight = flight == null;
-                if (isNewFlight) flight = new Flight { GuestId = guest.Id };
+                if (isNewFlight) flight = new Flight { EventGuestId = guest.Id };
 
                 flight.FlightType = type.Value;
                 flight.Status = request.Flight.Status;
@@ -695,7 +695,7 @@ public class TravelService(
                 Accommodation acc = null;
                 if (request.Accommodation.Id is { } accId && accId != Guid.Empty)
                     acc = await _unitOfWork.Accommodations.Query()
-                        .FirstOrDefaultAsync(a => a.PublicId == accId && a.GuestId == guest.Id, ct);
+                        .FirstOrDefaultAsync(a => a.PublicId == accId && a.EventGuestId == guest.Id, ct);
 
                 var isNewAcc = acc == null;
 
@@ -708,7 +708,7 @@ public class TravelService(
                 if (full != null)
                     return ApiResponse<bool>.ConflictResponse(full, "ACCOMMODATION_UNAVAILABLE");
 
-                if (isNewAcc) acc = new Accommodation { GuestId = guest.Id };
+                if (isNewAcc) acc = new Accommodation { EventGuestId = guest.Id };
 
                 acc.AccommodationHotelId = hotelId.Value;
                 acc.RoomTypeId = roomTypeId;
@@ -731,7 +731,7 @@ public class TravelService(
                 if (allowTransport) services.Add(transport);
                 else services.Remove(transport);
                 guest.AllowedServicesJson = GuestServices.Serialize(services);
-                _unitOfWork.Guests.Update(guest);
+                _unitOfWork.EventGuests.Update(guest);
             }
 
             // Set when this save is what put a (new/different) driver on the trip —
@@ -759,7 +759,7 @@ public class TravelService(
                 Transport tr = null;
                 if (request.Transport.Id is { } trId && trId != Guid.Empty)
                     tr = await _unitOfWork.Transports.Query()
-                        .FirstOrDefaultAsync(t => t.PublicId == trId && t.GuestId == guest.Id, ct);
+                        .FirstOrDefaultAsync(t => t.PublicId == trId && t.EventGuestId == guest.Id, ct);
 
                 var isNewTransport = tr == null;
                 var previousDriverId = tr?.DriverId;
@@ -773,7 +773,7 @@ public class TravelService(
                 if (conflict != null)
                     return ApiResponse<bool>.ConflictResponse(conflict, "TRANSPORTATION_CONFLICT");
 
-                if (isNewTransport) tr = new Transport { GuestId = guest.Id };
+                if (isNewTransport) tr = new Transport { EventGuestId = guest.Id };
 
                 tr.PickupLocationId = pickupId;
                 tr.DropoffLocationId = dropoffId;

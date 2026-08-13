@@ -38,6 +38,9 @@ namespace DomainPersistence.Entities
         public string RequiredGuestFieldsJson { get; set; }
 
         public virtual ICollection<ServiceLevelService> Services { get; set; } = new List<ServiceLevelService>();
-        public virtual ICollection<Guest> Guests { get; set; } = new List<Guest>();
+
+        /// <summary>The event participations graded at this level. Not persons —
+        /// a level is per-event, so it grades an <see cref="EventGuest"/>.</summary>
+        public virtual ICollection<EventGuest> EventGuests { get; set; } = new List<EventGuest>();
     }
 }

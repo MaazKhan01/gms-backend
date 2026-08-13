@@ -108,7 +108,7 @@ public class AccommodationInventoryService(
             // Dropping the contract would strand every stay booked at this hotel:
             // its room blocks go with it, so those bookings lose their capacity.
             var booked = await _unitOfWork.Accommodations.Query()
-                .AnyAsync(a => a.Guest.EventId == contract.EventId
+                .AnyAsync(a => a.EventGuest.EventId == contract.EventId
                     && a.AccommodationHotelId == contract.AccommodationHotelId, ct);
             if (booked)
                 return ApiResponse<bool>.ErrorResponse("Guests are already booked at this hotel for this event");
@@ -393,7 +393,7 @@ public class AccommodationInventoryService(
         if (blocks.Count == 0) return ApiResponse<RoomAvailabilityResponse>.SuccessResponse(result);
 
         var stays = await _unitOfWork.Accommodations.Query()
-            .Where(a => a.Guest.EventId == ev.Id
+            .Where(a => a.EventGuest.EventId == ev.Id
                 && a.CheckIn != null && a.CheckOut != null
                 && a.RoomTypeId != null
                 && (hotelId == null || a.Hotel.PublicId == hotelId)
@@ -514,7 +514,7 @@ public class AccommodationInventoryService(
     private async Task<List<Stay>> LoadStaysAsync(
         int eventId, int hotelId, int roomTypeId, int? excludeAccommodationId, CancellationToken ct)
         => await _unitOfWork.Accommodations.Query()
-            .Where(a => a.Guest.EventId == eventId
+            .Where(a => a.EventGuest.EventId == eventId
                 && a.AccommodationHotelId == hotelId
                 && a.RoomTypeId == roomTypeId
                 && a.CheckIn != null && a.CheckOut != null

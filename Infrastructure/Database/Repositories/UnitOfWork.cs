@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -67,6 +67,7 @@ public class UnitOfWork : IUnitOfWork
         GuestServiceEntries = new GenericRepository<GuestServiceEntry>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
+        EventGuests = new GenericRepository<EventGuest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
         Nationalities = new GenericRepository<Nationality>(_context);
         InvitationTemplates = new GenericRepository<InvitationTemplate>(_context);
@@ -86,6 +87,7 @@ public class UnitOfWork : IUnitOfWork
 
     public IGenericRepository<User> Users { get; private set; }
     public IGenericRepository<Guest> Guests { get; private set; }
+    public IGenericRepository<EventGuest> EventGuests { get; private set; }
     public IGenericRepository<GuestSession> GuestSessions { get; private set; }
     public IGenericRepository<Venue> Venues { get; private set; }
     public IGenericRepository<VenueBox> VenueBoxes { get; private set; }

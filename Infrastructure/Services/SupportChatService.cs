@@ -56,7 +56,10 @@ public class SupportChatService(
             return ApiResponse<List<SupportConversationSummaryResponse>>.SuccessResponse(new());
 
         var conversation = await _unitOfWork.SupportConversations.QueryNoTracking()
-            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile)
+                .ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile)
+                .ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.ServiceLevel)
             .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.Nationality)
             .FirstOrDefaultAsync(c => c.UserId == guest.UserId && c.Type == SupportChatTypes.AdminSupport, ct);
 
@@ -177,7 +180,10 @@ public class SupportChatService(
         var size = request?.PageSize > 0 ? request.PageSize : 20;
 
         var query = _unitOfWork.SupportConversations.QueryNoTracking()
-            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile)
+                .ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile)
+                .ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.ServiceLevel)
             .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.Nationality)
             .Where(c => c.Type == SupportChatTypes.AdminSupport);
 
@@ -192,16 +198,23 @@ public class SupportChatService(
                 (c.User.FirstName + " " + c.User.LastName).Contains(request.SearchTerm) ||
                 (c.User.GuestProfile.Email != null && c.User.GuestProfile.Email.Contains(request.SearchTerm)));
 
+        // Matched against the person's service levels across every event they're in
+        // — a grade belongs to a participation now, and the conversation itself has
+        // no event to narrow by.
         if (!string.IsNullOrWhiteSpace(request?.Tier))
         {
             var tier = request.Tier.ToLower();
-            query = query.Where(c => c.User.GuestProfile.Tier.ToLower() == tier);
+            query = query.Where(c => c.User.GuestProfile.EventGuests
+                .Any(eg => eg.ServiceLevel != null && eg.ServiceLevel.Name.ToLower() == tier));
         }
 
         if (request?.OrganizationId.HasValue == true && request.OrganizationId != Guid.Empty)
         {
             var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.OrganizationId.Value, ct);
-            query = query.Where(c => org != null && c.User.GuestProfile.OrganizationId == org.Id);
+            // Organisation is per-participation now, so match if ANY of the
+            // person's participations is with that org.
+            query = query.Where(c => org != null && c.User.GuestProfile.EventGuests
+                .Any(eg => eg.OrganizationId == org.Id));
         }
 
         if (request?.NationalityId.HasValue == true && request.NationalityId != Guid.Empty)
@@ -451,7 +464,7 @@ public class SupportChatService(
                 return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest profile not found");
 
             var assignedDriverIds = await _unitOfWork.GuestDriverAssignments.Query()
-                .Where(a => a.GuestId == guestForAssignment.Id)
+                .Where(a => a.EventGuestId == guestForAssignment.Id)
                 .Select(a => a.DriverId)
                 .ToListAsync(ct);
 
@@ -688,6 +701,13 @@ public class SupportChatService(
     private static SupportConversationSummaryResponse MapSummary(SupportConversation c, int unreadCount)
     {
         var guestProfile = c.User.GuestProfile;
+        // A support conversation is with a PERSON and carries no event of its own,
+        // but organisation and grade are per-participation now. The most recent
+        // participation is the useful answer for an agent picking up the thread —
+        // "who is this and what grade are they currently".
+        var latest = guestProfile?.EventGuests
+            ?.OrderByDescending(eg => eg.CreatedAt)
+            .FirstOrDefault();
         return new()
         {
             Id = c.PublicId,
@@ -700,9 +720,9 @@ public class SupportChatService(
             LastMessageAt = c.LastMessageAt,
             LastMessageFromGuest = c.LastMessageFromGuest,
             UnreadCount = unreadCount,
-            OrganizationName = guestProfile?.OrganizationRef?.Name ?? guestProfile?.Organization,
+            OrganizationName = latest?.OrganizationRef?.Name ?? latest?.Organization,
             NationalityName = guestProfile?.Nationality?.Name,
-            Tier = guestProfile?.Tier
+            Tier = latest?.ServiceLevel?.Name
         };
     }
 

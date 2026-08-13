@@ -60,33 +60,54 @@ public class VipAppService(
         return mins < 60 ? $"{mins}m" : mins % 60 == 0 ? $"{mins / 60}h" : $"{mins / 60}h {mins % 60}m";
     }
 
-    // A person holds one Guest row per event (same email), so "all events" means
-    // all their sibling rows; eventId narrows to the one. Null = the caller isn't
-    // a known guest at all.
+    // The caller is a PERSON (one login per human — Guests.Id), and their bookings
+    // hang off their EventGuest rows, one per event they're invited to. This returns
+    // those participation ids: all of them, or just the one for `eventId`.
+    //
+    // This used to match sibling rows on Email because the model had no shared
+    // person identity. It does now, so this is a plain join — the email hack is
+    // gone, along with its failure mode of stitching together two different people
+    // who happened to share an inbox.
     private async Task<List<int>> ResolveGuestIdsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
         var guest = await GetGuestAsync(guestId, ct);
         if (guest is null) return null;
 
-        return await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => g.Email == guest.Email)
-            .Where(g => eventId == null || g.Event.PublicId == eventId.Value)
-            .Select(g => g.Id)
+        return await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guest.Id)
+            .Where(eg => eventId == null || eg.Event.PublicId == eventId.Value)
+            .Select(eg => eg.Id)
             .ToListAsync(ct);
     }
 
     private Task<Guest> GetGuestAsync(int guestId, CancellationToken ct)
         => _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
 
-    // "May this person request a car?" — true if ANY of their guest rows says so.
-    // The same person can hold one row per event (ResolveGuestIdsAsync matches on
-    // email), and a permission granted on one of them shouldn't disappear because
-    // a sibling row lacks it.
-    private async Task<bool> AllowsTransportAsync(List<int> guestIds, CancellationToken ct)
+    // Whatever organisation this person was most recently invited under.
+    private Task<string> LatestOrganizationAsync(int guestId, CancellationToken ct)
+        => _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guestId)
+            .OrderByDescending(eg => eg.CreatedAt)
+            .Select(eg => eg.OrganizationRef != null ? eg.OrganizationRef.Name : eg.Organization)
+            .FirstOrDefaultAsync(ct);
+
+    // This person's participation in ONE event, or null if they aren't invited to
+    // it. Sessions, seating and transport requests are all per-event, so they need
+    // this rather than the person id the login carries.
+    private Task<int?> ResolveEventGuestIdAsync(int guestId, Guid eventId, CancellationToken ct)
+        => _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guestId && eg.Event.PublicId == eventId)
+            .Select(eg => (int?)eg.Id)
+            .FirstOrDefaultAsync(ct);
+
+    // "May this person request a car?" — true if ANY of their participations says
+    // so. The permission is granted per event, and holding it at one event
+    // shouldn't disappear because another event didn't grant it.
+    private async Task<bool> AllowsTransportAsync(List<int> eventGuestIds, CancellationToken ct)
     {
-        var allowed = await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => guestIds.Contains(g.Id))
-            .Select(g => g.AllowedServicesJson)
+        var allowed = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eventGuestIds.Contains(eg.Id))
+            .Select(eg => eg.AllowedServicesJson)
             .ToListAsync(ct);
 
         return allowed.Any(json => GuestServices.Allows(json, GuestServiceType.Transport));
@@ -361,11 +382,12 @@ public class VipAppService(
         var guest = await GetGuestAsync(guestId, ct);
         if (guest is null) return ApiResponse<List<GuestEventResponse>>.NotFoundResponse("Guest not found");
 
-        // A person can be a guest across several events (one Guest row per event,
-        // same email). Surface all of them.
-        var eventIds = await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => g.Email == guest.Email)
-            .Select(g => g.EventId).Distinct().ToListAsync(ct);
+        // One login, one person, N events — this is what the app renders as the
+        // event cards on the home screen. A plain join now that participations are
+        // modelled explicitly (was: matching sibling Guest rows on email).
+        var eventIds = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guest.Id)
+            .Select(eg => eg.EventId).Distinct().ToListAsync(ct);
 
         var events = await _unitOfWork.Events.QueryNoTracking()
             .Where(e => eventIds.Contains(e.Id))
@@ -386,9 +408,14 @@ public class VipAppService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev is null) return ApiResponse<List<GuestSessionResponse>>.NotFoundResponse("Event not found");
 
-        var selected = await _unitOfWork.GuestSessions.QueryNoTracking()
-            .Where(gs => gs.GuestId == guestId)
-            .ToDictionaryAsync(gs => gs.SessionId, gs => gs.Status, ct);
+        // Their attendance is recorded against this event's participation, not
+        // against the person — an uninvited caller simply has no selections.
+        var eventGuestId = await ResolveEventGuestIdAsync(guestId, eventId, ct);
+        var selected = eventGuestId is null
+            ? new Dictionary<int, string>()
+            : await _unitOfWork.GuestSessions.QueryNoTracking()
+                .Where(gs => gs.EventGuestId == eventGuestId.Value)
+                .ToDictionaryAsync(gs => gs.SessionId, gs => gs.Status, ct);
 
         var sessions = await _unitOfWork.Sessions.QueryNoTracking()
             .Include(s => s.Event)
@@ -415,8 +442,14 @@ public class VipAppService(
             .Select(s => new { s.Id, s.PublicId }).ToListAsync(ct);
         var eventSessionIds = eventSessions.Select(s => s.Id).ToList();
 
+        // Selections belong to this event's participation. Refusing early beats
+        // writing rows keyed to an event the caller was never invited to.
+        var eventGuestId = await ResolveEventGuestIdAsync(guestId, eventId, ct);
+        if (eventGuestId is null)
+            return ApiResponse<bool>.NotFoundResponse("You are not a guest of this event");
+
         var existing = (await _unitOfWork.GuestSessions
-            .FindAsync(gs => gs.GuestId == guestId && eventSessionIds.Contains(gs.SessionId), ct)).ToList();
+            .FindAsync(gs => gs.EventGuestId == eventGuestId.Value && eventSessionIds.Contains(gs.SessionId), ct)).ToList();
 
         if (existing.Count > 0) _unitOfWork.GuestSessions.RemoveRange(existing);
 
@@ -424,7 +457,7 @@ public class VipAppService(
         {
             var requested = request.SessionIds.ToHashSet();
             var toAdd = eventSessions.Where(s => requested.Contains(s.PublicId))
-                .Select(s => new GuestSession { GuestId = guestId, SessionId = s.Id, Status = "selected" });
+                .Select(s => new GuestSession { EventGuestId = eventGuestId.Value, SessionId = s.Id, Status = "selected" });
             await _unitOfWork.GuestSessions.AddRangeAsync(toAdd, ct);
         }
 
@@ -447,7 +480,7 @@ public class VipAppService(
 
         var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
             .Include(l => l.FromAirport).Include(l => l.ToAirport)
-            .Where(l => guestIds.Contains(l.Flight.GuestId) && l.StartTime > now).ToListAsync(ct);
+            .Where(l => guestIds.Contains(l.Flight.EventGuestId) && l.StartTime > now).ToListAsync(ct);
         cards.AddRange(legs.Select(l => new AgendaCardResponse
         {
             Flag = "UPCOMING FLIGHT", Kind = "flight", RefId = l.PublicId,
@@ -457,7 +490,7 @@ public class VipAppService(
         }));
 
         var accs = await _unitOfWork.Accommodations.QueryNoTracking()
-            .Include(a => a.Hotel).Where(a => guestIds.Contains(a.GuestId) && a.CheckIn != null).ToListAsync(ct);
+            .Include(a => a.Hotel).Where(a => guestIds.Contains(a.EventGuestId) && a.CheckIn != null).ToListAsync(ct);
         cards.AddRange(accs
             .Select(a => new { a, when = ToDt(a.CheckIn) })
             .Where(x => x.when > now)
@@ -473,7 +506,7 @@ public class VipAppService(
 
         var trips = await _unitOfWork.Transports.QueryNoTracking()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
-            .Where(t => guestIds.Contains(t.GuestId) && t.PickupTime > now).ToListAsync(ct);
+            .Where(t => guestIds.Contains(t.EventGuestId) && t.PickupTime > now).ToListAsync(ct);
         cards.AddRange(trips.Select(t => new AgendaCardResponse
         {
             Flag = "UPCOMING PICKUP", Kind = "transport", RefId = t.PublicId,
@@ -499,13 +532,13 @@ public class VipAppService(
         // .Date, not DateOnly.FromDateTime — it's the translation SQL Server has
         // always had (CAST AS date), so the DISTINCT happens server-side.
         var flightDates = await _unitOfWork.FlightLegs.QueryNoTracking()
-            .Where(l => guestIds.Contains(l.Flight.GuestId) && l.StartTime != null)
+            .Where(l => guestIds.Contains(l.Flight.EventGuestId) && l.StartTime != null)
             .Select(l => l.StartTime.Value.Date)
             .Distinct()
             .ToListAsync(ct);
 
         var transportDates = await _unitOfWork.Transports.QueryNoTracking()
-            .Where(t => guestIds.Contains(t.GuestId) && t.PickupTime != null)
+            .Where(t => guestIds.Contains(t.EventGuestId) && t.PickupTime != null)
             .Select(t => t.PickupTime.Value.Date)
             .Distinct()
             .ToListAsync(ct);
@@ -513,7 +546,7 @@ public class VipAppService(
         // A stay covers every night between the two ends, so this one has to be
         // expanded here — SQL has no cheap way to generate the range.
         var stays = await _unitOfWork.Accommodations.QueryNoTracking()
-            .Where(a => guestIds.Contains(a.GuestId) && a.CheckIn != null)
+            .Where(a => guestIds.Contains(a.EventGuestId) && a.CheckIn != null)
             .Select(a => new { From = a.CheckIn.Value, To = a.CheckOut })
             .ToListAsync(ct);
 
@@ -543,7 +576,7 @@ public class VipAppService(
         var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
             .Include(l => l.FromAirport).Include(l => l.ToAirport)
             .Include(l => l.Flight).ThenInclude(f => f.FlightClass)
-            .Where(l => guestIds.Contains(l.Flight.GuestId))
+            .Where(l => guestIds.Contains(l.Flight.EventGuestId))
             .Where(l => date == null || (l.StartTime >= from && l.StartTime < to))
             .OrderBy(l => l.StartTime)
             .ToListAsync(ct);
@@ -552,14 +585,14 @@ public class VipAppService(
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
             .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
-            .Where(t => guestIds.Contains(t.GuestId))
+            .Where(t => guestIds.Contains(t.EventGuestId))
             .Where(t => date == null || (t.PickupTime >= from && t.PickupTime < to))
             .OrderBy(t => t.PickupTime == null).ThenBy(t => t.PickupTime)
             .ToListAsync(ct);
 
         var accs = await _unitOfWork.Accommodations.QueryNoTracking()
             .Include(a => a.Hotel).Include(a => a.RoomType)
-            .Where(a => guestIds.Contains(a.GuestId))
+            .Where(a => guestIds.Contains(a.EventGuestId))
             // Inclusive of both ends — the guest is in the hotel on check-out day.
             .Where(a => date == null
                      || ((a.CheckIn == null || a.CheckIn <= date) && (a.CheckOut == null || a.CheckOut >= date)))
@@ -569,7 +602,7 @@ public class VipAppService(
         // Grouped, not ToDictionary — two sibling guest rows could both point at
         // the same session, and a duplicate key would blow up the request.
         var picks = (await _unitOfWork.GuestSessions.QueryNoTracking()
-            .Where(gs => guestIds.Contains(gs.GuestId))
+            .Where(gs => guestIds.Contains(gs.EventGuestId))
             .Select(gs => new { gs.SessionId, gs.Status })
             .ToListAsync(ct))
             .GroupBy(x => x.SessionId)
@@ -635,7 +668,7 @@ public class VipAppService(
             .Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
-            .Where(f => guestIds.Contains(f.GuestId)).ToListAsync(ct);
+            .Where(f => guestIds.Contains(f.EventGuestId)).ToListAsync(ct);
 
         var data = flights.Select(f =>
         {
@@ -683,7 +716,7 @@ public class VipAppService(
         var acc = await _unitOfWork.Accommodations.Query()
             .Include(a => a.Hotel).Include(a => a.RoomType)
             .OrderBy(a => a.CheckIn)
-            .FirstOrDefaultAsync(a => guestIds.Contains(a.GuestId), ct);
+            .FirstOrDefaultAsync(a => guestIds.Contains(a.EventGuestId), ct);
         if (acc is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("No accommodation found");
 
         var data = new AccommodationResponse
@@ -711,9 +744,18 @@ public class VipAppService(
             var guest = await GetGuestAsync(guestId, ct);
             if (guest is null) return ApiResponse<TransportationResponse>.NotFoundResponse("Guest not found");
 
-            // The itinerary's TransportAllowed flag only hides the button; the rule
-            // itself is enforced here, since the request can be sent without it.
-            if (!GuestServices.Allows(guest.AllowedServicesJson, GuestServiceType.Transport))
+            // A ride hangs off a participation, and the request carries no event, so
+            // it is booked against the most recent participation that actually grants
+            // the permission. The itinerary's TransportAllowed flag only hides the
+            // button; this is where the rule is enforced.
+            var participations = await _unitOfWork.EventGuests.QueryNoTracking()
+                .Where(eg => eg.GuestId == guest.Id)
+                .OrderByDescending(eg => eg.CreatedAt)
+                .Select(eg => new { eg.Id, eg.AllowedServicesJson })
+                .ToListAsync(ct);
+            var booking = participations.FirstOrDefault(
+                p => GuestServices.Allows(p.AllowedServicesJson, GuestServiceType.Transport));
+            if (booking is null)
                 return ApiResponse<TransportationResponse>.ForbiddenResponse(
                     "Transport requests are not enabled for you");
 
@@ -725,7 +767,7 @@ public class VipAppService(
 
             var transport = new Transport
             {
-                GuestId = guest.Id,
+                EventGuestId = booking.Id,
                 PickupLocationId = pickupId,
                 DropoffLocationId = dropoffId,
                 PickupTime = DateTime.Now,
@@ -774,7 +816,7 @@ public class VipAppService(
             // so one guest can never cancel another's ride.
             var cancelled = await _unitOfWork.Transports.Query()
                 .Where(t => t.PublicId == transportId
-                         && guestIds.Contains(t.GuestId)
+                         && guestIds.Contains(t.EventGuestId)
                          && t.TripStatus == TransportStatuses.New)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(t => t.TripStatus, TransportStatuses.Cancelled)
@@ -790,7 +832,7 @@ public class VipAppService(
             // 0 rows — separate "not yours/not there" from "too late", so the app
             // can tell the guest why the button did nothing.
             var status = await _unitOfWork.Transports.QueryNoTracking()
-                .Where(t => t.PublicId == transportId && guestIds.Contains(t.GuestId))
+                .Where(t => t.PublicId == transportId && guestIds.Contains(t.EventGuestId))
                 .Select(t => t.TripStatus)
                 .FirstOrDefaultAsync(ct);
 
@@ -855,7 +897,7 @@ public class VipAppService(
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
             .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
-            .Where(t => guestIds.Contains(t.GuestId)).ToListAsync(ct);
+            .Where(t => guestIds.Contains(t.EventGuestId)).ToListAsync(ct);
 
         var primary = trips.FirstOrDefault();
         if (primary is null) return ApiResponse<TransportationResponse>.NotFoundResponse("No transportation found");
@@ -878,7 +920,7 @@ public class VipAppService(
         // Grouped rather than ToDictionaryAsync: several of the guest's rows could
         // in principle carry the same session, and a duplicate key would throw.
         var picks = (await _unitOfWork.GuestSessions.QueryNoTracking()
-                .Where(gs => guestIds.Contains(gs.GuestId))
+                .Where(gs => guestIds.Contains(gs.EventGuestId))
                 .Select(gs => new { gs.SessionId, gs.Status })
                 .ToListAsync(ct))
             .GroupBy(gs => gs.SessionId)
@@ -900,15 +942,24 @@ public class VipAppService(
             .FirstOrDefaultAsync(s => s.PublicId == sessionId, ct);
         if (session is null) return ApiResponse<SessionDetailResponse>.NotFoundResponse("Session not found");
 
-        var pick = await _unitOfWork.GuestSessions
-            .FindFirstOrDefaultAsync(gs => gs.GuestId == guestId && gs.SessionId == session.Id, ct);
+        // A session belongs to exactly one event, so that event's participation is
+        // the row carrying this caller's selection, seat and grade.
+        var eventGuestId = session.Event is null
+            ? null
+            : await ResolveEventGuestIdAsync(guestId, session.Event.PublicId, ct);
 
-        var assign = await _unitOfWork.SeatAssigns.Query()
+        var pick = eventGuestId is null ? null : await _unitOfWork.GuestSessions
+            .FindFirstOrDefaultAsync(gs => gs.EventGuestId == eventGuestId.Value && gs.SessionId == session.Id, ct);
+
+        var assign = eventGuestId is null ? null : await _unitOfWork.SeatAssigns.Query()
             .Include(a => a.Seat).Include(a => a.Seating)
             .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.GuestId == guestId && a.Seating.EventSessionId == session.Id, ct);
+            .FirstOrDefaultAsync(a => a.EventGuestId == eventGuestId.Value && a.Seating.EventSessionId == session.Id, ct);
 
-        var guest = await GetGuestAsync(guestId, ct);
+        // Seating category is the guest's grade FOR THIS EVENT.
+        var eventGuest = eventGuestId is null ? null : await _unitOfWork.EventGuests.QueryNoTracking()
+            .Include(eg => eg.ServiceLevel)
+            .FirstOrDefaultAsync(eg => eg.Id == eventGuestId.Value, ct);
 
         var b = MapSession(session, pick?.Status ?? (pick != null ? "selected" : null));
         var data = new SessionDetailResponse
@@ -918,7 +969,7 @@ public class VipAppService(
             Status = pick != null ? "Confirmed" : "Pending",
             Seating = assign is null ? null : new SeatingResponse
             {
-                Category = guest?.Tier,
+                Category = eventGuest?.ServiceLevel?.Name,
                 Block = assign.Seat?.Block,
                 Row = assign.Seat?.SeatInfo,
                 Seat = assign.Seat?.Code,
@@ -967,7 +1018,8 @@ public class VipAppService(
     {
         var guest = await GetGuestAsync(guestId, ct);
         if (guest is null) return ApiResponse<GuestProfileResponse>.NotFoundResponse("Guest not found");
-        return ApiResponse<GuestProfileResponse>.SuccessResponse(MapProfile(guest));
+        return ApiResponse<GuestProfileResponse>.SuccessResponse(
+            MapProfile(guest, await LatestOrganizationAsync(guest.Id, ct)));
     }
 
     public async Task<ApiResponse<GuestProfileResponse>> UpdateProfileAsync(int guestId, UpdateProfileRequest request, CancellationToken ct)
@@ -977,10 +1029,13 @@ public class VipAppService(
 
         guest.FirstName = request.FirstName ?? guest.FirstName;
         guest.LastName = request.LastName ?? guest.LastName;
-        guest.Organization = request.Organization ?? guest.Organization;
+        // Organization is deliberately NOT settable here any more: it belongs to a
+        // participation, so "my organisation" has a different answer per event and
+        // the guest app has no event context on this screen.
         _unitOfWork.Guests.Update(guest);
         await _unitOfWork.SaveChangesAsync(ct);
-        return ApiResponse<GuestProfileResponse>.SuccessResponse(MapProfile(guest), "Profile updated");
+        return ApiResponse<GuestProfileResponse>.SuccessResponse(
+            MapProfile(guest, await LatestOrganizationAsync(guest.Id, ct)), "Profile updated");
     }
 
     public async Task<ApiResponse<bool>> UpdateSettingsAsync(int guestId, UpdateSettingsRequest request, CancellationToken ct)
@@ -998,10 +1053,14 @@ public class VipAppService(
 
     // One mapper for every profile payload — verify-otp, refresh, GET and PUT
     // /profile — so a field added here reaches all of them at once.
-    private static GuestProfileResponse MapProfile(Guest g) => new()
+    // `organization` comes from the person's most recent participation — it is a
+    // per-event fact, so there is no single person-level answer. Tier is gone
+    // entirely: a guest's grade is their event's Service Level, shown per event
+    // card, not on their profile.
+    private static GuestProfileResponse MapProfile(Guest g, string organization = null) => new()
     {
         Id = g.PublicId, FirstName = g.FirstName, LastName = g.LastName, Email = g.Email,
-        Organization = g.Organization, Tier = g.Tier, PhotoUrl = g.PhotoUrl
+        Organization = organization, PhotoUrl = g.PhotoUrl
     };
 
     // Support chat lives entirely on SupportChatService / SupportChatController now.

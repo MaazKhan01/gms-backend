@@ -230,8 +230,9 @@ public class GuestProfileResponse
     public string FirstName { get; set; }
     public string LastName { get; set; }
     public string Email { get; set; }
+    /// <summary>Read-only: taken from the person's most recent participation.
+    /// Organisation is a per-event fact, so it is not settable here.</summary>
     public string Organization { get; set; }
-    public string Tier { get; set; }
 
     /// <summary>The guest's photo — the profile screen's avatar and the home
     /// screen's header. Stored bare in the DB; BlobSasMiddleware attaches a
@@ -240,7 +241,9 @@ public class GuestProfileResponse
     public string PhotoUrl { get; set; }
 }
 
-public record UpdateProfileRequest(string FirstName, string LastName, string Organization);
+// Organization dropped: it belongs to an EventGuest, and this screen has no
+// event context. See VipAppService.UpdateProfileAsync.
+public record UpdateProfileRequest(string FirstName, string LastName);
 public record UpdateSettingsRequest(bool NotificationsEnabled, string Language, string Location);
 
 // ---------------- Support ----------------

@@ -79,27 +79,25 @@ namespace Infrastructure.Services
         private async Task<InvitationDetailResponse> BuildDetailAsync(Guid token, CancellationToken ct)
         {
             var invitation = await _unitOfWork.Invitations.Query()
-                .Include(i => i.Guest).ThenInclude(g => g.Event)
-                .Include(i => i.Guest).ThenInclude(g => g.ServiceLevel).ThenInclude(l => l.Services).ThenInclude(a => a.Service)
+                .Include(i => i.EventGuest).ThenInclude(g => g.Guest)
+                .Include(i => i.EventGuest).ThenInclude(g => g.Event)
+                .Include(i => i.EventGuest).ThenInclude(g => g.ServiceLevel).ThenInclude(l => l.Services).ThenInclude(a => a.Service)
                 .FirstOrDefaultAsync(i => i.InvitationToken == token, ct);
-            if (invitation?.Guest == null) return null;
+            if (invitation?.EventGuest?.Guest == null) return null;
 
-            var guest = invitation.Guest;
+            var guest = invitation.EventGuest;
             var ev = guest.Event;
             var level = guest.ServiceLevel;
 
             return new InvitationDetailResponse
             {
-                GuestName = $"{guest.FirstName} {guest.LastName}".Trim(),
-                GuestEmail = guest.Email,
-                GuestPhotoUrl = guest.PhotoUrl,
+                GuestName = $"{guest.Guest.FirstName} {guest.Guest.LastName}".Trim(),
+                GuestEmail = guest.Guest.Email,
+                GuestPhotoUrl = guest.Guest.PhotoUrl,
                 Organization = guest.Organization,
-                Tier = guest.Tier,
                 ServiceLevelName = level?.Name,
                 ServiceLevelNameAr = level?.NameAr,
                 ServiceLevelColor = level?.Color,
-                ArrivalDate = guest.ArrivalDate,
-                DepartureDate = guest.DepartureDate,
                 EventTitle = ev?.Title,
                 EventVenue = ev?.VenueName,
                 EventStartDate = ev?.StartDate,

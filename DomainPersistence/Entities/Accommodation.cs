@@ -3,7 +3,7 @@ namespace DomainPersistence.Entities;
 /// <summary>A guest's hotel stay.</summary>
 public class Accommodation : Entity
 {
-    public int GuestId { get; set; }
+    public int EventGuestId { get; set; }
     public int AccommodationHotelId { get; set; }
     public int? RoomTypeId { get; set; }
     public DateOnly? CheckIn { get; set; }
@@ -15,7 +15,7 @@ public class Accommodation : Entity
     /// AccommodationHotel.ImageUrl, which is the hotel's own picture.</summary>
     public string ImageUrl { get; set; }
 
-    public virtual Guest Guest { get; set; }
+    public virtual EventGuest EventGuest { get; set; }
     public virtual AccommodationHotel Hotel { get; set; }
     public virtual AccommodationRoomType RoomType { get; set; }
 }

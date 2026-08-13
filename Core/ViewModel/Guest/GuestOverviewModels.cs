@@ -48,6 +48,11 @@ public class GuestOverviewRow
     /// via GET /v1/guest-overview/{id}. Not a stable "person id": there isn't
     /// one, see GroupByEmail below.</summary>
     public Guid Id { get; set; }
+
+    /// <summary>The person's own PublicId (Guests.PublicId) — stable across every
+    /// event they attend, and the real identity this row is grouped on.</summary>
+    public Guid PersonId { get; set; }
+
     public string FirstName { get; set; }
     public string LastName { get; set; }
     public string FullName => $"{FirstName} {LastName}".Trim();

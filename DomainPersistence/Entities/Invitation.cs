@@ -6,7 +6,7 @@ namespace DomainPersistence.Entities;
 /// </summary>
 public class Invitation : Entity
 {
-    public int GuestId { get; set; }
+    public int EventGuestId { get; set; }
 
     public string InvitationStatus { get; set; }     // Pending | Accepted | Rejected
     public string AccreditationStatus { get; set; }   // Pending | Approved | Rejected
@@ -20,6 +20,6 @@ public class Invitation : Entity
     public DateTime? SentAt { get; set; }
     public DateTime? RespondedAt { get; set; }
 
-    public virtual Guest Guest { get; set; }
+    public virtual EventGuest EventGuest { get; set; }
     public virtual InvitationTemplate InvitationTemplate { get; set; }
 }

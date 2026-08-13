@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DomainPersistence.Entities;
@@ -10,6 +10,7 @@ public interface IUnitOfWork : IDisposable
     // Auth / RBAC
     IGenericRepository<User> Users { get; }
     IGenericRepository<Guest> Guests { get; }
+    IGenericRepository<EventGuest> EventGuests { get; }
     IGenericRepository<GuestSession> GuestSessions { get; }
     IGenericRepository<Role> Roles { get; }
     IGenericRepository<Permission> Permissions { get; }

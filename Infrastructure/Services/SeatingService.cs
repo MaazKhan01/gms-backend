@@ -31,8 +31,10 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             if (userId == 0)
                 return ApiResponse<bool>.ErrorResponse("Invalid user.");
 
-            // Resolve the guest's public id to its internal id (used for FK/joins below).
-            var guest = await _unitOfWork.Guests.Query()
+            // Resolve the participation's public id to its internal id (used for
+            // FK/joins below). Seating is per-event, so the id the client sends is
+            // an EventGuest PublicId — see GuestResponse.Id.
+            var guest = await _unitOfWork.EventGuests.Query()
                 .FirstOrDefaultAsync(g => g.PublicId == request.GuestId, ct);
             if (guest == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest not found.");
@@ -104,7 +106,7 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
 
             // Moving a guest: drop whatever seat they previously held in this seating.
             var existingForGuest = await _unitOfWork.SeatAssigns.Query()
-                .Where(sa => sa.SeatingId == seating.Id && sa.GuestId == guest.Id)
+                .Where(sa => sa.SeatingId == seating.Id && sa.EventGuestId == guest.Id)
                 .ToListAsync(ct);
             if (existingForGuest.Count > 0)
                 _unitOfWork.SeatAssigns.RemoveRange(existingForGuest);
@@ -112,7 +114,7 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             // Refuse to silently bump a different guest already in this seat.
             var existingForSeat = await _unitOfWork.SeatAssigns.Query()
                 .FirstOrDefaultAsync(sa => sa.SeatingId == seating.Id && sa.SeatId == seatId, ct);
-            if (existingForSeat != null && existingForSeat.GuestId != guest.Id)
+            if (existingForSeat != null && existingForSeat.EventGuestId != guest.Id)
                 return ApiResponse<bool>.ConflictResponse("This seat is already assigned to another guest.");
 
             if (existingForSeat == null)
@@ -120,7 +122,7 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
                 var assign = new SeatAssign
                 {
                     SeatingId = seating.Id,
-                    GuestId = guest.Id,
+                    EventGuestId = guest.Id,
                     SeatId = seatId,
                 };
                 assign.SetCreationAudit(userId);
@@ -224,7 +226,7 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
             // Output the related entities' PUBLIC ids (navigations), not the internal FK ints.
             var list = await _unitOfWork.SeatAssigns.Query()
                 .Where(sa => sa.SeatingId == seating.Id)
-                .Select(sa => new SeatAssignmentDto { SeatId = sa.Seat.PublicId, GuestId = sa.Guest.PublicId })
+                .Select(sa => new SeatAssignmentDto { SeatId = sa.Seat.PublicId, GuestId = sa.EventGuest.PublicId })
                 .ToListAsync(ct);
 
             return ApiResponse<List<SeatAssignmentDto>>.SuccessResponse(list);
@@ -248,7 +250,7 @@ public class SeatingService(IUnitOfWork _unitOfWork, ILogger<SeatingService> _lo
                 return ApiResponse<List<GuestSeatAssignmentDto>>.ErrorResponse("GuestId is required.");
 
             var list = await _unitOfWork.SeatAssigns.Query()
-                .Where(sa => sa.Guest.PublicId == guestId)
+                .Where(sa => sa.EventGuest.PublicId == guestId)
                 .Select(sa => new GuestSeatAssignmentDto
                 {
                     EventTitle = sa.Seating.Event.Title,

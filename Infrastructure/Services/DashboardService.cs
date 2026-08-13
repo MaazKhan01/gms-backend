@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DomainPersistence.Entities;
+using DomainPersistence.Enums;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Constants;
@@ -57,8 +58,12 @@ namespace Infrastructure.Services
                 if (ev == null)
                     return ApiResponse<GetDashboardResponse>.NotFoundResponse("Event not found.");
 
-                var guests = await _unitOfWork.Guests.Query()
+                // The dashboard is scoped to one event, so it counts PARTICIPATIONS
+                // (EventGuests), not people — the same person in two events must
+                // count once here, not twice.
+                var guests = await _unitOfWork.EventGuests.Query()
                     .Where(g => g.EventId == ev.Id)
+                    .Include(g => g.Guest)
                     .Include(g => g.ServiceLevel)
                     .ToListAsync(ct);
 
@@ -70,20 +75,25 @@ namespace Infrastructure.Services
                 // Invitation/accreditation status + travel moved to their own tables.
                 var guestIds = guests.Select(g => g.Id).ToList();
                 var invitations = (await _unitOfWork.Invitations.Query()
-                        .Where(i => guestIds.Contains(i.GuestId)).ToListAsync(ct))
-                    .GroupBy(i => i.GuestId)
+                        .Where(i => guestIds.Contains(i.EventGuestId)).ToListAsync(ct))
+                    .GroupBy(i => i.EventGuestId)
                     .ToDictionary(gr => gr.Key, gr => gr.First());
-                var flightGuestIds = (await _unitOfWork.Flights.Query()
-                    .Where(f => guestIds.Contains(f.GuestId)).Select(f => f.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                // Loaded with legs because the arrivals/departures chart below reads
+                // its dates off the itinerary rather than off the guest.
+                var movementFlights = await _unitOfWork.Flights.Query()
+                    .Where(f => guestIds.Contains(f.EventGuestId))
+                    .Include(f => f.Legs)
+                    .ToListAsync(ct);
+                var flightGuestIds = movementFlights.Select(f => f.EventGuestId).ToHashSet();
                 var accommodationGuestIds = (await _unitOfWork.Accommodations.Query()
-                    .Where(a => guestIds.Contains(a.GuestId)).Select(a => a.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(a => guestIds.Contains(a.EventGuestId)).Select(a => a.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
                 var transportGuestIds = (await _unitOfWork.Transports.Query()
-                    .Where(t => guestIds.Contains(t.GuestId)).Select(t => t.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(t => guestIds.Contains(t.EventGuestId)).Select(t => t.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
                 var seatedGuestIds = (await _unitOfWork.SeatAssigns.Query()
-                    .Where(sa => guestIds.Contains(sa.GuestId)).Select(sa => sa.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(sa => guestIds.Contains(sa.EventGuestId)).Select(sa => sa.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
 
                 var sessionGuestCounts = (await _unitOfWork.GuestSessions.Query()
-                        .Where(gs => guestIds.Contains(gs.GuestId))
+                        .Where(gs => guestIds.Contains(gs.EventGuestId))
                         .GroupBy(gs => gs.SessionId)
                         .Select(gr => new { SessionId = gr.Key, Count = gr.Count() })
                         .ToListAsync(ct))
@@ -150,9 +160,9 @@ namespace Infrastructure.Services
                         .Select(g => new DashboardGuestDto
                         {
                             Id = g.PublicId,
-                            Name = $"{g.FirstName} {g.LastName}".Trim(),
-                            Email = g.Email,
-                            PhotoUrl = g.PhotoUrl,
+                            Name = $"{g.Guest.FirstName} {g.Guest.LastName}".Trim(),
+                            Email = g.Guest.Email,
+                            PhotoUrl = g.Guest.PhotoUrl,
                             Organization = g.Organization,
                             ServiceLevelName = g.ServiceLevel?.Name,
                             ServiceLevelColor = g.ServiceLevel?.Color,
@@ -236,8 +246,8 @@ namespace Infrastructure.Services
                 }
 
                 response.Nationalities = TopBreakdown(
-                    guests.Where(g => g.NationalityId != null)
-                          .GroupBy(g => g.NationalityId.Value)
+                    guests.Where(g => g.Guest.NationalityId != null)
+                          .GroupBy(g => g.Guest.NationalityId.Value)
                           .Select(gr => new DashboardBreakdownDto
                           {
                               Label = nationalityNames.ContainsKey(gr.Key) ? nationalityNames[gr.Key].Name : "Unknown",
@@ -257,21 +267,30 @@ namespace Infrastructure.Services
 
                 // One row per day that has any movement, so the chart carries no
                 // empty leading or trailing tail.
+                //
+                // Derived from the FLIGHT bookings, not from a date on the guest:
+                // arrival/departure used to be free-standing columns that could
+                // disagree with the actual itinerary, so they were removed. A guest
+                // with no flight booked contributes no movement, which is correct —
+                // we don't know when they turn up.
+                //
+                // Landing at the event is the first leg's end; leaving is the last
+                // leg's start. A Return booking supplies both from its two legs.
                 var movement = new SortedDictionary<DateOnly, DashboardDayCountDto>();
-                foreach (var g in guests)
+                void Count(DateTime? when, bool arriving)
                 {
-                    if (g.ArrivalDate.HasValue)
-                    {
-                        var ad = g.ArrivalDate.Value;
-                        if (!movement.ContainsKey(ad)) movement[ad] = new DashboardDayCountDto { Date = ad };
-                        movement[ad].Arrivals++;
-                    }
-                    if (g.DepartureDate.HasValue)
-                    {
-                        var dd = g.DepartureDate.Value;
-                        if (!movement.ContainsKey(dd)) movement[dd] = new DashboardDayCountDto { Date = dd };
-                        movement[dd].Departures++;
-                    }
+                    if (!when.HasValue) return;
+                    var d = DateOnly.FromDateTime(when.Value);
+                    if (!movement.ContainsKey(d)) movement[d] = new DashboardDayCountDto { Date = d };
+                    if (arriving) movement[d].Arrivals++; else movement[d].Departures++;
+                }
+                foreach (var f in movementFlights)
+                {
+                    var legs = f.Legs.OrderBy(l => l.StartTime ?? DateTime.MaxValue).ToList();
+                    if (f.FlightType is FlightType.Inbound or FlightType.Return)
+                        Count(legs.FirstOrDefault()?.EndTime ?? f.ArrivalTime, arriving: true);
+                    if (f.FlightType is FlightType.Outbound or FlightType.Return)
+                        Count(legs.LastOrDefault()?.StartTime ?? f.DepartureTime, arriving: false);
                 }
                 response.Movements = movement.Values.ToList();
 

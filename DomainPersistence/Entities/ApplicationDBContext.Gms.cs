@@ -17,6 +17,10 @@ public partial class ApplicationDBContext
     public virtual DbSet<AccountRequest> AccountRequests { get; set; }
     public virtual DbSet<UserModuleGrant> UserModuleGrants { get; set; }
     public virtual DbSet<Guest> Guests { get; set; }
+    // One row per (person, event) — see EventGuest.cs. Every per-event child
+    // record (sessions, invitation, travel, service entries, seating) keys off
+    // this rather than off Guests.
+    public virtual DbSet<EventGuest> EventGuests { get; set; }
     public virtual DbSet<GuestSession> GuestSessions { get; set; }
     public virtual DbSet<Nationality> Nationalities { get; set; }
     public virtual DbSet<InvitationTemplate> InvitationTemplates { get; set; }
@@ -127,35 +131,25 @@ public partial class ApplicationDBContext
             t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
+        // Person-level only. Everything per-event moved to EventGuest below.
         modelBuilder.Entity<Guest>(g =>
         {
             g.ToTable("Guests");
             g.HasKey(x => x.Id);
             g.Property(x => x.FirstName).IsRequired().HasMaxLength(150);
             g.Property(x => x.LastName).IsRequired().HasMaxLength(150);
-            g.Property(x => x.Email).HasMaxLength(255);
-            g.Property(x => x.GuestType).HasMaxLength(50);
-            g.Property(x => x.Organization).HasMaxLength(300);
-            g.Property(x => x.Tier).HasMaxLength(50);
+            // Required and unique: Email IS the person's identity now — it is what
+            // "this guest already exists, add them to this event instead" resolves
+            // against, and what the VIP app's single OTP login keys off.
+            g.Property(x => x.Email).IsRequired().HasMaxLength(255);
             g.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             g.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            g.HasOne(x => x.Event)
-                .WithMany()
-                .HasForeignKey(x => x.EventId)
-                .OnDelete(DeleteBehavior.Restrict);
+            // Filtered so a soft-deleted person frees their email for reuse — same
+            // convention as the Users email index (see FilterUserEmailUnique...).
+            g.HasIndex(x => x.Email).IsUnique().HasFilter("[IsDeleted] = 0");
             g.HasOne(x => x.Nationality)
                 .WithMany(x => x.Guests)
                 .HasForeignKey(x => x.NationalityId)
-                .OnDelete(DeleteBehavior.SetNull);
-            g.HasOne(x => x.OrganizationRef)
-                .WithMany()
-                .HasForeignKey(x => x.OrganizationId)
-                .OnDelete(DeleteBehavior.SetNull);
-            // SetNull, not Cascade: deleting a level must never take its guests
-            // with it — they fall back to the legacy Tier string until reassigned.
-            g.HasOne(x => x.ServiceLevel)
-                .WithMany(x => x.Guests)
-                .HasForeignKey(x => x.ServiceLevelId)
                 .OnDelete(DeleteBehavior.SetNull);
             // 1:1, same convention as DriverProfile <-> User below: EF creates the
             // unique index on Guests.UserId for us from WithOne.
@@ -164,6 +158,44 @@ public partial class ApplicationDBContext
                 .HasForeignKey<Guest>(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
             g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // One person's participation in one event. See EventGuest's own remarks for
+        // why every per-event child keys off this rather than off Guest.
+        modelBuilder.Entity<EventGuest>(eg =>
+        {
+            eg.ToTable("EventGuests");
+            eg.HasKey(x => x.Id);
+            eg.Property(x => x.GuestType).HasMaxLength(50);
+            eg.Property(x => x.Organization).HasMaxLength(300);
+            eg.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            eg.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            // Cascade from the person: deleting a guest removes their participations
+            // (and, through them, their bookings) rather than orphaning the rows.
+            eg.HasOne(x => x.Guest)
+                .WithMany(x => x.EventGuests)
+                .HasForeignKey(x => x.GuestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Restrict on the event edge — same as Guest.Event was: deleting an
+            // event with guests still on it should fail loudly.
+            eg.HasOne(x => x.Event)
+                .WithMany()
+                .HasForeignKey(x => x.EventId)
+                .OnDelete(DeleteBehavior.Restrict);
+            eg.HasOne(x => x.OrganizationRef)
+                .WithMany()
+                .HasForeignKey(x => x.OrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
+            // SetNull, not Cascade: deleting a level must never take its guests
+            // with it — the participation survives, ungraded, until reassigned.
+            eg.HasOne(x => x.ServiceLevel)
+                .WithMany(x => x.EventGuests)
+                .HasForeignKey(x => x.ServiceLevelId)
+                .OnDelete(DeleteBehavior.SetNull);
+            // At most one participation per person per event. Filtered so a
+            // soft-deleted participation can be re-created later.
+            eg.HasIndex(x => new { x.GuestId, x.EventId }).IsUnique().HasFilter("[IsDeleted] = 0");
+            eg.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         // ── Per-event service catalog + guest grades ──────────────────────────
@@ -233,27 +265,27 @@ public partial class ApplicationDBContext
             e.Property(x => x.ValuesJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             e.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            e.HasOne(x => x.Guest)
+            e.HasOne(x => x.EventGuest)
                 .WithMany(x => x.ServiceEntries)
-                .HasForeignKey(x => x.GuestId)
+                .HasForeignKey(x => x.EventGuestId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Service)
                 .WithMany(x => x.GuestEntries)
                 .HasForeignKey(x => x.ServiceId)
                 .OnDelete(DeleteBehavior.Restrict);
-            // Every read is "this guest's entries", usually narrowed to one
+            // Every read is "this participation's entries", usually narrowed to one
             // service; no unique constraint because repeats are allowed.
-            e.HasIndex(x => new { x.GuestId, x.ServiceId });
+            e.HasIndex(x => new { x.EventGuestId, x.ServiceId });
             e.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<GuestSession>(gs =>
         {
             gs.ToTable("GuestSessions");
-            gs.HasKey(x => new { x.GuestId, x.SessionId });
-            gs.HasOne(x => x.Guest)
+            gs.HasKey(x => new { x.EventGuestId, x.SessionId });
+            gs.HasOne(x => x.EventGuest)
                 .WithMany(x => x.GuestSessions)
-                .HasForeignKey(x => x.GuestId)
+                .HasForeignKey(x => x.EventGuestId)
                 .OnDelete(DeleteBehavior.Cascade);
             gs.HasOne(x => x.Session)
                 .WithMany()
@@ -536,7 +568,7 @@ public partial class ApplicationDBContext
             sa.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             sa.HasOne(x => x.Seating).WithMany(x => x.SeatsDetail).HasForeignKey(x => x.SeatingId).OnDelete(DeleteBehavior.Cascade);
             sa.HasOne(x => x.Seat).WithMany().HasForeignKey(x => x.SeatId).OnDelete(DeleteBehavior.Restrict);
-            sa.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Restrict);
+            sa.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Restrict);
             sa.HasIndex(x => new { x.SeatingId, x.SeatId }).IsUnique();
         });
 
@@ -548,6 +580,8 @@ public partial class ApplicationDBContext
             t.Property(x => x.Jti).IsRequired().HasMaxLength(100);
             t.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             t.HasIndex(x => x.Jti);
+            // Stays on the PERSON, not the participation: the VIP app is a single
+            // login per human, which then lists every event they're invited to.
             t.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -639,7 +673,7 @@ public partial class ApplicationDBContext
             i.Property(x => x.AccreditationStatus).HasMaxLength(30);
             i.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             i.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            i.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            i.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Cascade);
             i.HasOne(x => x.InvitationTemplate).WithMany().HasForeignKey(x => x.InvitationTemplateId).OnDelete(DeleteBehavior.SetNull);
             i.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
@@ -661,7 +695,7 @@ public partial class ApplicationDBContext
             f.Property(x => x.ImageUrl).HasMaxLength(1000);
             f.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             f.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            f.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            f.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Cascade);
             f.HasOne(x => x.FlightClass).WithMany().HasForeignKey(x => x.FlightClassId).OnDelete(DeleteBehavior.Restrict);
             f.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
@@ -752,7 +786,7 @@ public partial class ApplicationDBContext
             a.Property(x => x.ImageUrl).HasMaxLength(1000);
             a.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             a.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            a.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            a.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Cascade);
             a.HasOne(x => x.Hotel).WithMany().HasForeignKey(x => x.AccommodationHotelId).OnDelete(DeleteBehavior.Restrict);
             a.HasOne(x => x.RoomType).WithMany().HasForeignKey(x => x.RoomTypeId).OnDelete(DeleteBehavior.Restrict);
             a.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
@@ -772,7 +806,7 @@ public partial class ApplicationDBContext
             t.Property(x => x.TotalFare).HasColumnType("decimal(18,2)");
             t.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             t.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            t.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            t.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Cascade);
             t.HasOne(x => x.PickupLocation).WithMany().HasForeignKey(x => x.PickupLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.DropoffLocation).WithMany().HasForeignKey(x => x.DropoffLocationId).OnDelete(DeleteBehavior.Restrict);
             t.HasOne(x => x.Vehicle).WithMany().HasForeignKey(x => x.VehicleId).OnDelete(DeleteBehavior.Restrict);
@@ -800,9 +834,9 @@ public partial class ApplicationDBContext
             a.HasKey(x => x.Id);
             a.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             a.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
-            a.HasOne(x => x.Guest).WithMany().HasForeignKey(x => x.GuestId).OnDelete(DeleteBehavior.Cascade);
+            a.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Cascade);
             a.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
-            a.HasIndex(x => new { x.GuestId, x.DriverId }).IsUnique().HasFilter("[IsDeleted] = 0");
+            a.HasIndex(x => new { x.EventGuestId, x.DriverId }).IsUnique().HasFilter("[IsDeleted] = 0");
             a.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 

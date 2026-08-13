@@ -13,12 +13,10 @@ namespace Core.ViewModel.Invitation
         public string GuestEmail { get; set; }
         public string GuestPhotoUrl { get; set; }
         public string Organization { get; set; }
-        public string Tier { get; set; }
+ 
         public string ServiceLevelName { get; set; }
         public string ServiceLevelNameAr { get; set; }
         public string ServiceLevelColor { get; set; }
-        public DateOnly? ArrivalDate { get; set; }
-        public DateOnly? DepartureDate { get; set; }
 
         public string EventTitle { get; set; }
         public string EventVenue { get; set; }

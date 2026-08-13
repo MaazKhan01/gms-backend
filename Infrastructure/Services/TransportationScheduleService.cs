@@ -26,7 +26,7 @@ public class TransportationScheduleService(
     {
         try
         {
-            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(request.GuestId, ct);
+            var guest = await _unitOfWork.EventGuests.GetByPublicIdAsync(request.GuestId, ct);
             if (guest == null) return ApiResponse<ScheduleRow>.NotFoundResponse("Guest not found");
 
             if (request.DropoffTime == null)
@@ -65,7 +65,7 @@ public class TransportationScheduleService(
 
             var transport = new Transport
             {
-                GuestId = guest.Id,
+                EventGuestId = guest.Id,
                 DriverId = driverId,
                 VehicleId = vehicleId,
                 PickupLocationId = await ResolveNullableId(_unitOfWork.Locations, request.PickupLocationId, ct),
@@ -101,7 +101,7 @@ public class TransportationScheduleService(
     {
         try
         {
-            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+            var guest = await _unitOfWork.EventGuests.GetByPublicIdAsync(guestId, ct);
             if (guest == null) return ApiResponse<List<AssignedDriverDto>>.NotFoundResponse("Guest not found");
 
             var driverIds = new List<int>();
@@ -113,13 +113,13 @@ public class TransportationScheduleService(
             }
 
             var existing = await _unitOfWork.GuestDriverAssignments.Query()
-                .Where(a => a.GuestId == guest.Id)
+                .Where(a => a.EventGuestId == guest.Id)
                 .Select(a => a.DriverId)
                 .ToListAsync(ct);
 
             foreach (var driverId in driverIds.Except(existing))
             {
-                var assignment = new GuestDriverAssignment { GuestId = guest.Id, DriverId = driverId };
+                var assignment = new GuestDriverAssignment { EventGuestId = guest.Id, DriverId = driverId };
                 assignment.SetCreationAudit(userId);
                 await _unitOfWork.GuestDriverAssignments.AddAsync(assignment, ct);
             }
@@ -137,7 +137,7 @@ public class TransportationScheduleService(
     public async Task<ApiResponse<List<AssignedDriverDto>>> GetAssignedDriversAsync(Guid guestId, CancellationToken ct = default)
     {
         var data = await _unitOfWork.GuestDriverAssignments.Query()
-            .Where(a => a.Guest.PublicId == guestId)
+            .Where(a => a.EventGuest.PublicId == guestId)
             .Select(a => new AssignedDriverDto
             {
                 DriverId = a.Driver.PublicId,
@@ -149,11 +149,11 @@ public class TransportationScheduleService(
 
     public async Task<ApiResponse<List<ScheduleRow>>> GetGuestScheduleAsync(Guid guestId, CancellationToken ct = default)
     {
-        var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+        var guest = await _unitOfWork.EventGuests.GetByPublicIdAsync(guestId, ct);
         if (guest == null) return ApiResponse<List<ScheduleRow>>.NotFoundResponse("Guest not found");
 
         var data = await _unitOfWork.Transports.Query()
-            .Where(t => t.GuestId == guest.Id)
+            .Where(t => t.EventGuestId == guest.Id)
             .OrderBy(t => t.PickupTime == null).ThenBy(t => t.PickupTime)
             .Select(Project)
             .ToListAsync(ct);
@@ -167,13 +167,13 @@ public class TransportationScheduleService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev == null) return ApiResponse<PaginatedResponse<ScheduleRow>>.NotFoundResponse("Event not found");
 
-        var query = _unitOfWork.Transports.Query().Where(t => t.Guest.EventId == ev.Id);
+        var query = _unitOfWork.Transports.Query().Where(t => t.EventGuest.EventId == ev.Id);
 
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
         {
             var term = request.SearchTerm.Trim();
             query = query.Where(t =>
-                (t.Guest.FirstName + " " + t.Guest.LastName).Contains(term) ||
+                (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Contains(term) ||
                 (t.Driver != null && (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Contains(term)));
         }
 
@@ -213,14 +213,15 @@ public class TransportationScheduleService(
             // Same reason as the driver notification just below — through the
             // manager so it persists and reaches the VIP app over FCM, not just
             // whatever portal tab happens to be connected.
-            await _notifications.SendToGuestAsync(transport.GuestId,
+            await _notifications.SendToGuestAsync(transport.EventGuestId,
                 NotificationTemplates.TransportGuestRideCancelled,
                 new Dictionary<string, string> { ["transportId"] = transport.PublicId.ToString() }, ct);
 
             if (transport.DriverId.HasValue)
             {
-                var guest = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Id == transport.GuestId, ct);
+                var guest = await _unitOfWork.EventGuests.Query()
+                    .Include(g => g.Guest)
+                    .FirstOrDefaultAsync(g => g.Id == transport.EventGuestId, ct);
                 await _notifications.SendToDriverAsync(_unitOfWork, transport.DriverId.Value,
                     NotificationTemplates.TransportDriverTripCancelled,
                     transport.Tokens(guest), ct);
@@ -258,8 +259,8 @@ public class TransportationScheduleService(
     private static readonly System.Linq.Expressions.Expression<Func<Transport, ScheduleRow>> Project = t => new ScheduleRow
     {
         Id = t.PublicId,
-        GuestId = t.Guest.PublicId,
-        GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+        GuestId = t.EventGuest.PublicId,
+        GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
         DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
         DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
         VehicleId = t.Vehicle == null ? null : (Guid?)t.Vehicle.PublicId,
