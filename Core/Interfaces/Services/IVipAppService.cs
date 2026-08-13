@@ -39,7 +39,12 @@ public interface IVipAppService
     // ---- Travel ---- (eventId null on any of these = every event the guest is on)
     Task<ApiResponse<List<FlightBookingResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct);
     Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, Guid? eventId, CancellationToken ct);
-    Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, Guid? eventId, CancellationToken ct);
+    /// <summary>Rides whose pickup falls on today's date, earliest first.</summary>
+    Task<ApiResponse<List<TransportationResponse>>> GetTodayTransportationAsync(int guestId, Guid? eventId, CancellationToken ct);
+
+    /// <summary>Everything else: still-open rides after today (Upcoming) and
+    /// finished/cancelled or past ones (History).</summary>
+    Task<ApiResponse<TransportBookingsResponse>> GetTransportationBookingsAsync(int guestId, Guid? eventId, CancellationToken ct);
 
     /// <summary>Guest requests a car — created with status "new" and no driver,
     /// waiting for a driver to accept it.</summary>

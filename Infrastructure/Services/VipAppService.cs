@@ -846,23 +846,58 @@ public class VipAppService(
         },
     };
 
-    public async Task<ApiResponse<TransportationResponse>> GetTransportationAsync(int guestId, Guid? eventId, CancellationToken ct)
+    // Both transport lists read the same rows — one loader, so today/upcoming/
+    // history can't disagree about what the guest is booked on. Null = no guest.
+    private async Task<List<Transport>> LoadTransportsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
         var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<TransportationResponse>.NotFoundResponse("Guest not found");
+        if (guestIds is null) return null;
 
-        var trips = await _unitOfWork.Transports.Query()
+        return await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
             .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
             .Where(t => guestIds.Contains(t.GuestId)).ToListAsync(ct);
+    }
 
-        var primary = trips.FirstOrDefault();
-        if (primary is null) return ApiResponse<TransportationResponse>.NotFoundResponse("No transportation found");
+    public async Task<ApiResponse<List<TransportationResponse>>> GetTodayTransportationAsync(int guestId, Guid? eventId, CancellationToken ct)
+    {
+        var trips = await LoadTransportsAsync(guestId, eventId, ct);
+        if (trips is null) return ApiResponse<List<TransportationResponse>>.NotFoundResponse("Guest not found");
 
-        // Same shape as the transport-request response — one mapper, so the
-        // vehicle/driver details can't drift between the two.
-        return ApiResponse<TransportationResponse>.SuccessResponse(MapTransport(primary));
+        var today = DateTime.UtcNow.Date;
+        var data = trips
+            .Where(t => t.PickupTime?.Date == today)
+            .OrderBy(t => t.PickupTime)
+            .Select(MapTransport).ToList();
+
+        // Empty list, not 404 — "nothing today" is a normal day for the app.
+        return ApiResponse<List<TransportationResponse>>.SuccessResponse(data);
+    }
+
+    public async Task<ApiResponse<TransportBookingsResponse>> GetTransportationBookingsAsync(int guestId, Guid? eventId, CancellationToken ct)
+    {
+        var trips = await LoadTransportsAsync(guestId, eventId, ct);
+        if (trips is null) return ApiResponse<TransportBookingsResponse>.NotFoundResponse("Guest not found");
+
+        var today = DateTime.UtcNow.Date;
+
+        // Today's rides live on the other endpoint — skipped here so nothing shows
+        // up twice. Of what's left: still-open and later = upcoming, the rest
+        // (past dates, completed, cancelled) = history. No pickup time yet counts
+        // as upcoming — it hasn't happened.
+        var rest = trips.Where(t => t.PickupTime?.Date != today).ToList();
+        bool IsUpcoming(Transport t) =>
+            t.PickupTime is null
+            || (t.PickupTime.Value.Date > today
+                && TransportStatuses.Live.Contains(t.TripStatus, StringComparer.OrdinalIgnoreCase));
+
+        var data = new TransportBookingsResponse
+        {
+            Upcoming = rest.Where(IsUpcoming).OrderBy(t => t.PickupTime).Select(MapTransport).ToList(),
+            History = rest.Where(t => !IsUpcoming(t)).OrderByDescending(t => t.PickupTime).Select(MapTransport).ToList(),
+        };
+        return ApiResponse<TransportBookingsResponse>.SuccessResponse(data);
     }
 
     // ============================================================

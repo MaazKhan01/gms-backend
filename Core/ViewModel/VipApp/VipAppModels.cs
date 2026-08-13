@@ -161,6 +161,14 @@ public class TransportationResponse
     public DriverResponse Driver { get; set; }
 }
 
+/// <summary>Everything that isn't today: rides still to come, and rides already
+/// done or cancelled. Empty lists, never null.</summary>
+public class TransportBookingsResponse
+{
+    public List<TransportationResponse> Upcoming { get; set; } = new();
+    public List<TransportationResponse> History { get; set; } = new();
+}
+
 public class VehicleResponse
 {
     public Guid Id { get; set; }

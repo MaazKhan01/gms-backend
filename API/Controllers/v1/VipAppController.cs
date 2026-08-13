@@ -84,9 +84,15 @@ public class VipAppController(IVipAppService _vip, ICurrentGuest _currentGuest) 
     public async Task<IActionResult> GetAccommodation([FromQuery] Guid? eventId, CancellationToken ct)
         => ToResponse(await _vip.GetAccommodationAsync(GuestId, eventId, ct));
 
-    [HttpGet("transportation")]
-    public async Task<IActionResult> GetTransportation([FromQuery] Guid? eventId, CancellationToken ct)
-        => ToResponse(await _vip.GetTransportationAsync(GuestId, eventId, ct));
+    // Today's rides only, as a list. Everything else is on /transportation/bookings.
+    [HttpGet("transportation/today")]
+    public async Task<IActionResult> GetTodayTransportation([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetTodayTransportationAsync(GuestId, eventId, ct));
+
+    // { upcoming: [...], history: [...] } — today excluded, it has its own call.
+    [HttpGet("transportation/bookings")]
+    public async Task<IActionResult> GetTransportationBookings([FromQuery] Guid? eventId, CancellationToken ct)
+        => ToResponse(await _vip.GetTransportationBookingsAsync(GuestId, eventId, ct));
 
     // Guest books a car: pickup/drop-off location, vehicle, times. Created with
     // status "new" and no driver until a driver accepts it.
