@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ public class UserService(
     IUnitOfWork _unitOfWork,
     IMapper _mapper,
     IEmailService _emailService,
+    IBackgroundJobClient _backgroundJobClient,
     IConfiguration _configuration,
     ILogger<UserService> _logger) : IUserService
 {
@@ -302,19 +304,22 @@ public class UserService(
             // driver would exist with no invite mail and nothing to retry from.
             await _unitOfWork.SaveChangesAsync(ct);
 
-            var (emailSent, emailError) = await TrySendInviteEmailAsync(user, role.Name, ct);
+            // ponytail: the ACS send was the bulk of this request's latency (network
+            // POST). Hangfire owns it now — same pattern as the bulk imports — so the
+            // admin gets the created user back as soon as the row is committed.
+            // Trade-off: we can no longer report a send failure inline, so
+            // InviteEmailSent stays true and a failed send surfaces as the invite
+            // sitting in the Pending list (Resend Invite retries it). Hangfire also
+            // retries the job itself. Await it again only if inline confirmation
+            // matters more than the response time.
+            _backgroundJobClient.Enqueue<IEmailService>(x => x.SendUserInviteAsync(
+                user.Email, user.FirstName, role.Name, BuildInviteAcceptUrl(user.InviteToken), CancellationToken.None));
 
-            var created = await _unitOfWork.Users.Query()
-                .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Id == user.Id, ct);
-
-            var response = _mapper.Map<UserResponse>(created);
-            response.InviteEmailSent = emailSent;
-            response.InviteEmailError = emailError;
-            var message = emailSent
-                ? "Invite sent"
-                : $"User created, but the invite email could not be sent — use Resend Invite to try again. {emailError}".Trim();
-            return ApiResponse<UserResponse>.SuccessResponse(response, message);
+            // No reload: PublicId is populated by SaveChanges (newid() default is
+            // value-generated-on-add) and Role is the row we already fetched.
+            user.Role = role;
+            var response = _mapper.Map<UserResponse>(user);
+            return ApiResponse<UserResponse>.SuccessResponse(response, "Invite sent");
         }
         catch (Exception ex)
         {
@@ -466,9 +471,11 @@ public class UserService(
         }
     }
 
+    private string BuildInviteAcceptUrl(Guid? inviteToken) => $"{FrontendUrl}/?screen=userInvite&token={inviteToken}";
+
     private async Task<(bool Sent, string Error)> TrySendInviteEmailAsync(User user, string roleName, CancellationToken ct)
     {
-        var acceptUrl = $"{FrontendUrl}/?screen=userInvite&token={user.InviteToken}";
+        var acceptUrl = BuildInviteAcceptUrl(user.InviteToken);
         try
         {
             await _emailService.SendUserInviteAsync(user.Email, user.FirstName, roleName, acceptUrl, ct);

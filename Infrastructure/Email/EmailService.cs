@@ -1,9 +1,13 @@
 using System;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
 using Azure.Communication.Email;
+using Azure.Core;
+using Azure.Core.Pipeline;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Core.Interfaces.Services;
@@ -18,6 +22,43 @@ public class EmailService : IEmailService
     private readonly EmailClient _emailClient;
     private readonly string _senderEmail;
     private readonly string _appName;
+
+    // IPv4-only transport. On the UAT server, DNS for the ACS front door returns both
+    // an A and an AAAA record, IPv6 packets are silently dropped, and .NET has no
+    // Happy Eyeballs — it tries the AAAA address first and sits there until the TCP
+    // connect times out, surfacing as SocketException 10060. `curl -4` to the same
+    // host from the same box completes the TLS handshake instantly, which is what this
+    // reproduces: constrain the socket to AddressFamily.InterNetwork so only the A
+    // record is ever dialled.
+    //
+    // ponytail: this is a workaround for a broken server IPv6 path, not a fix for it.
+    // The proper fix is server-side (prefer-IPv4 or a working IPv6 route) and it would
+    // cover Firebase too, which fails the same way. Drop this once the host is sane —
+    // and note it hard-codes IPv4, so an IPv6-only destination would break.
+    //
+    // Static and shared deliberately: one HttpClient for the process, so repeated
+    // EmailService instances (it is scoped) cannot exhaust sockets.
+    private static readonly HttpClient Ipv4OnlyClient = new(new SocketsHttpHandler
+    {
+        ConnectCallback = async (context, ct) =>
+        {
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true,
+            };
+            try
+            {
+                // DnsEndPoint on an InterNetwork socket resolves to A records only.
+                await socket.ConnectAsync(context.DnsEndPoint, ct).ConfigureAwait(false);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        },
+    });
 
     public EmailService(ILogger<EmailService> logger, IConfiguration configuration)
     {
@@ -34,7 +75,18 @@ public class EmailService : IEmailService
         if (string.IsNullOrEmpty(_senderEmail))
             throw new InvalidOperationException("AzureCommunicationServiceConfig:EmailSenderInfo is not configured.");
 
-        _emailClient = new EmailClient(connectionString);
+        // Bounded retries. The SDK defaults are MaxRetries=3 with a 100s network
+        // timeout each, so when the ACS front door cannot be reached a single send can
+        // occupy a thread for several minutes before it finally throws. That is what
+        // made the invite endpoint time out. Sends run in Hangfire now, so failing fast
+        // and letting the job retry with backoff beats blocking.
+        var options = new EmailClientOptions();
+        options.Retry.NetworkTimeout = TimeSpan.FromSeconds(15);
+        options.Retry.MaxRetries = 2;
+        options.Retry.Delay = TimeSpan.FromSeconds(1);
+        options.Retry.Mode = RetryMode.Exponential;
+        options.Transport = new HttpClientTransport(Ipv4OnlyClient);
+        _emailClient = new EmailClient(connectionString, options);
     }
 
     public async Task SendOtpEmailAsync(string email, string otpCode, CancellationToken ct = default)
