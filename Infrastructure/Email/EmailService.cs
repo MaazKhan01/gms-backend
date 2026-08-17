@@ -255,9 +255,10 @@ public class EmailService : IEmailService
                 recipients.BCC.Add(new EmailAddress(addr.Trim()));
 
         var message = new EmailMessage(_senderEmail, recipients, emailContent);
-        var op = await _emailClient.SendAsync(WaitUntil.Completed, message, ct);
-
-        if (op.Value.Status != EmailSendStatus.Succeeded)
-            throw new InvalidOperationException($"Email send failed with status: {op.Value.Status}");
+        // ponytail: WaitUntil.Started returns once ACS accepts the message (one POST)
+        // instead of polling delivery status for 10-60s. Rejections (bad sender,
+        // auth, malformed address) still throw here; post-acceptance bounces do not.
+        // Switch back to Completed only if a caller must confirm actual delivery.
+        await _emailClient.SendAsync(WaitUntil.Started, message, ct);
     }
 }
