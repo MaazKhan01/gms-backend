@@ -1,4 +1,5 @@
 using System;
+using DomainPersistence.Enums;
 
 namespace Core.ViewModel.Vehicle;
 
@@ -6,6 +7,9 @@ public class CreateVehicleRequest
 {
     // Public Guid of the VehicleType row (lookup), not its internal int id.
     public Guid VehicleTypeId { get; set; }
+    // VehicleUsageType enum value: 1 = fixed, 2 = open
+    // (GET /v1/lookups/enums/vehicle-usage-types). Required on new vehicles.
+    public VehicleUsageType? UsageType { get; set; }
     // Public Guid of the FleetProvider row. Optional — null means in-house.
     public Guid? FleetProviderId { get; set; }
     public string VehicleModel { get; set; }
@@ -23,6 +27,12 @@ public class VehicleResponse
     public Guid Id { get; set; }
     public Guid VehicleTypeId { get; set; }
     public string VehicleTypeName { get; set; }
+    public VehicleUsageType? UsageType { get; set; }
+    // "Fixed"/"Open" — so a list can render the label without a second lookup call.
+    public string UsageTypeName { get; set; }
+    // True when a driver already holds this car. Only meaningful for Fixed
+    // vehicles, which take one driver; Open vehicles are shared and stay false.
+    public bool IsAssignedToDriver { get; set; }
     public Guid? FleetProviderId { get; set; }
     public string FleetProviderName { get; set; }
     // Event the provider is contracted for — null for an in-house vehicle, which

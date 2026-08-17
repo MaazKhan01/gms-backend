@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using DomainPersistence.Enums;
+
 namespace DomainPersistence.Entities;
 
 /// <summary>A concrete ground-transport vehicle in the fleet — a specific car,
@@ -5,6 +8,11 @@ namespace DomainPersistence.Entities;
 public class Vehicle : Entity
 {
     public int VehicleTypeId { get; set; }
+
+    // Fixed = dedicated to a single Open driver; Open = shared pool car Fixed
+    // drivers draw from per trip. Nullable because vehicles created before this
+    // column existed have no value — same convention as DriverProfile.DriverType.
+    public VehicleUsageType? UsageType { get; set; }
 
     // Optional: existing rows predate fleet providers, and an in-house car has none.
     public int? FleetProviderId { get; set; }
@@ -20,4 +28,9 @@ public class Vehicle : Entity
     public virtual VehicleType VehicleType { get; set; }
 
     public virtual FleetProvider FleetProvider { get; set; }
+
+    // Drivers holding this car permanently. A collection rather than a single
+    // reference because an Open vehicle is shareable; a Fixed one is capped at a
+    // single row by a unique index on DriverProfiles.AssignedVehicleId.
+    public virtual ICollection<DriverProfile> DriverAssignments { get; set; } = new List<DriverProfile>();
 }

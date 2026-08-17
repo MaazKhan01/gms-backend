@@ -10,6 +10,7 @@ using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Vehicle;
 using DomainPersistence.Entities;
+using DomainPersistence.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VehicleEntity = DomainPersistence.Entities.Vehicle;
@@ -23,9 +24,22 @@ public class VehicleService(
     ITransportationConflictValidator _conflictValidator,
     ILogger<VehicleService> _logger) : IVehicleService
 {
-    public async Task<ApiResponse<List<VehicleResponse>>> GetAllAsync(Guid? eventId = null, CancellationToken ct = default)
+    public async Task<ApiResponse<List<VehicleResponse>>> GetAllAsync(
+        Guid? eventId = null, VehicleUsageType? usageType = null, bool? unassigned = null,
+        CancellationToken ct = default)
     {
-        var data = await ForEvent(_unitOfWork.Vehicles.Query(), eventId)
+        var query = ForEvent(_unitOfWork.Vehicles.Query(), eventId);
+
+        if (usageType != null)
+            query = query.Where(x => x.UsageType == usageType.Value);
+
+        // The driver-invite dropdown asks for unassigned=true so a car already held
+        // by another driver can't be picked. Only Fixed cars can be taken, so this
+        // never hides an Open pool car from the transport screens.
+        if (unassigned == true)
+            query = query.Where(x => !x.DriverAssignments.Any());
+
+        var data = await query
             .OrderBy(x => x.VehicleNumber)
             .Select(Project)
             .ToListAsync(ct);
@@ -48,6 +62,11 @@ public class VehicleService(
         var busyIds = await _conflictValidator.GetBusyVehicleIdsAsync(from, to, excludeId, ct);
 
         var data = await ForEvent(_unitOfWork.Vehicles.Query(), eventId)
+            // Open cars only. A Fixed car belongs to the one Open driver it is
+            // assigned to and is filled in automatically when that driver accepts a
+            // job, so offering it here would let an admin hand somebody else's
+            // dedicated car to a different driver. Booking forms get the pool.
+            .Where(x => x.UsageType == VehicleUsageType.Open)
             .Where(x => !busyIds.Contains(x.Id))
             .OrderBy(x => x.VehicleNumber)
             .Select(Project)
@@ -109,6 +128,7 @@ public class VehicleService(
             var vehicle = new VehicleEntity
             {
                 VehicleTypeId = vehicleTypeId,
+                UsageType = request.UsageType,
                 FleetProviderId = fleetProviderId,
                 VehicleModel = request.VehicleModel.Trim(),
                 VehicleNumber = request.VehicleNumber.Trim(),
@@ -142,7 +162,20 @@ public class VehicleService(
             if (error != null)
                 return ApiResponse<VehicleResponse>.ErrorResponse(error);
 
+            // Switching a Fixed car to Open would leave its dedicated driver holding a
+            // pool car, so the assignment has to be released first — deliberately a
+            // refusal rather than a silent unassign.
+            if (vehicle.UsageType == VehicleUsageType.Fixed && request.UsageType != VehicleUsageType.Fixed)
+            {
+                var held = await _unitOfWork.DriverProfiles.Query()
+                    .AnyAsync(d => d.AssignedVehicleId == vehicle.Id, ct);
+                if (held)
+                    return ApiResponse<VehicleResponse>.ErrorResponse(
+                        "This vehicle is assigned to a driver. Remove the assignment before changing its usage type.");
+            }
+
             vehicle.VehicleTypeId = vehicleTypeId;
+            vehicle.UsageType = request.UsageType;
             vehicle.FleetProviderId = fleetProviderId;
             vehicle.VehicleModel = request.VehicleModel.Trim();
             vehicle.VehicleNumber = request.VehicleNumber.Trim();
@@ -194,6 +227,12 @@ public class VehicleService(
             return ("Vehicle number is required", 0, null);
         if (request.Capacity is <= 0)
             return ("Capacity must be greater than zero", 0, null);
+        // Required going forward. Pre-existing rows keep whatever the backfill gave
+        // them; the column stays nullable only for their sake.
+        if (request.UsageType == null)
+            return ("Usage type is required", 0, null);
+        if (!Enum.IsDefined(request.UsageType.Value))
+            return ("Usage type is not valid", 0, null);
 
         var vehicleType = await _unitOfWork.VehicleTypes.Query()
             .FirstOrDefaultAsync(x => x.PublicId == request.VehicleTypeId, ct);
@@ -237,6 +276,11 @@ public class VehicleService(
         FleetProviderId = x.FleetProvider == null ? (Guid?)null : x.FleetProvider.PublicId,
         FleetProviderName = x.FleetProvider == null ? null : x.FleetProvider.Name,
         EventId = x.FleetProvider == null ? (Guid?)null : x.FleetProvider.Event.PublicId,
+        UsageType = x.UsageType,
+        UsageTypeName = x.UsageType == null ? null : x.UsageType.ToString(),
+        // Correlated EXISTS, not a join — a vehicle has at most one holder and the
+        // list must not fan out into duplicate rows.
+        IsAssignedToDriver = x.DriverAssignments.Any(),
         VehicleModel = x.VehicleModel,
         VehicleNumber = x.VehicleNumber,
         VehicleImage = x.VehicleImage,

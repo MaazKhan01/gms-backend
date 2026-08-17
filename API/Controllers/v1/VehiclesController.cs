@@ -6,6 +6,7 @@ using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Vehicle;
+using DomainPersistence.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,9 +19,13 @@ public class VehiclesController(IVehicleService _vehicles, ICurrentUser _current
 {
     // Reads are open to any authenticated user — transport screens need the
     // fleet dropdown. Writes require Travel.Manage (the transport module owner).
+    // usageType + unassigned are what the driver-invite picker sends: an Open driver
+    // may only be given a Fixed car that nobody else holds.
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? eventId, CancellationToken ct)
-        => ToResponse(await _vehicles.GetAllAsync(eventId, ct));
+    public async Task<IActionResult> GetAll(
+        [FromQuery] Guid? eventId, [FromQuery] VehicleUsageType? usageType,
+        [FromQuery] bool? unassigned, CancellationToken ct)
+        => ToResponse(await _vehicles.GetAllAsync(eventId, usageType, unassigned, ct));
 
     // Vehicles free over [from, to) — the booking forms' dropdown feed, so an
     // already-taken car can't be picked in the first place. The server still

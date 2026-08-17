@@ -14,6 +14,7 @@ using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.User;
 using DomainPersistence.Entities;
+using DomainPersistence.Enums;
 
 namespace Infrastructure.Services;
 
@@ -282,12 +283,17 @@ public class UserService(
                     ? (await _unitOfWork.Nationalities.GetByPublicIdAsync(d.NationalityId.Value, ct))?.Id
                     : null;
 
+                var (vehicleError, assignedVehicleId) = await ResolveDriverVehicleAsync(d, ct);
+                if (vehicleError != null)
+                    return ApiResponse<UserResponse>.ErrorResponse(vehicleError);
+
                 var profile = new DriverProfile
                 {
                     // Navigation, not UserId: the user row hasn't been inserted yet,
                     // so its Id is still 0 — EF fills the FK when it saves both.
                     User = user,
                     DriverType = d.DriverType,
+                    AssignedVehicleId = assignedVehicleId,
                     LicenseNumber = d.LicenseNumber,
                     LicenseExpiry = d.LicenseExpiry,
                     NationalityId = nationalityId,
@@ -469,6 +475,47 @@ public class UserService(
             _logger.LogError(ex, "Error accepting invite");
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while accepting the invite");
         }
+    }
+
+    // Resolves the driver's permanent vehicle, enforcing the crossed pairing:
+    // an Open driver roams and gets a Fixed car of their own; a Fixed driver is tied
+    // to a guest and takes an Open pool car per trip via Transport.VehicleId, so no
+    // permanent car is stored for them at all.
+    //
+    // Returns (error, internal vehicle id). Error non-null means reject the invite.
+    private async Task<(string Error, int? VehicleId)> ResolveDriverVehicleAsync(
+        DriverProfileInput input, CancellationToken ct)
+    {
+        var isOpenDriver = input.DriverType == DomainPersistence.Enums.DriverType.Open;
+
+        if (input.AssignedVehicleId is not { } vehiclePublicId || vehiclePublicId == Guid.Empty)
+            return isOpenDriver
+                ? ("A vehicle is required for an open driver", null)
+                : (null, null);
+
+        if (!isOpenDriver)
+            return ("Only an open driver can be assigned a vehicle — a fixed driver is given one per trip.", null);
+
+        var vehicle = await _unitOfWork.Vehicles.Query()
+            .Where(v => v.PublicId == vehiclePublicId)
+            .Select(v => new { v.Id, v.UsageType })
+            .FirstOrDefaultAsync(ct);
+
+        if (vehicle == null)
+            return ("Vehicle not found", null);
+
+        if (vehicle.UsageType != VehicleUsageType.Fixed)
+            return ("An open driver can only be assigned a fixed vehicle", null);
+
+        // Fixed cars take exactly one driver. Checked here as well as by the unique
+        // index so the admin gets this sentence instead of a DbUpdateException; the
+        // index is what actually holds under two concurrent invites.
+        var alreadyHeld = await _unitOfWork.DriverProfiles.Query()
+            .AnyAsync(p => p.AssignedVehicleId == vehicle.Id, ct);
+        if (alreadyHeld)
+            return ("This vehicle is already assigned to another driver", null);
+
+        return (null, vehicle.Id);
     }
 
     private string BuildInviteAcceptUrl(Guid? inviteToken) => $"{FrontendUrl}/?screen=userInvite&token={inviteToken}";

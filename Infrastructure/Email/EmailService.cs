@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
@@ -23,23 +24,34 @@ public class EmailService : IEmailService
     private readonly string _senderEmail;
     private readonly string _appName;
 
-    // IPv4-only transport. On the UAT server, DNS for the ACS front door returns both
-    // an A and an AAAA record, IPv6 packets are silently dropped, and .NET has no
-    // Happy Eyeballs — it tries the AAAA address first and sits there until the TCP
-    // connect times out, surfacing as SocketException 10060. `curl -4` to the same
-    // host from the same box completes the TLS handshake instantly, which is what this
-    // reproduces: constrain the socket to AddressFamily.InterNetwork so only the A
-    // record is ever dialled.
+    // This transport exists to make .NET connect exactly the way `curl -4` does, since
+    // that is what demonstrably works from the UAT server while the app times out from
+    // the same box. Three deliberate differences from the default handler, all of them
+    // things curl was doing implicitly:
     //
-    // ponytail: this is a workaround for a broken server IPv6 path, not a fix for it.
-    // The proper fix is server-side (prefer-IPv4 or a working IPv6 route) and it would
-    // cover Firebase too, which fails the same way. Drop this once the host is sane —
-    // and note it hard-codes IPv4, so an IPv6-only destination would break.
+    //  1. UseProxy = false. curl ignores the system proxy; SocketsHttpHandler does not
+    //     — it picks up the WinHTTP/IE proxy of whatever identity the process runs as.
+    //     A stale or unreachable proxy configured for the app pool identity produces
+    //     precisely the observed failure: a TaskCanceledException per attempt with no
+    //     SocketException, because the connect that hangs is to the *proxy*, not to
+    //     ACS. This is the change most likely to fix it.
+    //  2. IPv4 only. The server's DNS returns an A and an AAAA record and .NET has no
+    //     Happy Eyeballs, so a dead IPv6 path stalls the connect before IPv4 is ever
+    //     tried. `curl -4` skipped that; so does this.
+    //  3. HTTP/1.1 pinned. curl's successful handshake negotiated http/1.1 via ALPN.
+    //     Middleboxes that mangle h2 are a known cause of hangs that look like this.
     //
-    // Static and shared deliberately: one HttpClient for the process, so repeated
+    // ponytail: this is a client-side workaround for a server networking problem, and
+    // it only covers ACS — Firebase fails the same way through its own HttpClient. The
+    // real fix is the server's egress config (proxy or route). Delete this once the
+    // host is sane; note it hard-codes IPv4, so an IPv6-only endpoint would break.
+    //
+    // Static and shared deliberately: one HttpClient per process, so repeated
     // EmailService instances (it is scoped) cannot exhaust sockets.
-    private static readonly HttpClient Ipv4OnlyClient = new(new SocketsHttpHandler
+    private static readonly HttpClient DirectIpv4Client = new(new SocketsHttpHandler
     {
+        UseProxy = false,
+        Proxy = null,
         ConnectCallback = async (context, ct) =>
         {
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
@@ -58,7 +70,11 @@ public class EmailService : IEmailService
                 throw;
             }
         },
-    });
+    })
+    {
+        DefaultRequestVersion = HttpVersion.Version11,
+        DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
+    };
 
     public EmailService(ILogger<EmailService> logger, IConfiguration configuration)
     {
@@ -85,7 +101,7 @@ public class EmailService : IEmailService
         options.Retry.MaxRetries = 2;
         options.Retry.Delay = TimeSpan.FromSeconds(1);
         options.Retry.Mode = RetryMode.Exponential;
-        options.Transport = new HttpClientTransport(Ipv4OnlyClient);
+        options.Transport = new HttpClientTransport(DirectIpv4Client);
         _emailClient = new EmailClient(connectionString, options);
     }
 

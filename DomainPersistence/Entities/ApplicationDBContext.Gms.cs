@@ -858,6 +858,24 @@ public partial class ApplicationDBContext
             d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             d.HasOne(x => x.User).WithOne(u => u.DriverProfile).HasForeignKey<DriverProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             d.HasOne(x => x.Nationality).WithMany().HasForeignKey(x => x.NationalityId).OnDelete(DeleteBehavior.Restrict);
+            // Restrict, not SetNull: a car that a driver is holding should not be
+            // deletable out from under them — the assignment has to be cleared first.
+            d.HasOne(x => x.AssignedVehicle).WithMany(v => v.DriverAssignments).HasForeignKey(x => x.AssignedVehicleId).OnDelete(DeleteBehavior.Restrict);
+            // One car, one driver. Only Fixed vehicles are ever assigned here (an
+            // Open driver takes a Fixed car), and a Fixed car is dedicated by
+            // definition, so plain uniqueness on the column is the rule.
+            //
+            // ponytail: the wider rule — Fixed unique, Open shareable — cannot live in
+            // a filtered index, because the filter would have to read Vehicles.UsageType
+            // from another table. It is enforced in UserService alongside the
+            // driver-type pairing. If Fixed drivers ever start getting Open cars
+            // assigned here too, this index has to go and the app check becomes the
+            // only guard.
+            // The IsDeleted half mirrors this entity's query filter exactly, nulls
+            // included — with a bare "[IsDeleted] = 0" a legacy row holding NULL would
+            // fall outside the index and could take a second copy of the same car.
+            d.HasIndex(x => x.AssignedVehicleId).IsUnique()
+                .HasFilter("[AssignedVehicleId] IS NOT NULL AND ([IsDeleted] = 0 OR [IsDeleted] IS NULL)");
             d.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
     }

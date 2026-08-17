@@ -27,6 +27,11 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     public IActionResult GetDriverTypes()
         => ToResponse(_lookupService.GetDriverTypes());
 
+    // Vehicle engagement types (fixed / open) for the vehicle form.
+    [HttpGet("enums/vehicle-usage-types")]
+    public IActionResult GetVehicleUsageTypes()
+        => ToResponse(_lookupService.GetVehicleUsageTypes());
+
     // Transfer lifecycle statuses — the values the transport-app job filters take.
     [HttpGet("enums/transport-statuses")]
     public IActionResult GetTransportStatuses()

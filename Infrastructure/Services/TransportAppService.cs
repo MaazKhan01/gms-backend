@@ -322,7 +322,7 @@ public class TransportAppService(
                 GuestTier = t.Guest.Tier,
                 GuestType = t.Guest.GuestType,
                 GuestOrganization = t.Guest.Organization,
-                GuestEmail = t.Guest.Email,
+                GuestEmail = t.Guest.User.Phone,
                 GuestPhotoUrl = t.Guest.PhotoUrl,
                 Pickup = t.PickupLocation == null ? null : new JobLocationResponse
                 {
@@ -489,6 +489,10 @@ public class TransportAppService(
                 return ApiResponse<DriverJobResponse>.ForbiddenResponse("Only open drivers can accept requested jobs");
 
             var driverId = driver.Id;
+            // An Open driver drives their own dedicated car, so claiming the job also
+            // fills in the vehicle — the guest and the admin screens then show which
+            // car is coming without anybody picking one.
+            var driverVehicleId = driver.AssignedVehicleId;
 
             // The claim is a single conditional UPDATE — the DriverId == null and
             // status == "new" tests are part of the WHERE, so two drivers tapping
@@ -500,6 +504,10 @@ public class TransportAppService(
                          && t.DriverId == null)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(t => t.DriverId, driverId)
+                    // Coalesce, not a plain assignment: a driver invited before cars
+                    // were assignable has none, and this must not wipe a vehicle the
+                    // row already carried.
+                    .SetProperty(t => t.VehicleId, t => driverVehicleId ?? t.VehicleId)
                     .SetProperty(t => t.TripStatus, TransportStatuses.Assigned)
                     .SetProperty(t => t.UpdatedBy, userId)
                     .SetProperty(t => t.UpdatedAt, DateTime.UtcNow), ct);
@@ -667,14 +675,15 @@ public class TransportAppService(
         return eventId == null ? q : q.Where(t => t.Guest.Event.PublicId == eventId.Value);
     }
 
-    // The caller's driver profile in the two shapes the open-job pool needs:
-    // which row, and whether they're a Fixed or Open driver.
-    private sealed record DriverRef(int Id, DriverType? Type, bool IsOnline);
+    // The caller's driver profile in the shapes the open-job pool needs: which row,
+    // whether they're a Fixed or Open driver, and the car they keep permanently
+    // (Open drivers only — it lands on the Transport row when they accept a job).
+    private sealed record DriverRef(int Id, DriverType? Type, bool IsOnline, int? AssignedVehicleId);
 
     private Task<DriverRef> ResolveDriverAsync(int userId, CancellationToken ct)
         => _unitOfWork.DriverProfiles.QueryNoTracking()
             .Where(d => d.UserId == userId)
-            .Select(d => new DriverRef(d.Id, d.DriverType, d.IsOnline))
+            .Select(d => new DriverRef(d.Id, d.DriverType, d.IsOnline, d.AssignedVehicleId))
             .FirstOrDefaultAsync(ct);
 
     // The caller's DriverProfile.Id, or null when they aren't a driver.

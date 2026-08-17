@@ -19,6 +19,11 @@ public class DriverProfileInput
 {
     // DriverType enum value: 1 = fixed, 2 = open (GET /v1/lookups/enums/driver-types).
     public DriverType? DriverType { get; set; }
+    // Public Guid of the Vehicle this driver keeps permanently. Required when
+    // DriverType is Open and must point at a Fixed vehicle nobody else holds;
+    // rejected for a Fixed driver, who draws an Open pool car per trip instead.
+    // Feed the picker from GET /v1/vehicles?usageType=1&unassigned=true.
+    public Guid? AssignedVehicleId { get; set; }
     public string LicenseNumber { get; set; }
     public DateOnly? LicenseExpiry { get; set; }
     public Guid? NationalityId { get; set; }

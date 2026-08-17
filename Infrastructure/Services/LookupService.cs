@@ -24,6 +24,15 @@ public class LookupService : ILookupService
             new((int)DriverType.Open,  "Open",  "مفتوح"),
         });
 
+    // Same two labels as the driver types, separate enum: a Fixed vehicle is one
+    // dedicated to a single Open driver, an Open vehicle is a shared pool car.
+    public ApiResponse<List<EnumIntOption>> GetVehicleUsageTypes()
+        => ApiResponse<List<EnumIntOption>>.SuccessResponse(new List<EnumIntOption>
+        {
+            new((int)VehicleUsageType.Fixed, "Fixed", "ثابت"),
+            new((int)VehicleUsageType.Open,  "Open",  "مفتوح"),
+        });
+
     // Directions a flight booking can take. "return" is a single booking with two
     // legs (outbound + inbound); the other two carry one leg.
     public ApiResponse<List<LookupEnumOption>> GetFlightTypes()
