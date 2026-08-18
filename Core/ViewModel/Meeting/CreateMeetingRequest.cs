@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,6 +15,8 @@ namespace Core.ViewModel.Meeting
         public TimeOnly? StartTime { get; set; }
         public TimeOnly? EndTime { get; set; }
         public string? MeetingAgenda { get; set; }
-        public ICollection<Guid> GuestIds { get; set; }
+        /// <summary>EventGuest.PublicIds. A meeting belongs to one event, so every
+        /// attendee must be a participation in THAT event.</summary>
+        public ICollection<Guid> EventGuestIds { get; set; }
     }
 }

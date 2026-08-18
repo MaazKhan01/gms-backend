@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
+using Microsoft.Data.SqlClient;
 
 namespace Infrastructure.Services;
 
@@ -33,42 +34,74 @@ public class GuestService(
 {
     private string FrontendUrl => _configuration.GetValue<string>("FrontendUrl") ?? "http://localhost:5173";
 
-    // Auto-provisions the User row every Guest is now 1:1 with (see Guest.UserId
+    // Auto-provisions the User row every Guest is 1:1 with (see Guest.UserId
     // remarks) — RoleId -> the "guest" role (PortalAccess=false, no permissions),
     // PasswordHash left null (OTP via CurrentGuest/VipAppService remains the only
-    // way in). Email/UserName are deliberately left null: Guests.Email has no
-    // uniqueness constraint (the same person can be re-invited per event), which
-    // would collide with Users' filtered-unique Email index.
-    private async Task<User> CreateLinkedUserAsync(string firstName, string lastName, CancellationToken ct)
+    // way in). Email AND UserName are both set to the guest's email: Guests.Email
+    // is unique among active rows now, so the two filtered-unique indexes on Users
+    // agree with it rather than fighting it, and every lookup that goes through
+    // Users (support chat, notifications, driver chat) can find a guest by email.
+    private async Task<User> BuildLinkedUserAsync(string email, string firstName, string lastName, CancellationToken ct)
     {
         var guestRole = await _unitOfWork.Roles.FindFirstOrDefaultAsync(r => r.Code == Roles.GUEST, ct);
-        var user = new User
+        return new User
         {
+            UserName = email,
+            Email = email,
             FirstName = firstName,
             LastName = lastName,
             IsActive = true,
             RoleId = guestRole?.Id,
         };
-        await _unitOfWork.Users.AddAsync(user, ct);
-        await _unitOfWork.SaveChangesAsync(ct); // need the generated Id for Guest.UserId
-        return user;
     }
 
-    // Upserts the guest's Invitation row (one per guest) with a fresh token
-    // and fires the branded email. Called from Create/UpdateGuestAsync when
-    // an InvitationTemplateId is supplied — including to resend.
-    private async Task SendInvitationAsync(Guest guest, Guid templateId, CancellationToken ct)
+    // A unique-index violation is how a create race lands here: two requests both
+    // read "no such guest / not in this event yet", then one of the inserts loses.
+    // 2601/2627 are SQL Server's duplicate-key numbers; anything else is a real
+    // failure and must not be reported to the caller as a conflict.
+    private static bool IsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is SqlException sql && sql.Number is 2601 or 2627;
+
+    // Normalised form of a guest email — the one place the trim/lowercase rule
+    // lives, so the uniqueness check and the stored value can never disagree.
+    private static string NormalizeEmail(string email) => email?.Trim().ToLowerInvariant();
+
+    // The person behind an email, or null. Deliberately not filtered by event:
+    // Guest IS the cross-event identity now.
+    private Task<Guest> FindPersonByEmailAsync(string normalisedEmail, CancellationToken ct)
+        => _unitOfWork.Guests.Query()
+            .Include(g => g.User)
+            .FirstOrDefaultAsync(g => g.Email == normalisedEmail, ct);
+
+    // Every read of a participation that feeds GuestResponse — one place so the
+    // list, the detail and the create/update echoes can't drift apart.
+    private IQueryable<EventGuest> EventGuestGraph()
+        => _unitOfWork.EventGuests.Query()
+            .Include(eg => eg.Guest).ThenInclude(g => g.Nationality)
+            .Include(eg => eg.Event)
+            .Include(eg => eg.OrganizationRef)
+            .Include(eg => eg.ServiceLevel)
+            .Include(eg => eg.GuestSessions).ThenInclude(gs => gs.Session);
+
+    // Upserts the participation's Invitation row (one per EventGuest) with a
+    // fresh token and fires the branded email. Called from Create/UpdateGuestAsync
+    // when an InvitationTemplateId is supplied — including to resend.
+    private async Task SendInvitationAsync(EventGuest participation, Guid templateId, CancellationToken ct)
     {
         var template = await _unitOfWork.InvitationTemplates.Query()
             .FirstOrDefaultAsync(t => t.PublicId == templateId, ct);
         if (template == null) return;
 
+        var guest = participation.Guest
+            ?? await _unitOfWork.Guests.Query().FirstOrDefaultAsync(g => g.Id == participation.GuestId, ct);
+        if (guest == null) return;
+
         var invitation = await _unitOfWork.Invitations.Query()
-            .FirstOrDefaultAsync(i => i.GuestId == guest.Id, ct);
+            .FirstOrDefaultAsync(i => i.EventGuestId == participation.Id, ct);
 
         if (invitation == null)
         {
-            invitation = new Invitation { GuestId = guest.Id, AccreditationStatus = GuestAccreditationStatus.NotIssued };
+            invitation = new Invitation { EventGuestId = participation.Id, AccreditationStatus = GuestAccreditationStatus.NotIssued };
             await _unitOfWork.Invitations.AddAsync(invitation, ct);
         }
 
@@ -82,7 +115,8 @@ public class GuestService(
         // it would flip the new row Added -> Modified while Id is still a temp value and throw.
         await _unitOfWork.SaveChangesAsync(ct);
 
-        var ev = await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.Id == guest.EventId, ct);
+        var ev = participation.Event
+            ?? await _unitOfWork.Events.Query().FirstOrDefaultAsync(e => e.Id == participation.EventId, ct);
         var guestName = $"{guest.FirstName} {guest.LastName}".Trim();
         var link = $"{FrontendUrl}/?screen=invitation&token={invitation.InvitationToken}";
 
@@ -111,7 +145,7 @@ public class GuestService(
             EventVenue = ev?.VenueName,
             EventStartDate = ev?.StartDate,
             EventEndDate = ev?.EndDate,
-            Tier = guest.Tier,
+            Tier = participation.Tier,
             Reference = invitation.InvitationToken?.ToString("N")[..8].ToUpperInvariant(),
         };
 
@@ -122,23 +156,19 @@ public class GuestService(
             catch (Exception ex) { _logger.LogWarning(ex, "Could not send invitation email to {Email}", email); }
         });
     }
+    /// <summary><paramref name="id"/> is an <c>EventGuest.PublicId</c> — one
+    /// person's participation in one event, which is what the guest screens edit.</summary>
     public async Task<ApiResponse<GuestResponse>> GetGuestByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
-            var guest = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
-                .Include(g => g.Nationality)
-                .Include(g => g.OrganizationRef)
-                .Include(g => g.ServiceLevel)
-                .Include(g => g.Event)
-                .FirstOrDefaultAsync(g => g.PublicId == id, ct);
+            var participation = await EventGuestGraph().FirstOrDefaultAsync(eg => eg.PublicId == id, ct);
 
-            if (guest == null)
+            if (participation == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            var response = _mapper.Map<GuestResponse>(guest);
-            await MergeInvitationAsync(response, guest.Id, ct);
+            var response = _mapper.Map<GuestResponse>(participation);
+            await MergeInvitationAsync(response, participation.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response);
         }
         catch (Exception ex)
@@ -148,33 +178,33 @@ public class GuestService(
         }
     }
 
-    // Merges the guest's Invitation row (status/accreditation/template) into an
-    // already-mapped GuestResponse — Invitation isn't part of the Guest entity
-    // graph, so AutoMapper can't reach it on its own.
-    private async Task MergeInvitationAsync(GuestResponse response, int guestId, CancellationToken ct)
+    // Merges the participation's Invitation row (status/accreditation/template)
+    // into an already-mapped GuestResponse — Invitation isn't part of the
+    // EventGuest entity graph, so AutoMapper can't reach it on its own.
+    private async Task MergeInvitationAsync(GuestResponse response, int eventGuestId, CancellationToken ct)
     {
         var invitation = await _unitOfWork.Invitations.Query()
             .Include(i => i.InvitationTemplate)
-            .FirstOrDefaultAsync(i => i.GuestId == guestId, ct);
+            .FirstOrDefaultAsync(i => i.EventGuestId == eventGuestId, ct);
 
         response.InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent;
         response.AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued;
         response.InvitationTemplateId = invitation?.InvitationTemplate?.PublicId;
     }
 
-    private async Task MergeInvitationsAsync(List<GuestResponse> responses, List<int> guestIds, CancellationToken ct)
+    private async Task MergeInvitationsAsync(List<GuestResponse> responses, List<int> eventGuestIds, CancellationToken ct)
     {
-        if (guestIds.Count == 0) return;
+        if (eventGuestIds.Count == 0) return;
 
         var invitations = await _unitOfWork.Invitations.Query()
             .Include(i => i.InvitationTemplate)
-            .Where(i => guestIds.Contains(i.GuestId))
+            .Where(i => eventGuestIds.Contains(i.EventGuestId))
             .ToListAsync(ct);
-        var byGuestId = invitations.ToDictionary(i => i.GuestId, i => i);
+        var byGuestId = invitations.ToDictionary(i => i.EventGuestId, i => i);
 
-        for (var idx = 0; idx < responses.Count && idx < guestIds.Count; idx++)
+        for (var idx = 0; idx < responses.Count && idx < eventGuestIds.Count; idx++)
         {
-            byGuestId.TryGetValue(guestIds[idx], out var invitation);
+            byGuestId.TryGetValue(eventGuestIds[idx], out var invitation);
             responses[idx].InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent;
             responses[idx].AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued;
             responses[idx].InvitationTemplateId = invitation?.InvitationTemplate?.PublicId;
@@ -189,24 +219,17 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<bool>.NotFoundResponse("Event not found");
 
-            var guests = await _unitOfWork.Guests
+            // The ids are EventGuest.PublicIds: removing a guest from an event
+            // drops their participation, never the person (who may be on other events).
+            var participations = await _unitOfWork.EventGuests
                 .Query()
-                .Where(g => request.SelectedGuestsToDelete.Contains(g.PublicId) && g.EventId == ev.Id)
+                .Where(eg => request.SelectedGuestsToDelete.Contains(eg.PublicId) && eg.EventId == ev.Id)
                 .ToListAsync(ct);
 
-            if (!guests.Any())
+            if (!participations.Any())
                 return ApiResponse<bool>.NotFoundResponse("No matching guests found");
 
-            // Same Restrict-FK concern as DeleteGuestByIdAsync — free any seats
-            // held by these guests before removing them.
-            var guestIds = guests.Select(g => g.Id).ToList();
-            var seatAssigns = await _unitOfWork.SeatAssigns.Query()
-                .Where(sa => guestIds.Contains(sa.GuestId))
-                .ToListAsync(ct);
-            if (seatAssigns.Count > 0)
-                _unitOfWork.SeatAssigns.RemoveRange(seatAssigns);
-
-            _unitOfWork.Guests.RemoveRange(guests);
+            await SoftDeleteParticipationsAsync(participations, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             return ApiResponse<bool>.SuccessResponse(true);
         }
@@ -283,6 +306,11 @@ public class GuestService(
     // dropdown column against what currently exists (so a value that existed
     // when the template was downloaded but was since renamed/deleted fails
     // that one row with a clear reason), then calls CreateGuestAsync per row.
+    //
+    // Duplicate emails therefore follow the same rules as the UI: a row whose
+    // email is already on THIS event fails with "already on this event", while
+    // one whose email exists on another event silently reuses that master Guest
+    // and its login and only adds the participation. Nothing here dedupes people.
     public async Task ProcessGuestsImportBatchAsync(Guid batchId, CancellationToken ct = default)
     {
         var batch = await _unitOfWork.ImportBatches.Query().FirstOrDefaultAsync(b => b.PublicId == batchId, ct);
@@ -403,7 +431,7 @@ public class GuestService(
                     {
                         FirstName = firstName,
                         LastName = lastName,
-                        Email = email.Length > 0 ? email : null,
+                        Email = email,
                         EventId = eventEntity.PublicId,
                         GuestType = guestTypeCode,
                         OrganizationId = organizationId,
@@ -464,19 +492,19 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<PaginatedResponse<GuestPickerResponse>>.NotFoundResponse("Event not found");
 
-            var query = _unitOfWork.Guests.QueryNoTracking().Where(g => g.EventId == ev.Id);
+            var query = _unitOfWork.EventGuests.QueryNoTracking().Where(eg => eg.EventId == ev.Id);
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
             {
                 var term = request.SearchTerm.Trim();
-                query = query.Where(g =>
-                    g.FirstName.Contains(term) ||
-                    g.LastName.Contains(term) ||
-                    (g.Organization != null && g.Organization.Contains(term)));
+                query = query.Where(eg =>
+                    eg.Guest.FirstName.Contains(term) ||
+                    eg.Guest.LastName.Contains(term) ||
+                    (eg.Organization != null && eg.Organization.Contains(term)));
             }
 
-            query = query.Where(g => !_unitOfWork.Invitations.Query()
-                .Any(i => i.GuestId == g.Id && i.InvitationStatus == GuestInvitationStatus.Declined));
+            query = query.Where(eg => !_unitOfWork.Invitations.Query()
+                .Any(i => i.EventGuestId == eg.Id && i.InvitationStatus == GuestInvitationStatus.Declined));
 
             var total = await query.CountAsync(ct);
 
@@ -484,17 +512,18 @@ public class GuestService(
             var pageNumber = request.PageNumber < 1 ? 1 : request.PageNumber;
 
             var items = await query
-                .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
+                .OrderBy(eg => eg.Guest.FirstName).ThenBy(eg => eg.Guest.LastName)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .Select(g => new GuestPickerResponse
+                .Select(eg => new GuestPickerResponse
                 {
-                    Id = g.PublicId,
-                    FullName = (g.FirstName + " " + g.LastName).Trim(),
-                    Email = g.Email,
-                    Organization = g.Organization,
-                    Tier = g.Tier,
-                    PhotoUrl = g.PhotoUrl,
+                    Id = eg.PublicId,
+                    PersonId = eg.Guest.PublicId,
+                    FullName = (eg.Guest.FirstName + " " + eg.Guest.LastName).Trim(),
+                    Email = eg.Guest.Email,
+                    Organization = eg.Organization,
+                    Tier = eg.Tier,
+                    PhotoUrl = eg.Guest.PhotoUrl,
                 })
                 .ToListAsync(ct);
 
@@ -517,17 +546,21 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<PaginatedResponse<OtherEventGuestRow>>.NotFoundResponse("Event not found");
 
-            var query = _unitOfWork.Guests.QueryNoTracking().Where(g => g.EventId != ev.Id);
+            // Participations in OTHER events whose person is not already on this
+            // one: adding someone who is already here is a conflict, not a pick.
+            var query = _unitOfWork.EventGuests.QueryNoTracking()
+                .Where(eg => eg.EventId != ev.Id)
+                .Where(eg => !_unitOfWork.EventGuests.Query().Any(x => x.GuestId == eg.GuestId && x.EventId == ev.Id));
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
             {
                 var term = request.SearchTerm.Trim();
-                query = query.Where(g =>
-                    g.FirstName.Contains(term) ||
-                    g.LastName.Contains(term) ||
-                    (g.Email != null && g.Email.Contains(term)) ||
-                    (g.Organization != null && g.Organization.Contains(term)) ||
-                    (g.OrganizationRef != null && g.OrganizationRef.Name.Contains(term)));
+                query = query.Where(eg =>
+                    eg.Guest.FirstName.Contains(term) ||
+                    eg.Guest.LastName.Contains(term) ||
+                    (eg.Guest.Email != null && eg.Guest.Email.Contains(term)) ||
+                    (eg.Organization != null && eg.Organization.Contains(term)) ||
+                    (eg.OrganizationRef != null && eg.OrganizationRef.Name.Contains(term)));
             }
 
             var total = await query.CountAsync(ct);
@@ -536,49 +569,50 @@ public class GuestService(
             var pageNumber = request.PageNumber < 1 ? 1 : request.PageNumber;
 
             var raw = await query
-                .OrderBy(g => g.FirstName).ThenBy(g => g.LastName)
+                .OrderBy(eg => eg.Guest.FirstName).ThenBy(eg => eg.Guest.LastName)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
-                .Select(g => new
+                .Select(eg => new
                 {
-                    GuestId = g.Id,
+                    EventGuestId = eg.Id,
                     Row = new OtherEventGuestRow
                     {
-                        Id = g.PublicId,
-                        FirstName = g.FirstName,
-                        LastName = g.LastName,
-                        Email = g.Email,
-                        GuestType = g.GuestType,
-                        OrganizationId = g.OrganizationRef != null ? (Guid?)g.OrganizationRef.PublicId : null,
-                        OrganizationName = g.OrganizationRef != null ? g.OrganizationRef.Name : g.Organization,
-                        NationalityId = g.Nationality != null ? (Guid?)g.Nationality.PublicId : null,
-                        NationalityName = g.Nationality != null ? g.Nationality.Name : null,
-                        NationalityFlag = g.Nationality != null ? g.Nationality.Flag : null,
-                        PhotoUrl = g.PhotoUrl,
-                        Tier = g.Tier,
-                        ServiceLevelId = g.ServiceLevel != null ? (Guid?)g.ServiceLevel.PublicId : null,
-                        ServiceLevelName = g.ServiceLevel != null ? g.ServiceLevel.Name : null,
-                        ServiceLevelColor = g.ServiceLevel != null ? g.ServiceLevel.Color : null,
-                        AccreditationRequired = g.AccreditationRequired,
-                        EventId = g.Event.PublicId,
-                        EventTitle = g.Event.Title,
+                        Id = eg.PublicId,
+                        PersonId = eg.Guest.PublicId,
+                        FirstName = eg.Guest.FirstName,
+                        LastName = eg.Guest.LastName,
+                        Email = eg.Guest.Email,
+                        GuestType = eg.GuestType,
+                        OrganizationId = eg.OrganizationRef != null ? (Guid?)eg.OrganizationRef.PublicId : null,
+                        OrganizationName = eg.OrganizationRef != null ? eg.OrganizationRef.Name : eg.Organization,
+                        NationalityId = eg.Guest.Nationality != null ? (Guid?)eg.Guest.Nationality.PublicId : null,
+                        NationalityName = eg.Guest.Nationality != null ? eg.Guest.Nationality.Name : null,
+                        NationalityFlag = eg.Guest.Nationality != null ? eg.Guest.Nationality.Flag : null,
+                        PhotoUrl = eg.Guest.PhotoUrl,
+                        Tier = eg.Tier,
+                        ServiceLevelId = eg.ServiceLevel != null ? (Guid?)eg.ServiceLevel.PublicId : null,
+                        ServiceLevelName = eg.ServiceLevel != null ? eg.ServiceLevel.Name : null,
+                        ServiceLevelColor = eg.ServiceLevel != null ? eg.ServiceLevel.Color : null,
+                        AccreditationRequired = eg.AccreditationRequired,
+                        EventId = eg.Event.PublicId,
+                        EventTitle = eg.Event.Title,
                     },
                 })
                 .ToListAsync(ct);
 
             var items = raw.Select(r => r.Row).ToList();
-            var guestIds = raw.Select(r => r.GuestId).ToList();
+            var eventGuestIds = raw.Select(r => r.EventGuestId).ToList();
 
-            if (guestIds.Count > 0)
+            if (eventGuestIds.Count > 0)
             {
                 var invitations = await _unitOfWork.Invitations.Query()
-                    .Where(i => guestIds.Contains(i.GuestId))
+                    .Where(i => eventGuestIds.Contains(i.EventGuestId))
                     .ToListAsync(ct);
-                var byGuestId = invitations.ToDictionary(i => i.GuestId, i => i);
+                var byGuestId = invitations.ToDictionary(i => i.EventGuestId, i => i);
 
                 for (var idx = 0; idx < items.Count; idx++)
                 {
-                    byGuestId.TryGetValue(guestIds[idx], out var invitation);
+                    byGuestId.TryGetValue(eventGuestIds[idx], out var invitation);
                     items[idx].InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent;
                     items[idx].AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued;
                 }
@@ -594,6 +628,8 @@ public class GuestService(
         }
     }
 
+    /// <summary>The event's guest table: one row per participation, so the same
+    /// person on two events appears once under each.</summary>
     public async Task<ApiResponse<PaginatedResponse<GuestResponse>>> GetGuestsAsync(Guid eventId, GuestPagedRequest request, CancellationToken ct = default)
     {
         try
@@ -602,28 +638,22 @@ public class GuestService(
             if (ev == null)
                 return ApiResponse<PaginatedResponse<GuestResponse>>.NotFoundResponse("Event not found");
 
-            var query = _unitOfWork.Guests.Query()
-                .Include(g => g.Nationality)
-                .Include(g => g.OrganizationRef)
-                .Include(g => g.ServiceLevel)
-                .Include(g => g.Event)
-                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
-                .Where(g => g.EventId == ev.Id);
+            var query = EventGuestGraph().Where(eg => eg.EventId == ev.Id);
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
             {
                 var term = request.SearchTerm.ToLower();
-                query = query.Where(g =>
-                    g.FirstName.ToLower().Contains(term) ||
-                    g.LastName.ToLower().Contains(term) ||
-                    (g.Email != null && g.Email.ToLower().Contains(term)) ||
-                    (g.Organization != null && g.Organization.ToLower().Contains(term)));
+                query = query.Where(eg =>
+                    eg.Guest.FirstName.ToLower().Contains(term) ||
+                    eg.Guest.LastName.ToLower().Contains(term) ||
+                    (eg.Guest.Email != null && eg.Guest.Email.ToLower().Contains(term)) ||
+                    (eg.Organization != null && eg.Organization.ToLower().Contains(term)));
             }
 
             if (!string.IsNullOrWhiteSpace(request.Tier))
             {
                 var tier = request.Tier.ToLower();
-                query = query.Where(g => g.Tier.ToLower() == tier);
+                query = query.Where(eg => eg.Tier.ToLower() == tier);
             }
 
             if (request.ServiceLevelId is { } levelPublicId && levelPublicId != Guid.Empty)
@@ -633,19 +663,19 @@ public class GuestService(
                 // Unknown id must return nothing, not everything.
                 query = level == null
                     ? query.Where(_ => false)
-                    : query.Where(g => g.ServiceLevelId == level.Id);
+                    : query.Where(eg => eg.ServiceLevelId == level.Id);
             }
 
-            // Invitation status lives on the Invitation row, not the Guest — and
-            // "not_sent" also covers guests who have no invitation row at all.
+            // Invitation status lives on the Invitation row, not the participation
+            // — and "not_sent" also covers guests who have no invitation row at all.
             if (!string.IsNullOrWhiteSpace(request.InvitationStatus))
             {
                 var status = request.InvitationStatus;
                 query = status == GuestInvitationStatus.NotSent
-                    ? query.Where(g => !_unitOfWork.Invitations.Query()
-                        .Any(i => i.GuestId == g.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
-                    : query.Where(g => _unitOfWork.Invitations.Query()
-                        .Any(i => i.GuestId == g.Id && i.InvitationStatus == status));
+                    ? query.Where(eg => !_unitOfWork.Invitations.Query()
+                        .Any(i => i.EventGuestId == eg.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
+                    : query.Where(eg => _unitOfWork.Invitations.Query()
+                        .Any(i => i.EventGuestId == eg.Id && i.InvitationStatus == status));
             }
 
             // Multi-select variant used by the Guests filter panel — same rules
@@ -658,25 +688,25 @@ public class GuestService(
                 if (statuses.Count > 0)
                 {
                     var includesNotSent = statuses.Contains(GuestInvitationStatus.NotSent);
-                    var otherStatuses = statuses.Where(s => s != GuestInvitationStatus.NotSent).ToList();
-                    query = query.Where(g =>
+                    var otherStatuses = statuses.Where(x => x != GuestInvitationStatus.NotSent).ToList();
+                    query = query.Where(eg =>
                         (includesNotSent && !_unitOfWork.Invitations.Query()
-                            .Any(i => i.GuestId == g.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
+                            .Any(i => i.EventGuestId == eg.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
                         || (otherStatuses.Count > 0 && _unitOfWork.Invitations.Query()
-                            .Any(i => i.GuestId == g.Id && otherStatuses.Contains(i.InvitationStatus))));
+                            .Any(i => i.EventGuestId == eg.Id && otherStatuses.Contains(i.InvitationStatus))));
                 }
             }
 
             if (request.OrganizationId.HasValue && request.OrganizationId != Guid.Empty)
             {
                 var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.OrganizationId.Value, ct);
-                query = query.Where(g => org != null && g.OrganizationId == org.Id);
+                query = query.Where(eg => org != null && eg.OrganizationId == org.Id);
             }
 
             if (request.NationalityId.HasValue && request.NationalityId != Guid.Empty)
             {
                 var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(request.NationalityId.Value, ct);
-                query = query.Where(g => nat != null && g.NationalityId == nat.Id);
+                query = query.Where(eg => nat != null && eg.Guest.NationalityId == nat.Id);
             }
 
             // Accreditation: "not_required" (flag off) / "pending" (flag on, not
@@ -684,33 +714,33 @@ public class GuestService(
             if (!string.IsNullOrWhiteSpace(request.AccreditationStatus))
             {
                 if (request.AccreditationStatus == "not_required")
-                    query = query.Where(g => !g.AccreditationRequired);
+                    query = query.Where(eg => !eg.AccreditationRequired);
                 else if (request.AccreditationStatus == GuestAccreditationStatus.Issued)
-                    query = query.Where(g => g.AccreditationRequired && _unitOfWork.Invitations.Query()
-                        .Any(i => i.GuestId == g.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
+                    query = query.Where(eg => eg.AccreditationRequired && _unitOfWork.Invitations.Query()
+                        .Any(i => i.EventGuestId == eg.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
                 else if (request.AccreditationStatus == "pending")
-                    query = query.Where(g => g.AccreditationRequired && !_unitOfWork.Invitations.Query()
-                        .Any(i => i.GuestId == g.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
+                    query = query.Where(eg => eg.AccreditationRequired && !_unitOfWork.Invitations.Query()
+                        .Any(i => i.EventGuestId == eg.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
             }
 
             // Downstream pickers (seating/meetings/travel) pass excludeDeclined=true
             // so a guest who rejected their invitation can't be assigned anywhere.
             if (request.ExcludeDeclined)
             {
-                query = query.Where(g => !_unitOfWork.Invitations.Query()
-                    .Any(i => i.GuestId == g.Id && i.InvitationStatus == GuestInvitationStatus.Declined));
+                query = query.Where(eg => !_unitOfWork.Invitations.Query()
+                    .Any(i => i.EventGuestId == eg.Id && i.InvitationStatus == GuestInvitationStatus.Declined));
             }
 
             var total = await query.CountAsync(ct);
 
-            var guests = await query
-                .OrderBy(g => g.FirstName)
+            var participations = await query
+                .OrderBy(eg => eg.Guest.FirstName)
                 .Skip((request.PageNumber - 1) * request.PageSize)
                 .Take(request.PageSize)
                 .ToListAsync(ct);
 
-            var mapped = _mapper.Map<List<GuestResponse>>(guests);
-            await MergeInvitationsAsync(mapped, guests.Select(g => g.Id).ToList(), ct);
+            var mapped = _mapper.Map<List<GuestResponse>>(participations);
+            await MergeInvitationsAsync(mapped, participations.Select(eg => eg.Id).ToList(), ct);
 
             var paged = new PaginatedResponse<GuestResponse>(
                 mapped, total, request.PageNumber, request.PageSize);
@@ -724,23 +754,73 @@ public class GuestService(
         }
     }
 
+    /// <summary>Removes participations from their event WITHOUT destroying history:
+    /// the EventGuest row and its event-scoped records are soft-deleted, so past
+    /// events stay auditable and the person, their login and their other events are
+    /// untouched. Nothing here ever deletes a Guest or a User — one person attends
+    /// many events, and their identity outlives any single one.</summary>
+    private async Task SoftDeleteParticipationsAsync(List<EventGuest> participations, CancellationToken ct)
+    {
+        var userId = _currentUser.UserId;
+        var ids = participations.Select(eg => eg.Id).ToList();
+
+        // The two link rows that carry no IsDeleted of their own are still removed
+        // physically. SeatAssign additionally has to go: its unique
+        // (SeatingId, SeatId) index is unfiltered, so a soft-deleted row would hold
+        // the seat hostage forever.
+        // ponytail: add [IsDeleted] = 0 to that index if seat history ever matters.
+        var seatAssigns = await _unitOfWork.SeatAssigns.Query()
+            .Where(sa => ids.Contains(sa.EventGuestId))
+            .ToListAsync(ct);
+        if (seatAssigns.Count > 0)
+            _unitOfWork.SeatAssigns.RemoveRange(seatAssigns);
+
+        var guestSessions = await _unitOfWork.GuestSessions.Query()
+            .Where(gs => ids.Contains(gs.EventGuestId))
+            .ToListAsync(ct);
+        if (guestSessions.Count > 0)
+            _unitOfWork.GuestSessions.RemoveRange(guestSessions);
+
+        // Bookings and per-event state: flagged, not dropped. Child rows a level
+        // further down (flight legs, transport status history) come back filtered
+        // with their parent, so they need no separate pass.
+        await SoftDeleteAsync(_unitOfWork.Accommodations, a => ids.Contains(a.EventGuestId), userId, ct);
+        await SoftDeleteAsync(_unitOfWork.Transports, t => ids.Contains(t.EventGuestId), userId, ct);
+        await SoftDeleteAsync(_unitOfWork.Flights, f => ids.Contains(f.EventGuestId), userId, ct);
+        await SoftDeleteAsync(_unitOfWork.Invitations, i => ids.Contains(i.EventGuestId), userId, ct);
+        await SoftDeleteAsync(_unitOfWork.GuestServiceEntries, e => ids.Contains(e.EventGuestId), userId, ct);
+
+        foreach (var participation in participations)
+        {
+            participation.MarkAsDeleted(userId);
+            _unitOfWork.EventGuests.Update(participation);
+        }
+    }
+
+    private static async Task SoftDeleteAsync<T>(
+        IGenericRepository<T> repo, System.Linq.Expressions.Expression<Func<T, bool>> match,
+        int userId, CancellationToken ct) where T : AuditEntity
+    {
+        var rows = await repo.Query().Where(match).ToListAsync(ct);
+        foreach (var row in rows)
+        {
+            row.MarkAsDeleted(userId);
+            repo.Update(row);
+        }
+    }
+
     public async Task<ApiResponse<bool>> DeleteGuestByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
-            var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.PublicId == id);
-            if (guest == null)
+            // Deletes the PARTICIPATION (id is an EventGuest.PublicId). The person
+            // and their login survive — they may still be on other events, and
+            // re-adding them later must not create a second identity.
+            var participation = await _unitOfWork.EventGuests.FindFirstOrDefaultAsync(eg => eg.PublicId == id, ct);
+            if (participation == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest Not Found");
 
-            // SeatAssign.GuestId is a Restrict FK — free any seat(s) this guest holds
-            // first so the delete doesn't fail, and the seat becomes assignable again.
-            var seatAssigns = await _unitOfWork.SeatAssigns.Query()
-                .Where(sa => sa.GuestId == guest.Id)
-                .ToListAsync(ct);
-            if (seatAssigns.Count > 0)
-                _unitOfWork.SeatAssigns.RemoveRange(seatAssigns);
-
-            _unitOfWork.Guests.Remove(guest);
+            await SoftDeleteParticipationsAsync([participation], ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             return ApiResponse<bool>.SuccessResponse(true, "Guest deleted successfully");
@@ -752,6 +832,16 @@ public class GuestService(
         }
     }
 
+    /// <summary>
+    /// Edits ONE participation. <c>request.Id</c> is the EventGuest.PublicId.
+    /// </summary>
+    /// <remarks>
+    /// Person fields (name, photo, nationality) are written to the shared master
+    /// Guest and so change everywhere that person appears; everything else is
+    /// written only to the selected participation. Email is the person's identity
+    /// and is rejected if it differs — changing it would silently re-point their
+    /// login, refresh tokens, notifications and support thread at someone else.
+    /// </remarks>
     public async Task<ApiResponse<GuestResponse>> UpdateGuestAsync(CreateGuestRequest request, CancellationToken ct)
     {
         try
@@ -759,134 +849,133 @@ public class GuestService(
             if (request.Id == null || request.Id == Guid.Empty)
                 return ApiResponse<GuestResponse>.ErrorResponse("Guest Id is required");
 
-            var guest = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions)
-                .Include(g => g.Nationality)
-                .Include(g => g.OrganizationRef)
-                .Include(g => g.ServiceLevel)
-                .Include(g => g.Event)
-                .Include(g => g.User)
-                .FirstOrDefaultAsync(g => g.PublicId == request.Id.Value, ct);
+            var participation = await _unitOfWork.EventGuests.Query()
+                .Include(eg => eg.GuestSessions)
+                .Include(eg => eg.Guest).ThenInclude(g => g.User)
+                .Include(eg => eg.Guest).ThenInclude(g => g.Nationality)
+                .Include(eg => eg.OrganizationRef)
+                .Include(eg => eg.ServiceLevel)
+                .Include(eg => eg.Event)
+                .FirstOrDefaultAsync(eg => eg.PublicId == request.Id.Value, ct);
 
-            if (guest == null)
+            if (participation == null)
                 return ApiResponse<GuestResponse>.NotFoundResponse("Guest not found");
 
-            // Service levels apply to BOTH guest models now (docs/service-levels-v2.md
+            var guest = participation.Guest;
+
+            // Immutable identity. Silence would be worse than a 400: the caller
+            // would believe the address changed while every login/notification
+            // still resolves against the old one.
+            if (!string.IsNullOrWhiteSpace(request.Email)
+                && !string.Equals(NormalizeEmail(request.Email), guest.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                return ApiResponse<GuestResponse>.ErrorResponse(
+                    "A guest's email cannot be changed — it is their identity across every event, "
+                    + "their login and their notifications. Remove them and add the correct person instead.");
+            }
+
+            // Service levels apply to BOTH guest models (docs/service-levels-v2.md
             // §4): the model decides how the level's services must be COMPLETED —
             // mandatory and in order on fixed, optional and in any order on flexible
-            // — not whether a level is assigned at all. Assigning it on flexible
-            // events too is what gives those guests a service checklist; skipping it
-            // left ServiceLevelId null and the guest with no services.
-            var usesLevels = EventGuestModels.UsesServiceLevels(guest.Event?.GuestModel);
-
+            // — not whether a level is assigned at all.
             var (serviceLevel, levelError) =
-                await ResolveServiceLevelAsync(request.ServiceLevelId, guest.EventId, ct);
+                await ResolveServiceLevelAsync(request.ServiceLevelId, participation.EventId, ct);
             if (levelError != null)
                 return ApiResponse<GuestResponse>.ErrorResponse(levelError);
-
-            // Fixed events key a guest on (event, email, service level): the same
-            // person may legitimately appear once per level — e.g. as a Speaker
-            // and again as a VIP delegate — each with its own invitation,
-            // accreditation, seating and travel. Without levels there is nothing
-            // to tell two such rows apart, so a flexible event falls back to the
-            // original (event, email) rule.
-            if (!string.IsNullOrWhiteSpace(request.Email))
-            {
-                var normalised = request.Email.ToLower().Trim();
-                var levelId = serviceLevel?.Id;
-                var duplicate = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Email == normalised
-                                              && g.EventId == guest.EventId
-                                              && (!usesLevels || g.ServiceLevelId == levelId)
-                                              && g.Id != guest.Id, ct);
-
-                if (duplicate != null)
-                    return ApiResponse<GuestResponse>.ConflictResponse(serviceLevel == null
-                        ? "A guest with this email already exists for this event"
-                        : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
-            }
 
             // Not gated on the guest model: RequiredGuestFieldsJson validates the
             // guest RECORD, which isn't event-specific (§5), and the wizard already
             // checks it client-side on both models.
-            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, guest, ct);
+            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, ct);
             if (ruleError != null)
                 return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
 
             var nationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct);
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
 
-            guest.FirstName     = request.FirstName?.Trim() ?? guest.FirstName;
-            guest.LastName      = request.LastName?.Trim()  ?? guest.LastName;
-            guest.Email         = request.Email?.ToLower().Trim();
+            // ── Person-level: shared by every event this human is on ────────────
+            guest.FirstName    = request.FirstName?.Trim() ?? guest.FirstName;
+            guest.LastName     = request.LastName?.Trim()  ?? guest.LastName;
+            guest.PhotoUrl     = request.PhotoUrl;
+            guest.NationalityId = nationalityId;
+            _unitOfWork.Guests.Update(guest);
 
             // Keep the linked User's denormalized display name in sync — it's
             // what admin-inbox/notification queries read for a guest's name.
+            // Email/UserName stay put: they mirror the immutable Guest.Email.
             if (guest.User != null)
             {
                 guest.User.FirstName = guest.FirstName;
                 guest.User.LastName = guest.LastName;
                 _unitOfWork.Users.Update(guest.User);
             }
-            guest.GuestType     = request.GuestType ?? guest.GuestType;
-            guest.Organization  = organization?.Name ?? request.Organization;
-            guest.OrganizationId = organization?.Id;
-            guest.NationalityId = nationalityId;
+
+            // ── Event-level: this participation only ────────────────────────────
+            participation.GuestType      = request.GuestType ?? participation.GuestType;
+            participation.Organization   = organization?.Name ?? request.Organization;
+            participation.OrganizationId = organization?.Id;
             // Tier mirrors the level's Code so every legacy string consumer keeps
             // working; falls back to the raw Tier only when no level is set (CSV).
-            guest.ServiceLevelId = serviceLevel?.Id;
-            guest.Tier          = serviceLevel?.Code ?? request.Tier ?? guest.Tier;
+            participation.ServiceLevelId = serviceLevel?.Id;
+            participation.Tier           = serviceLevel?.Code ?? request.Tier ?? participation.Tier;
             if (serviceLevel != null && request.OverrideServiceLevelRules
                 && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules))
             {
-                guest.ServiceLevelRulesOverridden = true;
-                guest.ServiceLevelOverrideReason = request.ServiceLevelOverrideReason?.Trim();
+                participation.ServiceLevelRulesOverridden = true;
+                participation.ServiceLevelOverrideReason = request.ServiceLevelOverrideReason?.Trim();
             }
-            guest.ArrivalDate   = request.ArrivalDate;
-            guest.DepartureDate = request.DepartureDate;
-            guest.PhotoUrl      = request.PhotoUrl;
-            guest.AccreditationRequired = request.AccreditationRequired;
+            participation.ArrivalDate   = request.ArrivalDate;
+            participation.DepartureDate = request.DepartureDate;
+            participation.AccreditationRequired = request.AccreditationRequired;
             // Same null-means-leave-alone rule as SessionIds below — a caller that
             // doesn't know about this field can't silently revoke the permissions.
             if (request.AllowedServices != null)
-                guest.AllowedServicesJson = GuestServices.Serialize(request.AllowedServices);
+                participation.AllowedServicesJson = GuestServices.Serialize(request.AllowedServices);
 
-            _unitOfWork.Guests.Update(guest);
+            _unitOfWork.EventGuests.Update(participation);
 
             // Replace sessions only when the client explicitly sent the field (null = leave as-is)
             if (request.SessionIds != null)
             {
-                if (guest.GuestSessions.Any())
-                    _unitOfWork.GuestSessions.RemoveRange(guest.GuestSessions.ToList());
+                if (participation.GuestSessions.Any())
+                    _unitOfWork.GuestSessions.RemoveRange(participation.GuestSessions.ToList());
 
                 foreach (var sessionId in await ResolveSessionIdsAsync(request.SessionIds, ct))
-                    await _unitOfWork.GuestSessions.AddAsync(new GuestSession { GuestId = guest.Id, SessionId = sessionId }, ct);
+                    await _unitOfWork.GuestSessions.AddAsync(
+                        new GuestSession { EventGuestId = participation.Id, SessionId = sessionId }, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
 
             if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
-                await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
+                await SendInvitationAsync(participation, request.InvitationTemplateId.Value, ct);
 
-            var updated = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
-                .Include(g => g.Nationality)
-                .Include(g => g.OrganizationRef)
-                .Include(g => g.ServiceLevel)
-                .Include(g => g.Event)
-                .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
+            var updated = await EventGuestGraph().FirstOrDefaultAsync(eg => eg.Id == participation.Id, ct);
 
             var response = _mapper.Map<GuestResponse>(updated);
-            await MergeInvitationAsync(response, guest.Id, ct);
+            await MergeInvitationAsync(response, participation.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest updated successfully");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating guest {GuestId}", request.Id);
+            _logger.LogError(ex, "Error updating guest {EventGuestId}", request.Id);
             return ApiResponse<GuestResponse>.ServerErrorResponse("An error occurred while updating the guest");
         }
     }
 
+    /// <summary>
+    /// Adds one person to one event. The email decides which person: a new one
+    /// creates the master Guest and its linked login, an existing one is REUSED
+    /// and simply gains a second participation — that is "add an existing guest
+    /// to this event", not a new person.
+    /// </summary>
+    /// <remarks>
+    /// Two requests can read "not in this event yet" at the same moment, so the
+    /// database has the last word: the filtered unique indexes on Guests.Email
+    /// and EventGuests(GuestId, EventId) turn the loser of that race into a
+    /// duplicate-key error, which is translated to the same 409 the pre-check
+    /// would have produced rather than surfacing as a 500.
+    /// </remarks>
     public async Task<ApiResponse<GuestResponse>> CreateGuestAsync(CreateGuestRequest request, CancellationToken ct = default)
     {
         try
@@ -896,54 +985,47 @@ public class GuestService(
                 request.EventId == Guid.Empty)
                 return ApiResponse<GuestResponse>.ErrorResponse("FirstName, LastName, and EventId are required");
 
+            var email = NormalizeEmail(request.Email);
+            if (string.IsNullOrWhiteSpace(email))
+                return ApiResponse<GuestResponse>.ErrorResponse("Email is required");
+
             var ev = await _unitOfWork.Events.GetByPublicIdAsync(request.EventId, ct);
             if (ev == null)
                 return ApiResponse<GuestResponse>.ErrorResponse("Event not found");
-
-            // Assigned on both guest models — see the Update path for why.
-            var usesLevels = EventGuestModels.UsesServiceLevels(ev.GuestModel);
 
             var (serviceLevel, levelError) =
                 await ResolveServiceLevelAsync(request.ServiceLevelId, ev.Id, ct);
             if (levelError != null)
                 return ApiResponse<GuestResponse>.ErrorResponse(levelError);
 
-            // (event, email, service level) on a fixed event; (event, email) on a
-            // flexible one. See the Update path for the rationale.
-            if (!string.IsNullOrWhiteSpace(request.Email))
-            {
-                var normalised = request.Email.ToLower().Trim();
-                var levelId = serviceLevel?.Id;
-                var existing = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Email == normalised
-                                              && g.EventId == ev.Id
-                                              && (!usesLevels || g.ServiceLevelId == levelId), ct);
-
-                if (existing != null)
-                    return ApiResponse<GuestResponse>.ConflictResponse(serviceLevel == null
-                        ? "A guest with this email already exists for this event"
-                        : $"A guest with this email is already on the \"{serviceLevel.Name}\" service level for this event");
-            }
-
-            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, null, ct);
+            var ruleError = await ValidateServiceLevelAssignmentAsync(serviceLevel, request, ct);
             if (ruleError != null)
                 return ApiResponse<GuestResponse>.ConflictResponse(ruleError, "SERVICE_LEVEL_RULE");
+
+            var (guest, personError) = await GetOrCreatePersonAsync(email, request, ct);
+            if (personError != null)
+                return ApiResponse<GuestResponse>.ConflictResponse(personError, "GUEST_EMAIL_CONFLICT");
+
+            // Same email + same event is a conflict; same email + another event is
+            // the reuse path and falls straight through to the insert below.
+            var alreadyOnEvent = await _unitOfWork.EventGuests.Query()
+                .AnyAsync(eg => eg.GuestId == guest.Id && eg.EventId == ev.Id, ct);
+            if (alreadyOnEvent)
+                return ApiResponse<GuestResponse>.ConflictResponse(
+                    "This guest is already on this event.", "GUEST_ALREADY_ON_EVENT");
 
             var overrodeRules = serviceLevel != null && request.OverrideServiceLevelRules
                                 && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);
 
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
-            var user = await CreateLinkedUserAsync(request.FirstName.Trim(), request.LastName.Trim(), ct);
-            var guest = new Guest
+
+            var participation = new EventGuest
             {
-                FirstName     = request.FirstName.Trim(),
-                LastName      = request.LastName.Trim(),
-                Email         = request.Email?.ToLower().Trim(),
+                GuestId       = guest.Id,
                 EventId       = ev.Id,
                 GuestType     = request.GuestType ?? GuestTypes.Delegate,
                 Organization  = organization?.Name ?? request.Organization,
                 OrganizationId = organization?.Id,
-                NationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct),
                 ServiceLevelId = serviceLevel?.Id,
                 // Mirrored from the level's code so legacy string consumers work;
                 // CSV import (no level) still writes its raw Tier string.
@@ -952,30 +1034,39 @@ public class GuestService(
                 ServiceLevelOverrideReason = overrodeRules ? request.ServiceLevelOverrideReason?.Trim() : null,
                 ArrivalDate   = request.ArrivalDate,
                 DepartureDate = request.DepartureDate,
-                PhotoUrl      = request.PhotoUrl,
                 AccreditationRequired = request.AccreditationRequired,
                 AllowedServicesJson = GuestServices.Serialize(request.AllowedServices),
-                UserId        = user.Id,
                 CreatedAt     = DateTime.UtcNow,
-                IsDeleted     = false
+                IsDeleted     = false,
             };
 
-            await _unitOfWork.Guests.AddAsync(guest, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.EventGuests.AddAsync(participation, ct);
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+            {
+                // Lost the race against a concurrent add of the same person.
+                _logger.LogInformation(ex, "Concurrent add of guest {Email} to event {EventId}", email, ev.PublicId);
+                return ApiResponse<GuestResponse>.ConflictResponse(
+                    "This guest is already on this event.", "GUEST_ALREADY_ON_EVENT");
+            }
 
             if (request.SessionIds is { Count: > 0 })
             {
                 foreach (var sessionId in await ResolveSessionIdsAsync(request.SessionIds, ct))
-                    await _unitOfWork.GuestSessions.AddAsync(new GuestSession { GuestId = guest.Id, SessionId = sessionId }, ct);
+                    await _unitOfWork.GuestSessions.AddAsync(
+                        new GuestSession { EventGuestId = participation.Id, SessionId = sessionId }, ct);
 
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
-            if (request.InvitationTemplateId.HasValue && !string.IsNullOrWhiteSpace(guest.Email))
+            if (request.InvitationTemplateId.HasValue)
             {
-                await SendInvitationAsync(guest, request.InvitationTemplateId.Value, ct);
+                await SendInvitationAsync(participation, request.InvitationTemplateId.Value, ct);
             }
-            else if (!request.InvitationTemplateId.HasValue)
+            else
             {
                 // No template chosen at creation — no invite is going out, so there's
                 // nothing for the guest to accept. Mark them accepted right away
@@ -983,23 +1074,17 @@ public class GuestService(
                 // accreditation — see AccreditationView's invitationStatus check).
                 await _unitOfWork.Invitations.AddAsync(new Invitation
                 {
-                    GuestId = guest.Id,
+                    EventGuestId = participation.Id,
                     InvitationStatus = GuestInvitationStatus.Accepted,
                     AccreditationStatus = GuestAccreditationStatus.NotIssued,
                 }, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
-            var created = await _unitOfWork.Guests.Query()
-                .Include(g => g.GuestSessions).ThenInclude(gs => gs.Session)
-                .Include(g => g.Nationality)
-                .Include(g => g.OrganizationRef)
-                .Include(g => g.ServiceLevel)
-                .Include(g => g.Event)
-                .FirstOrDefaultAsync(g => g.Id == guest.Id, ct);
+            var created = await EventGuestGraph().FirstOrDefaultAsync(eg => eg.Id == participation.Id, ct);
 
             var response = _mapper.Map<GuestResponse>(created);
-            await MergeInvitationAsync(response, guest.Id, ct);
+            await MergeInvitationAsync(response, participation.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest created successfully");
         }
         catch (Exception ex)
@@ -1009,26 +1094,96 @@ public class GuestService(
         }
     }
 
-    public async Task<ApiResponse<bool>> IssueAccreditationAsync(Guid guestId, CancellationToken ct = default)
-        => await SetAccreditationStatusAsync(guestId, GuestAccreditationStatus.Issued, "Accreditation issued", ct);
+    /// <summary>
+    /// The master person for an email: the existing one if there is one, a brand
+    /// new Guest + linked guest-role User otherwise. Returns (null, message) when
+    /// the address is already taken by a non-guest portal account.
+    /// </summary>
+    /// <remarks>
+    /// An existing person is returned as-is. Name/photo/nationality on the request
+    /// are treated as this participation's copy of what the admin typed, not as an
+    /// edit of the master record — overwriting a known person from an import row
+    /// would let one careless spreadsheet rename them on every other event. Editing
+    /// the person is what PUT /guest does.
+    /// </remarks>
+    private async Task<(Guest guest, string error)> GetOrCreatePersonAsync(
+        string email, CreateGuestRequest request, CancellationToken ct)
+    {
+        var existing = await FindPersonByEmailAsync(email, ct);
+        if (existing != null) return (existing, null);
 
-    public async Task<ApiResponse<bool>> RevokeAccreditationAsync(Guid guestId, CancellationToken ct = default)
-        => await SetAccreditationStatusAsync(guestId, GuestAccreditationStatus.NotIssued, "Accreditation revoked", ct);
+        // A staff/driver account on the same address would collide with the
+        // filtered unique indexes on Users.Email/UserName, so say so plainly
+        // rather than letting SaveChanges throw.
+        var takenByOtherUser = await _unitOfWork.Users.Query()
+            .AnyAsync(u => u.Email == email && u.GuestProfile == null, ct);
+        if (takenByOtherUser)
+            return (null, $"\"{email}\" already belongs to a portal user account.");
 
-    private async Task<ApiResponse<bool>> SetAccreditationStatusAsync(Guid guestId, string status, string successMessage, CancellationToken ct)
+        var guest = new Guest
+        {
+            FirstName     = request.FirstName.Trim(),
+            LastName      = request.LastName.Trim(),
+            Email         = email,
+            NationalityId = await ResolveNationalityIdAsync(request.NationalityId, ct),
+            PhotoUrl      = request.PhotoUrl,
+            // Set through the navigation, not UserId: EF then inserts the User and
+            // the Guest in ONE SaveChanges. Saving the User first would leave an
+            // orphaned account holding the email if the Guest insert then lost a
+            // race, and that account would block every later attempt.
+            User          = await BuildLinkedUserAsync(email, request.FirstName.Trim(), request.LastName.Trim(), ct),
+            CreatedAt     = DateTime.UtcNow,
+            IsDeleted     = false,
+        };
+
+        await _unitOfWork.Guests.AddAsync(guest, ct);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Another request created the same person between our read and this
+            // insert. Theirs won; nothing of ours was committed, so drop our copy
+            // and carry on with the winner.
+            _logger.LogInformation(ex, "Concurrent creation of guest person {Email}", email);
+            // Both are still in the Added state, so Remove detaches rather than
+            // deletes. The User has to go too — left tracked it would be inserted
+            // by the next SaveChanges as an account belonging to nobody, holding
+            // the email against every future attempt.
+            _unitOfWork.Guests.Remove(guest);
+            if (guest.User != null) _unitOfWork.Users.Remove(guest.User);
+            var winner = await FindPersonByEmailAsync(email, ct);
+            return winner != null
+                ? (winner, null)
+                : (null, "Could not create this guest — please try again.");
+        }
+
+        return (guest, null);
+    }
+
+    /// <summary>Accreditation is per event, so <paramref name="eventGuestId"/> is
+    /// an EventGuest.PublicId.</summary>
+    public async Task<ApiResponse<bool>> IssueAccreditationAsync(Guid eventGuestId, CancellationToken ct = default)
+        => await SetAccreditationStatusAsync(eventGuestId, GuestAccreditationStatus.Issued, "Accreditation issued", ct);
+
+    public async Task<ApiResponse<bool>> RevokeAccreditationAsync(Guid eventGuestId, CancellationToken ct = default)
+        => await SetAccreditationStatusAsync(eventGuestId, GuestAccreditationStatus.NotIssued, "Accreditation revoked", ct);
+
+    private async Task<ApiResponse<bool>> SetAccreditationStatusAsync(Guid eventGuestId, string status, string successMessage, CancellationToken ct)
     {
         try
         {
-            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
-            if (guest == null)
+            var participation = await _unitOfWork.EventGuests.GetByPublicIdAsync(eventGuestId, ct);
+            if (participation == null)
                 return ApiResponse<bool>.NotFoundResponse("Guest not found");
 
             var invitation = await _unitOfWork.Invitations.Query()
-                .FirstOrDefaultAsync(i => i.GuestId == guest.Id, ct);
+                .FirstOrDefaultAsync(i => i.EventGuestId == participation.Id, ct);
 
             if (invitation == null)
             {
-                invitation = new Invitation { GuestId = guest.Id, AccreditationStatus = status };
+                invitation = new Invitation { EventGuestId = participation.Id, AccreditationStatus = status };
                 await _unitOfWork.Invitations.AddAsync(invitation, ct);
             }
             else
@@ -1042,7 +1197,7 @@ public class GuestService(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting accreditation status for guest {GuestId}", guestId);
+            _logger.LogError(ex, "Error setting accreditation status for participation {EventGuestId}", eventGuestId);
             return ApiResponse<bool>.ServerErrorResponse("An error occurred while updating accreditation");
         }
     }
@@ -1095,7 +1250,7 @@ public class GuestService(
     /// grant itself the bypass. Overrides are recorded on the guest row for audit.
     /// </remarks>
     private async Task<string> ValidateServiceLevelAssignmentAsync(
-        ServiceLevel level, CreateGuestRequest request, Guest existing, CancellationToken ct)
+        ServiceLevel level, CreateGuestRequest request, CancellationToken ct)
     {
         if (level == null) return null;
 

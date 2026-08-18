@@ -9,10 +9,15 @@ namespace Infrastructure.Services;
 // matching edit in each service that sends a trip notification.
 internal static class TransportNotificationTokens
 {
-    public static Dictionary<string, string> Tokens(this Transport transport, Guest guest) => new()
+    // `participation` carries both the event context and, through Guest, the
+    // person's name — callers must not pass an EventGuest id where a Guest id is
+    // expected, so nothing here exposes a bare "guestId".
+    public static Dictionary<string, string> Tokens(this Transport transport, EventGuest participation) => new()
     {
         ["transportId"] = transport.PublicId.ToString(),
-        ["guestName"] = $"{guest?.FirstName} {guest?.LastName}".Trim(),
+        ["eventGuestId"] = participation?.PublicId.ToString() ?? string.Empty,
+        ["eventId"] = participation?.Event?.PublicId.ToString() ?? string.Empty,
+        ["guestName"] = $"{participation?.Guest?.FirstName} {participation?.Guest?.LastName}".Trim(),
         // Display form for the message text, ISO form for the client to re-format.
         ["pickupTime"] = transport.PickupTime?.ToString("dd MMM yyyy HH:mm") ?? "time to be confirmed",
         ["pickupTimeIso"] = transport.PickupTime?.ToString("o") ?? string.Empty,

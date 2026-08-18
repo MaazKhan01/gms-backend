@@ -4,11 +4,25 @@ using System.Collections.Generic;
 namespace Core.ViewModel.Guest;
 
 
+/// <summary>
+/// Create or update one guest participation.
+/// </summary>
+/// <remarks>
+/// <b>Frontend contract:</b> on update, <see cref="Id"/> is the
+/// <c>EventGuest.PublicId</c> (what <c>GuestResponse.Id</c> returned), not the
+/// person's id. On create, an <see cref="Email"/> that already belongs to a
+/// guest reuses that master Guest and their login, adding a second
+/// participation — that is how "add an existing guest to this event" works.
+/// <see cref="Email"/> is required and cannot be changed once created.
+/// </remarks>
 public class CreateGuestRequest
 {
+    /// <summary>Update only: the EventGuest.PublicId being edited.</summary>
     public Guid? Id { get; set; }
     public string FirstName { get; set; }
     public string LastName { get; set; }
+    /// <summary>Required. Trimmed/lowercased server-side, unique per person.
+    /// Immutable after creation — sending a different one on update is rejected.</summary>
     public string Email { get; set; }
     public Guid EventId { get; set; }
     public string GuestType { get; set; }

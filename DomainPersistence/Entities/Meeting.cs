@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,7 +15,11 @@ namespace DomainPersistence.Entities
         public TimeOnly? StartTime { get; set; }
         public TimeOnly? EndTime { get; set; }
         public string? MeetingAgenda { get; set; }
-        public ICollection<Guest> Guests { get; set; } = new List<Guest>();
+        // Attendees are per-event participations, not people: a meeting belongs to
+        // one Event, so an attendee has to be that person's EventGuest row for it.
+        public ICollection<EventGuest> EventGuests { get; set; } = new List<EventGuest>();
+
+        public virtual Event Event { get; set; }
 
     }
 }

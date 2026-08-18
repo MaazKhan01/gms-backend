@@ -21,8 +21,11 @@ public class GuestOverviewController(IGuestOverviewService _guestOverviewService
     public async Task<IActionResult> GetGuestOverview([FromQuery] GuestOverviewPagedRequest request, CancellationToken ct)
         => ToResponse(await _guestOverviewService.GetGuestOverviewAsync(request, ct));
 
-    [HttpGet("{id:guid}")]
+    /// <summary>The person's whole history. The path id is a <c>Guest.PublicId</c>
+    /// (GuestResponse.personId / GuestOverviewRow.id) — this screen spans events,
+    /// so it is keyed on the person, not on one participation.</summary>
+    [HttpGet("{personId:guid}")]
     [HasPermission(PermissionCodes.GuestsView)]
-    public async Task<IActionResult> GetGuestOverviewDetail(Guid id, CancellationToken ct)
-        => ToResponse(await _guestOverviewService.GetGuestOverviewDetailAsync(id, ct));
+    public async Task<IActionResult> GetGuestOverviewDetail(Guid personId, CancellationToken ct)
+        => ToResponse(await _guestOverviewService.GetGuestOverviewDetailAsync(personId, ct));
 }

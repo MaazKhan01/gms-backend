@@ -13,5 +13,7 @@ public interface IGuestOverviewService
     Task<ApiResponse<PaginatedResponse<GuestOverviewRow>>> GetGuestOverviewAsync(GuestOverviewPagedRequest request, CancellationToken ct = default);
 
     // Fetched only when a row's accordion expands — keeps the list endpoint light.
-    Task<ApiResponse<GuestOverviewDetailResponse>> GetGuestOverviewDetailAsync(Guid guestId, CancellationToken ct = default);
+    /// <summary>The person's whole cross-event history — <paramref name="personId"/>
+    /// is a Guest.PublicId, not one of their participations.</summary>
+    Task<ApiResponse<GuestOverviewDetailResponse>> GetGuestOverviewDetailAsync(Guid personId, CancellationToken ct = default);
 }

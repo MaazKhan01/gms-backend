@@ -63,7 +63,8 @@ public class VehicleBookingRow
     public string DriverName { get; set; }
     public string DriverPhone { get; set; }
 
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId of the ride's participation.</summary>
+    public Guid EventGuestId { get; set; }
     public string GuestName { get; set; }
     public string GuestEmail { get; set; }
     public string GuestPhotoUrl { get; set; }

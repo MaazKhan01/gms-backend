@@ -11,7 +11,7 @@ namespace DomainPersistence.Entities
     public class ServiceLevel : Entity
     {
         /// <summary>
-        /// Stable slug, unique across the catalogue. Mirrored onto Guest.Tier so
+        /// Stable slug, unique across the catalogue. Mirrored onto EventGuest.Tier so
         /// the legacy string consumers (chips, CSV export, invitation targeting)
         /// keep working.
         /// </summary>
@@ -38,6 +38,6 @@ namespace DomainPersistence.Entities
         public string RequiredGuestFieldsJson { get; set; }
 
         public virtual ICollection<ServiceLevelService> Services { get; set; } = new List<ServiceLevelService>();
-        public virtual ICollection<Guest> Guests { get; set; } = new List<Guest>();
+        public virtual ICollection<EventGuest> EventGuests { get; set; } = new List<EventGuest>();
     }
 }

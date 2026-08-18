@@ -29,8 +29,8 @@ namespace Infrastructure.Services;
 // `guestId` is the caller, resolved by the controller from ICurrentGuest (a
 // Guests.UserId lookup off the token's User.Id plus role=="guest" — see CurrentGuest).
 // Auth endpoints issue that token via OTP (guests have no password). Everything
-// reads/writes existing GMS entities plus GuestRefreshToken and the
-// Guest.PreferencesJson column.
+// reads/writes existing GMS entities plus UserRefreshToken (shared with staff
+// sessions — see GuestRefreshTokenType) and the Guest.PreferencesJson column.
 // ============================================================================
 public class VipAppService(
     IUnitOfWork _unitOfWork,
@@ -41,6 +41,8 @@ public class VipAppService(
     ILogger<VipAppService> _logger) : IVipAppService
 {
     private const string OtpPurpose = "guest-login";
+    private const string GuestRefreshTokenType = "guest-refresh";
+    private static string NormalizeEmail(string email) => email?.Trim().ToLowerInvariant();
 
 
     private static DateTime? ToDt(DateOnly? d, string time = null)
@@ -60,58 +62,79 @@ public class VipAppService(
         return mins < 60 ? $"{mins}m" : mins % 60 == 0 ? $"{mins / 60}h" : $"{mins / 60}h {mins % 60}m";
     }
 
-    // A person holds one Guest row per event (same email), so "all events" means
-    // all their sibling rows; eventId narrows to the one. Null = the caller isn't
-    // a known guest at all.
-    private async Task<List<int>> ResolveGuestIdsAsync(int guestId, Guid? eventId, CancellationToken ct)
+
+    private async Task<List<int>> ResolveEventGuestIdsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
         var guest = await GetGuestAsync(guestId, ct);
         if (guest is null) return null;
 
-        return await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => g.Email == guest.Email)
-            .Where(g => eventId == null || g.Event.PublicId == eventId.Value)
-            .Select(g => g.Id)
+        return await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guest.Id)
+            .Where(eg => eventId == null || eg.Event.PublicId == eventId.Value)
+            .Select(eg => eg.Id)
             .ToListAsync(ct);
     }
 
     private Task<Guest> GetGuestAsync(int guestId, CancellationToken ct)
         => _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Id == guestId, ct);
 
-    // "May this person request a car?" — true if ANY of their guest rows says so.
-    // The same person can hold one row per event (ResolveGuestIdsAsync matches on
-    // email), and a permission granted on one of them shouldn't disappear because
-    // a sibling row lacks it.
-    private async Task<bool> AllowsTransportAsync(List<int> guestIds, CancellationToken ct)
+    // Refresh tokens carry the linked User.Id (see BuildRefreshToken), so the
+    // refresh path resolves the person this way. Null for a User with no Guest
+    // profile — which is how a staff refresh token gets rejected.
+    private Task<Guest> GetGuestByUserIdAsync(int userId, CancellationToken ct)
+        => _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.UserId == userId, ct);
+
+    // The caller's participation in ONE event. Null when they aren't on it —
+    // which is a 404/403 for the caller, never "fall back to another event".
+    private Task<EventGuest> GetParticipationAsync(int guestId, Guid eventId, CancellationToken ct)
+        => _unitOfWork.EventGuests.Query()
+            .Include(eg => eg.Event)
+            .FirstOrDefaultAsync(eg => eg.GuestId == guestId && eg.Event.PublicId == eventId, ct);
+
+    // "May this person request a car?" — a display flag only. It is true if ANY
+    // of the participations in scope allows it, because the itinerary can span
+    // several events; the request itself is checked against the ONE participation
+    // it names (see RequestTransportAsync), never against this.
+    private async Task<bool> AllowsTransportAsync(List<int> eventGuestIds, CancellationToken ct)
     {
-        var allowed = await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => guestIds.Contains(g.Id))
-            .Select(g => g.AllowedServicesJson)
+        var allowed = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eventGuestIds.Contains(eg.Id))
+            .Select(eg => eg.AllowedServicesJson)
             .ToListAsync(ct);
 
         return allowed.Any(json => GuestServices.Allows(json, GuestServiceType.Transport));
     }
+
+    // The person's most recent participation — the only sane source for the
+    // profile screen's organisation/tier now that both are per event.
+    private Task<EventGuest> LatestParticipationAsync(int guestId, CancellationToken ct)
+        => _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guestId)
+            .OrderByDescending(eg => eg.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
     // ============================================================
     // Auth — OTP login issuing guest-scoped JWTs
     // ============================================================
     public async Task<ApiResponse<bool>> RequestOtpAsync(RequestOtpRequest request, CancellationToken ct)
     {
+        var email = NormalizeEmail(request.Email);
+
         // Don't leak whether the email is a known guest — always report success.
-        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Email == request.Email, ct);
+        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Email == email, ct);
         if (guest is null)
             return ApiResponse<bool>.SuccessResponse(false, "Guest don't Exists");
 
         // Invalidate any outstanding codes for this email.
         var outstanding = await _unitOfWork.OtpVerifications
-            .FindAsync(o => o.Email == request.Email && o.Purpose == OtpPurpose && !o.IsUsed, ct);
+            .FindAsync(o => o.Email == email && o.Purpose == OtpPurpose && !o.IsUsed, ct);
         foreach (var o in outstanding) { o.IsUsed = true; o.UsedAt = DateTime.UtcNow; }
 
         // 4 digits, 1000-9999 so it never renders with a leading zero.
         var code = Random.Shared.Next(1000, 10000).ToString();
         await _unitOfWork.OtpVerifications.AddAsync(new OtpVerification
         {
-            Email = request.Email,
+            Email = email,
             OtpCode = code,
             Purpose = OtpPurpose,
             ExpiresAt = DateTime.UtcNow.AddMinutes(10),
@@ -120,14 +143,16 @@ public class VipAppService(
         }, ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        await _emailService.SendOtpEmailAsync(request.Email, code, ct);
+        await _emailService.SendOtpEmailAsync(email, code, ct);
         return ApiResponse<bool>.SuccessResponse(true, "Otp Sent Successfully.");
     }
 
     public async Task<ApiResponse<GuestAuthResponse>> VerifyOtpAsync(VerifyOtpRequest request, CancellationToken ct)
     {
+        var email = NormalizeEmail(request.Email);
+
         var otp = await _unitOfWork.OtpVerifications.Query()
-            .Where(o => o.Email == request.Email && o.OtpCode == request.Code
+            .Where(o => o.Email == email && o.OtpCode == request.Code
                      && o.Purpose == OtpPurpose && !o.IsUsed)
             .OrderByDescending(o => o.CreatedAt)
             .FirstOrDefaultAsync(ct);
@@ -137,7 +162,7 @@ public class VipAppService(
         if (otp.ExpiresAt < DateTime.UtcNow)
             return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Verification code has expired. Request a new one.");
 
-        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Email == request.Email, ct);
+        var guest = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.Email == email, ct);
         if (guest is null)
             return ApiResponse<GuestAuthResponse>.NotFoundResponse("Guest not found");
 
@@ -185,23 +210,26 @@ public class VipAppService(
         {
             var principal = ValidateJwt(refreshToken, validateLifetime: true);
             var jti = principal.FindFirstValue(JwtRegisteredClaimNames.Jti);
-            var guestIdStr = principal.FindFirstValue("sub");
+            var userIdStr = principal.FindFirstValue("sub");
 
-            if (string.IsNullOrEmpty(jti) || !int.TryParse(guestIdStr, out var guestId))
+            if (string.IsNullOrEmpty(jti) || !int.TryParse(userIdStr, out var userId))
                 return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Invalid refresh token");
 
-            // The access token is signed with the same key, and its "sub" is a
-            // User.Id rather than a Guest.Id — without this check one posted here
-            // would be read as a refresh token for the wrong entity.
-            if (principal.FindFirstValue("token_type") != "refresh")
+            // Access tokens and staff refresh tokens are signed with the same key
+            // and land in the same UserRefreshTokens table, so the token_type is
+            // the only thing separating them — reject anything but a guest one
+            // before its row is looked up.
+            if (principal.FindFirstValue("token_type") != GuestRefreshTokenType)
                 return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Invalid refresh token");
 
-            var stored = await _unitOfWork.GuestRefreshTokens.Query()
+            var stored = await _unitOfWork.UserRefreshTokens.Query()
                 .FirstOrDefaultAsync(t => t.Jti == jti && !t.IsRevoked && t.ExpiresAt > DateTime.UtcNow, ct);
             if (stored is null)
                 return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Refresh token revoked or expired");
 
-            var guest = await GetGuestAsync(guestId, ct);
+            // Belt and braces on top of the token_type check: the row must belong
+            // to the User the token names, and that User must have a Guest profile.
+            var guest = stored.UserId == userId ? await GetGuestByUserIdAsync(userId, ct) : null;
             if (guest is null)
                 return ApiResponse<GuestAuthResponse>.UnauthorizedResponse("Guest not found");
 
@@ -212,7 +240,7 @@ public class VipAppService(
             // flaky connection, left the client holding a token the server had
             // already revoked — an unrecoverable logout.
             // ponytail: no rotation means no stolen-token reuse detection either.
-            // Revocation is logout + the GuestRefreshTokens row.
+            // Revocation is logout + the UserRefreshTokens row.
             var jwt = _configuration.GetSection("Authentication:Jwt");
             var expiresAt = DateTime.UtcNow.AddMinutes(int.Parse(jwt["ExpirationMinutes"] ?? "60"));
 
@@ -237,14 +265,17 @@ public class VipAppService(
         {
             var principal = ValidateJwt(refreshToken, validateLifetime: false);
             var jti = principal.FindFirstValue(JwtRegisteredClaimNames.Jti);
-            if (!string.IsNullOrEmpty(jti))
+            // Rows for staff sessions live in the same table, so without the
+            // token_type check a guest logout could revoke a staff session.
+            if (!string.IsNullOrEmpty(jti)
+                && principal.FindFirstValue("token_type") == GuestRefreshTokenType)
             {
-                var stored = await _unitOfWork.GuestRefreshTokens.Query()
+                var stored = await _unitOfWork.UserRefreshTokens.Query()
                     .FirstOrDefaultAsync(t => t.Jti == jti && !t.IsRevoked, ct);
                 if (stored is not null)
                 {
                     stored.IsRevoked = true;
-                    _unitOfWork.GuestRefreshTokens.Update(stored);
+                    _unitOfWork.UserRefreshTokens.Update(stored);
                     await _unitOfWork.SaveChangesAsync(ct);
                 }
             }
@@ -263,9 +294,11 @@ public class VipAppService(
         var access = BuildAccessToken(guest, jwt, expiresAt);
         var refresh = BuildRefreshToken(guest, jwt, jti);
 
-        await _unitOfWork.GuestRefreshTokens.AddAsync(new GuestRefreshToken
+        // Guests are Users (Guest.UserId is a non-nullable 1:1), so their sessions
+        // belong in the same table as staff ones — one revocation path, not two.
+        await _unitOfWork.UserRefreshTokens.AddAsync(new UserRefreshToken
         {
-            GuestId = guest.Id,
+            UserId = guest.UserId,
             Jti = jti,
             ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(jwt["RefreshTokenExpirationDays"] ?? "30")),
             IsRevoked = false,
@@ -322,10 +355,13 @@ public class VipAppService(
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var claims = new List<Claim>
         {
-            new("sub", guest.Id.ToString()),
+            // User.Id, matching the access token — never Guest.Id. The refresh
+            // path resolves the Guest from it via Guests.UserId, and a token whose
+            // User has no Guest profile is rejected.
+            new("sub", guest.UserId.ToString()),
             new(ClaimTypes.Email, guest.Email ?? string.Empty),
             new(JwtRegisteredClaimNames.Jti, jti),
-            new("token_type", "refresh"),
+            new("token_type", GuestRefreshTokenType),
         };
         var token = new JwtSecurityToken(
             claims: claims,
@@ -361,11 +397,10 @@ public class VipAppService(
         var guest = await GetGuestAsync(guestId, ct);
         if (guest is null) return ApiResponse<List<GuestEventResponse>>.NotFoundResponse("Guest not found");
 
-        // A person can be a guest across several events (one Guest row per event,
-        // same email). Surface all of them.
-        var eventIds = await _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => g.Email == guest.Email)
-            .Select(g => g.EventId).Distinct().ToListAsync(ct);
+        // One person, one row here, one EventGuest per event they're on.
+        var eventIds = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.GuestId == guest.Id)
+            .Select(eg => eg.EventId).Distinct().ToListAsync(ct);
 
         var events = await _unitOfWork.Events.QueryNoTracking()
             .Where(e => eventIds.Contains(e.Id))
@@ -386,8 +421,14 @@ public class VipAppService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev is null) return ApiResponse<List<GuestSessionResponse>>.NotFoundResponse("Event not found");
 
+        // The caller's participation in THIS event — their picks on another event
+        // must not leak in, and not being on it is a 404 rather than an empty list.
+        var participation = await GetParticipationAsync(guestId, eventId, ct);
+        if (participation is null)
+            return ApiResponse<List<GuestSessionResponse>>.NotFoundResponse("You are not registered for this event");
+
         var selected = await _unitOfWork.GuestSessions.QueryNoTracking()
-            .Where(gs => gs.GuestId == guestId)
+            .Where(gs => gs.EventGuestId == participation.Id)
             .ToDictionaryAsync(gs => gs.SessionId, gs => gs.Status, ct);
 
         var sessions = await _unitOfWork.Sessions.QueryNoTracking()
@@ -408,6 +449,10 @@ public class VipAppService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev is null) return ApiResponse<bool>.NotFoundResponse("Event not found");
 
+        var participation = await GetParticipationAsync(guestId, eventId, ct);
+        if (participation is null)
+            return ApiResponse<bool>.NotFoundResponse("You are not registered for this event");
+
         // Load the event's sessions with both keys so we can resolve the client's
         // public session guids to internal int ids.
         var eventSessions = await _unitOfWork.Sessions.QueryNoTracking()
@@ -416,7 +461,7 @@ public class VipAppService(
         var eventSessionIds = eventSessions.Select(s => s.Id).ToList();
 
         var existing = (await _unitOfWork.GuestSessions
-            .FindAsync(gs => gs.GuestId == guestId && eventSessionIds.Contains(gs.SessionId), ct)).ToList();
+            .FindAsync(gs => gs.EventGuestId == participation.Id && eventSessionIds.Contains(gs.SessionId), ct)).ToList();
 
         if (existing.Count > 0) _unitOfWork.GuestSessions.RemoveRange(existing);
 
@@ -424,7 +469,7 @@ public class VipAppService(
         {
             var requested = request.SessionIds.ToHashSet();
             var toAdd = eventSessions.Where(s => requested.Contains(s.PublicId))
-                .Select(s => new GuestSession { GuestId = guestId, SessionId = s.Id, Status = "selected" });
+                .Select(s => new GuestSession { EventGuestId = participation.Id, SessionId = s.Id, Status = "selected" });
             await _unitOfWork.GuestSessions.AddRangeAsync(toAdd, ct);
         }
 
@@ -439,15 +484,15 @@ public class VipAppService(
         int guestId, Guid? eventId = null, CancellationToken ct = default)
     {
         // Same email can be a guest on several events — eventId narrows to one.
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<List<AgendaCardResponse>>.NotFoundResponse("Guest not found");
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return ApiResponse<List<AgendaCardResponse>>.NotFoundResponse("Guest not found");
 
         var now = DateTime.UtcNow;
         var cards = new List<AgendaCardResponse>();
 
         var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
             .Include(l => l.FromAirport).Include(l => l.ToAirport)
-            .Where(l => guestIds.Contains(l.Flight.GuestId) && l.StartTime > now).ToListAsync(ct);
+            .Where(l => eventGuestIds.Contains(l.Flight.EventGuestId) && l.StartTime > now).ToListAsync(ct);
         cards.AddRange(legs.Select(l => new AgendaCardResponse
         {
             Flag = "UPCOMING FLIGHT", Kind = "flight", RefId = l.PublicId,
@@ -457,7 +502,8 @@ public class VipAppService(
         }));
 
         var accs = await _unitOfWork.Accommodations.QueryNoTracking()
-            .Include(a => a.Hotel).Where(a => guestIds.Contains(a.GuestId) && a.CheckIn != null).ToListAsync(ct);
+            .Include(a => a.Contract).ThenInclude(c => c.Hotel)
+            .Where(a => eventGuestIds.Contains(a.EventGuestId) && a.CheckIn != null).ToListAsync(ct);
         cards.AddRange(accs
             .Select(a => new { a, when = ToDt(a.CheckIn) })
             .Where(x => x.when > now)
@@ -467,13 +513,13 @@ public class VipAppService(
                 When = x.when!.Value, Title = "Hotel Check-In",
                 // Address alongside the name — the card is what the guest reads
                 // on the way there, and the name alone doesn't say where.
-                Subtitle = string.Join(" · ", new[] { x.a.Hotel?.Name, x.a.Hotel?.Address }
+                Subtitle = string.Join(" · ", new[] { x.a.Contract?.Hotel?.Name, x.a.Contract?.Hotel?.Address }
                     .Where(s => !string.IsNullOrWhiteSpace(s)))
             }));
 
         var trips = await _unitOfWork.Transports.QueryNoTracking()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
-            .Where(t => guestIds.Contains(t.GuestId) && t.PickupTime > now).ToListAsync(ct);
+            .Where(t => eventGuestIds.Contains(t.EventGuestId) && t.PickupTime > now).ToListAsync(ct);
         cards.AddRange(trips.Select(t => new AgendaCardResponse
         {
             Flag = "UPCOMING PICKUP", Kind = "transport", RefId = t.PublicId,
@@ -490,8 +536,8 @@ public class VipAppService(
     public async Task<ApiResponse<List<DateOnly>>> GetItineraryDatesAsync(
         int guestId, Guid? eventId = null, CancellationToken ct = default)
     {
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<List<DateOnly>>.NotFoundResponse("Guest not found");
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return ApiResponse<List<DateOnly>>.NotFoundResponse("Guest not found");
 
         // Three narrow queries, each DISTINCT in SQL and pulling back dates only —
         // no entities, no includes. That's what keeps this cheap enough to call
@@ -499,13 +545,13 @@ public class VipAppService(
         // .Date, not DateOnly.FromDateTime — it's the translation SQL Server has
         // always had (CAST AS date), so the DISTINCT happens server-side.
         var flightDates = await _unitOfWork.FlightLegs.QueryNoTracking()
-            .Where(l => guestIds.Contains(l.Flight.GuestId) && l.StartTime != null)
+            .Where(l => eventGuestIds.Contains(l.Flight.EventGuestId) && l.StartTime != null)
             .Select(l => l.StartTime.Value.Date)
             .Distinct()
             .ToListAsync(ct);
 
         var transportDates = await _unitOfWork.Transports.QueryNoTracking()
-            .Where(t => guestIds.Contains(t.GuestId) && t.PickupTime != null)
+            .Where(t => eventGuestIds.Contains(t.EventGuestId) && t.PickupTime != null)
             .Select(t => t.PickupTime.Value.Date)
             .Distinct()
             .ToListAsync(ct);
@@ -513,7 +559,7 @@ public class VipAppService(
         // A stay covers every night between the two ends, so this one has to be
         // expanded here — SQL has no cheap way to generate the range.
         var stays = await _unitOfWork.Accommodations.QueryNoTracking()
-            .Where(a => guestIds.Contains(a.GuestId) && a.CheckIn != null)
+            .Where(a => eventGuestIds.Contains(a.EventGuestId) && a.CheckIn != null)
             .Select(a => new { From = a.CheckIn.Value, To = a.CheckOut })
             .ToListAsync(ct);
 
@@ -532,8 +578,8 @@ public class VipAppService(
     public async Task<ApiResponse<ItinerarySummaryResponse>> GetItineraryAsync(
         int guestId, Guid? eventId = null, DateOnly? date = null, CancellationToken ct = default)
     {
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<ItinerarySummaryResponse>.NotFoundResponse("Guest not found");
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return ApiResponse<ItinerarySummaryResponse>.NotFoundResponse("Guest not found");
 
         // date == null → the whole itinerary. Otherwise only what falls on that
         // day; a hotel stay counts if the date lands anywhere inside it.
@@ -543,7 +589,7 @@ public class VipAppService(
         var legs = await _unitOfWork.FlightLegs.QueryNoTracking()
             .Include(l => l.FromAirport).Include(l => l.ToAirport)
             .Include(l => l.Flight).ThenInclude(f => f.FlightClass)
-            .Where(l => guestIds.Contains(l.Flight.GuestId))
+            .Where(l => eventGuestIds.Contains(l.Flight.EventGuestId))
             .Where(l => date == null || (l.StartTime >= from && l.StartTime < to))
             .OrderBy(l => l.StartTime)
             .ToListAsync(ct);
@@ -552,14 +598,15 @@ public class VipAppService(
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
             .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
-            .Where(t => guestIds.Contains(t.GuestId))
+            .Where(t => eventGuestIds.Contains(t.EventGuestId))
             .Where(t => date == null || (t.PickupTime >= from && t.PickupTime < to))
             .OrderBy(t => t.PickupTime == null).ThenBy(t => t.PickupTime)
             .ToListAsync(ct);
 
         var accs = await _unitOfWork.Accommodations.QueryNoTracking()
-            .Include(a => a.Hotel).Include(a => a.RoomType)
-            .Where(a => guestIds.Contains(a.GuestId))
+            .Include(a => a.Contract).ThenInclude(c => c.Hotel)
+            .Include(a => a.RoomType)
+            .Where(a => eventGuestIds.Contains(a.EventGuestId))
             // Inclusive of both ends — the guest is in the hotel on check-out day.
             .Where(a => date == null
                      || ((a.CheckIn == null || a.CheckIn <= date) && (a.CheckOut == null || a.CheckOut >= date)))
@@ -569,7 +616,7 @@ public class VipAppService(
         // Grouped, not ToDictionary — two sibling guest rows could both point at
         // the same session, and a duplicate key would blow up the request.
         var picks = (await _unitOfWork.GuestSessions.QueryNoTracking()
-            .Where(gs => guestIds.Contains(gs.GuestId))
+            .Where(gs => eventGuestIds.Contains(gs.EventGuestId))
             .Select(gs => new { gs.SessionId, gs.Status })
             .ToListAsync(ct))
             .GroupBy(x => x.SessionId)
@@ -601,9 +648,9 @@ public class VipAppService(
             Accommodations = accs.Select(a => new AccommodationResponse
             {
                 Id = a.PublicId,
-                HotelName = a.Hotel?.Name,
-                HotelImageUrl = a.Hotel?.ImageUrl,
-                Address = a.Hotel?.Address,
+                HotelName = a.Contract?.Hotel?.Name,
+                HotelImageUrl = a.Contract?.Hotel?.ImageUrl,
+                Address = a.Contract?.Hotel?.Address,
                 CheckIn = ToDt(a.CheckIn),
                 CheckOut = ToDt(a.CheckOut),
                 RoomType = a.RoomType?.Name,
@@ -613,9 +660,8 @@ public class VipAppService(
             Sessions = sessions.Select(s => MapSession(s, picks[s.Id] ?? "selected")).ToList(),
 
             // Deliberately not filtered by `date` — it's a permission, not an
-            // itinerary item. Any of the guest's sibling rows allowing it is
-            // enough (guestIds spans this person's rows across events).
-            TransportAllowed = await AllowsTransportAsync(guestIds, ct),
+            // itinerary item.
+            TransportAllowed = await AllowsTransportAsync(eventGuestIds, ct),
         };
 
         return ApiResponse<ItinerarySummaryResponse>.SuccessResponse(data);
@@ -628,14 +674,14 @@ public class VipAppService(
     // entry with its outbound and inbound segments, not two unrelated rows.
     public async Task<ApiResponse<List<FlightBookingResponse>>> GetFlightsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<List<FlightBookingResponse>>.NotFoundResponse("Guest not found");
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return ApiResponse<List<FlightBookingResponse>>.NotFoundResponse("Guest not found");
 
         var flights = await _unitOfWork.Flights.Query()
             .Include(f => f.FlightClass)
             .Include(f => f.Legs).ThenInclude(l => l.FromAirport)
             .Include(f => f.Legs).ThenInclude(l => l.ToAirport)
-            .Where(f => guestIds.Contains(f.GuestId)).ToListAsync(ct);
+            .Where(f => eventGuestIds.Contains(f.EventGuestId)).ToListAsync(ct);
 
         var data = flights.Select(f =>
         {
@@ -677,21 +723,22 @@ public class VipAppService(
 
     public async Task<ApiResponse<AccommodationResponse>> GetAccommodationAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("Guest not found");
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("Guest not found");
 
         var acc = await _unitOfWork.Accommodations.Query()
-            .Include(a => a.Hotel).Include(a => a.RoomType)
+            .Include(a => a.Contract).ThenInclude(c => c.Hotel)
+            .Include(a => a.RoomType)
             .OrderBy(a => a.CheckIn)
-            .FirstOrDefaultAsync(a => guestIds.Contains(a.GuestId), ct);
+            .FirstOrDefaultAsync(a => eventGuestIds.Contains(a.EventGuestId), ct);
         if (acc is null) return ApiResponse<AccommodationResponse>.NotFoundResponse("No accommodation found");
 
         var data = new AccommodationResponse
         {
             Id = acc.PublicId,
-            HotelName = acc.Hotel?.Name,
-            HotelImageUrl = acc.Hotel?.ImageUrl,
-            Address = acc.Hotel?.Address,
+            HotelName = acc.Contract?.Hotel?.Name,
+            HotelImageUrl = acc.Contract?.Hotel?.ImageUrl,
+            Address = acc.Contract?.Hotel?.Address,
             CheckIn = ToDt(acc.CheckIn),
             CheckOut = ToDt(acc.CheckOut),
             RoomType = acc.RoomType?.Name,
@@ -708,14 +755,27 @@ public class VipAppService(
             if (request is null)
                 return ApiResponse<TransportationResponse>.ErrorResponse("Request body is required");
 
+            // eventId is required, not inferred. A person can be on several events
+            // at once, and picking "the latest eligible one" would book a car
+            // against the wrong event — wrong drivers, wrong dispatch board, wrong
+            // permissions. If the client doesn't know which event, neither do we.
+            if (request.EventId == Guid.Empty)
+                return ApiResponse<TransportationResponse>.ErrorResponse("eventId is required");
+
             var guest = await GetGuestAsync(guestId, ct);
             if (guest is null) return ApiResponse<TransportationResponse>.NotFoundResponse("Guest not found");
 
-            // The itinerary's TransportAllowed flag only hides the button; the rule
-            // itself is enforced here, since the request can be sent without it.
-            if (!GuestServices.Allows(guest.AllowedServicesJson, GuestServiceType.Transport))
+            var participation = await GetParticipationAsync(guest.Id, request.EventId, ct);
+            if (participation is null)
+                return ApiResponse<TransportationResponse>.NotFoundResponse("You are not registered for this event");
+
+            // Checked against THIS participation, not against "any event that
+            // allows it": the itinerary's TransportAllowed flag only hides the
+            // button, and self-service granted on one event says nothing about
+            // another.
+            if (!GuestServices.Allows(participation.AllowedServicesJson, GuestServiceType.Transport))
                 return ApiResponse<TransportationResponse>.ForbiddenResponse(
-                    "Transport requests are not enabled for you");
+                    "Transport requests are not enabled for you on this event");
 
             var pickupId = await ResolveLocationIdAsync(request.PickupLocationId, ct);
             if (pickupId is null) return ApiResponse<TransportationResponse>.ErrorResponse("Invalid pickup location");
@@ -725,7 +785,7 @@ public class VipAppService(
 
             var transport = new Transport
             {
-                GuestId = guest.Id,
+                EventGuestId = participation.Id,
                 PickupLocationId = pickupId,
                 DropoffLocationId = dropoffId,
                 PickupTime = DateTime.Now,
@@ -763,8 +823,8 @@ public class VipAppService(
     {
         try
         {
-            var guestIds = await ResolveGuestIdsAsync(guestId, null, ct);
-            if (guestIds is null) return ApiResponse<bool>.NotFoundResponse("Guest not found");
+            var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, null, ct);
+            if (eventGuestIds is null) return ApiResponse<bool>.NotFoundResponse("Guest not found");
 
             // Cancellable only while nobody has taken it. One conditional UPDATE —
             // the "still new" test is part of the WHERE, so a driver accepting at
@@ -774,7 +834,7 @@ public class VipAppService(
             // so one guest can never cancel another's ride.
             var cancelled = await _unitOfWork.Transports.Query()
                 .Where(t => t.PublicId == transportId
-                         && guestIds.Contains(t.GuestId)
+                         && eventGuestIds.Contains(t.EventGuestId)
                          && t.TripStatus == TransportStatuses.New)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(t => t.TripStatus, TransportStatuses.Cancelled)
@@ -790,7 +850,7 @@ public class VipAppService(
             // 0 rows — separate "not yours/not there" from "too late", so the app
             // can tell the guest why the button did nothing.
             var status = await _unitOfWork.Transports.QueryNoTracking()
-                .Where(t => t.PublicId == transportId && guestIds.Contains(t.GuestId))
+                .Where(t => t.PublicId == transportId && eventGuestIds.Contains(t.EventGuestId))
                 .Select(t => t.TripStatus)
                 .FirstOrDefaultAsync(ct);
 
@@ -850,14 +910,14 @@ public class VipAppService(
     // history can't disagree about what the guest is booked on. Null = no guest.
     private async Task<List<Transport>> LoadTransportsAsync(int guestId, Guid? eventId, CancellationToken ct)
     {
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return null;
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return null;
 
         return await _unitOfWork.Transports.Query()
             .Include(t => t.PickupLocation).Include(t => t.DropoffLocation)
             .Include(t => t.Vehicle).ThenInclude(v => v.VehicleType)
             .Include(t => t.Driver).ThenInclude(d => d.User)
-            .Where(t => guestIds.Contains(t.GuestId)).ToListAsync(ct);
+            .Where(t => eventGuestIds.Contains(t.EventGuestId)).ToListAsync(ct);
     }
 
     public async Task<ApiResponse<List<TransportationResponse>>> GetTodayTransportationAsync(int guestId, Guid? eventId, CancellationToken ct)
@@ -907,13 +967,13 @@ public class VipAppService(
         int guestId, Guid? eventId = null, CancellationToken ct = default)
     {
         // Same email can be a guest on several events — eventId narrows to one.
-        var guestIds = await ResolveGuestIdsAsync(guestId, eventId, ct);
-        if (guestIds is null) return ApiResponse<List<GuestSessionResponse>>.NotFoundResponse("Guest not found");
+        var eventGuestIds = await ResolveEventGuestIdsAsync(guestId, eventId, ct);
+        if (eventGuestIds is null) return ApiResponse<List<GuestSessionResponse>>.NotFoundResponse("Guest not found");
 
         // Grouped rather than ToDictionaryAsync: several of the guest's rows could
         // in principle carry the same session, and a duplicate key would throw.
         var picks = (await _unitOfWork.GuestSessions.QueryNoTracking()
-                .Where(gs => guestIds.Contains(gs.GuestId))
+                .Where(gs => eventGuestIds.Contains(gs.EventGuestId))
                 .Select(gs => new { gs.SessionId, gs.Status })
                 .ToListAsync(ct))
             .GroupBy(gs => gs.SessionId)
@@ -935,15 +995,17 @@ public class VipAppService(
             .FirstOrDefaultAsync(s => s.PublicId == sessionId, ct);
         if (session is null) return ApiResponse<SessionDetailResponse>.NotFoundResponse("Session not found");
 
-        var pick = await _unitOfWork.GuestSessions
-            .FindFirstOrDefaultAsync(gs => gs.GuestId == guestId && gs.SessionId == session.Id, ct);
+        // The session belongs to one event, so the caller's participation in THAT
+        // event is what carries their pick, their seat and their tier.
+        var participation = await GetParticipationAsync(guestId, session.Event?.PublicId ?? Guid.Empty, ct);
 
-        var assign = await _unitOfWork.SeatAssigns.Query()
+        var pick = participation is null ? null : await _unitOfWork.GuestSessions
+            .FindFirstOrDefaultAsync(gs => gs.EventGuestId == participation.Id && gs.SessionId == session.Id, ct);
+
+        var assign = participation is null ? null : await _unitOfWork.SeatAssigns.Query()
             .Include(a => a.Seat).Include(a => a.Seating)
             .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.GuestId == guestId && a.Seating.EventSessionId == session.Id, ct);
-
-        var guest = await GetGuestAsync(guestId, ct);
+            .FirstOrDefaultAsync(a => a.EventGuestId == participation.Id && a.Seating.EventSessionId == session.Id, ct);
 
         var b = MapSession(session, pick?.Status ?? (pick != null ? "selected" : null));
         var data = new SessionDetailResponse
@@ -953,7 +1015,7 @@ public class VipAppService(
             Status = pick != null ? "Confirmed" : "Pending",
             Seating = assign is null ? null : new SeatingResponse
             {
-                Category = guest?.Tier,
+                Category = participation?.Tier,
                 Block = assign.Seat?.Block,
                 Row = assign.Seat?.SeatInfo,
                 Seat = assign.Seat?.Code,
@@ -1002,7 +1064,8 @@ public class VipAppService(
     {
         var guest = await GetGuestAsync(guestId, ct);
         if (guest is null) return ApiResponse<GuestProfileResponse>.NotFoundResponse("Guest not found");
-        return ApiResponse<GuestProfileResponse>.SuccessResponse(MapProfile(guest));
+        return ApiResponse<GuestProfileResponse>.SuccessResponse(
+            MapProfile(guest, await LatestParticipationAsync(guest.Id, ct)));
     }
 
     public async Task<ApiResponse<GuestProfileResponse>> UpdateProfileAsync(int guestId, UpdateProfileRequest request, CancellationToken ct)
@@ -1012,10 +1075,26 @@ public class VipAppService(
 
         guest.FirstName = request.FirstName ?? guest.FirstName;
         guest.LastName = request.LastName ?? guest.LastName;
-        guest.Organization = request.Organization ?? guest.Organization;
         _unitOfWork.Guests.Update(guest);
+
+        // Organisation is per event, so it is written to the participation the
+        // profile screen is showing (the most recent one) rather than to the
+        // person — editing it must not rewrite every event's affiliation.
+        var latest = await LatestParticipationAsync(guest.Id, ct);
+        if (request.Organization != null && latest != null)
+        {
+            var tracked = await _unitOfWork.EventGuests.Query().FirstOrDefaultAsync(eg => eg.Id == latest.Id, ct);
+            if (tracked != null)
+            {
+                tracked.Organization = request.Organization;
+                tracked.OrganizationId = null;
+                _unitOfWork.EventGuests.Update(tracked);
+                latest = tracked;
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(ct);
-        return ApiResponse<GuestProfileResponse>.SuccessResponse(MapProfile(guest), "Profile updated");
+        return ApiResponse<GuestProfileResponse>.SuccessResponse(MapProfile(guest, latest), "Profile updated");
     }
 
     public async Task<ApiResponse<bool>> UpdateSettingsAsync(int guestId, UpdateSettingsRequest request, CancellationToken ct)
@@ -1033,10 +1112,13 @@ public class VipAppService(
 
     // One mapper for every profile payload — verify-otp, refresh, GET and PUT
     // /profile — so a field added here reaches all of them at once.
-    private static GuestProfileResponse MapProfile(Guest g) => new()
+    // `latest` is the person's most recent participation and may be null (a
+    // person with no event yet) — organisation and tier are per event, so those
+    // two come from it while everything else is person-level.
+    private static GuestProfileResponse MapProfile(Guest g, EventGuest latest = null) => new()
     {
         Id = g.PublicId, FirstName = g.FirstName, LastName = g.LastName, Email = g.Email,
-        Organization = g.Organization, Tier = g.Tier, PhotoUrl = g.PhotoUrl
+        Organization = latest?.Organization, Tier = latest?.Tier, PhotoUrl = g.PhotoUrl
     };
 
     // Support chat lives entirely on SupportChatService / SupportChatController now.

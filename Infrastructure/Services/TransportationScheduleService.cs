@@ -26,8 +26,9 @@ public class TransportationScheduleService(
     {
         try
         {
-            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(request.GuestId, ct);
-            if (guest == null) return ApiResponse<ScheduleRow>.NotFoundResponse("Guest not found");
+            // A ride belongs to a participation, which is what carries the event.
+            var participation = await LoadParticipationAsync(request.EventGuestId, ct);
+            if (participation == null) return ApiResponse<ScheduleRow>.NotFoundResponse("Guest not found");
 
             if (request.DropoffTime == null)
                 return ApiResponse<ScheduleRow>.ErrorResponse("Dropoff time is required");
@@ -44,7 +45,7 @@ public class TransportationScheduleService(
 
             var vehicleId = await ResolveNullableId(_unitOfWork.Vehicles, request.VehicleId, ct);
 
-            var guestConflict = await _conflictValidator.CheckGuestConflictAsync(guest.Id, request.ScheduledTime, ct: ct);
+            var guestConflict = await _conflictValidator.CheckGuestConflictAsync(participation.Id, request.ScheduledTime, ct: ct);
             if (guestConflict.HasConflict)
                 return ApiResponse<ScheduleRow>.ConflictResponse(guestConflict.Message, "TRANSPORTATION_CONFLICT");
 
@@ -65,7 +66,7 @@ public class TransportationScheduleService(
 
             var transport = new Transport
             {
-                GuestId = guest.Id,
+                EventGuestId = participation.Id,
                 DriverId = driverId,
                 VehicleId = vehicleId,
                 PickupLocationId = await ResolveNullableId(_unitOfWork.Locations, request.PickupLocationId, ct),
@@ -85,80 +86,58 @@ public class TransportationScheduleService(
             if (driverId.HasValue)
                 await _notifications.SendToDriverAsync(_unitOfWork, driverId.Value,
                     NotificationTemplates.TransportDriverAssigned,
-                    transport.Tokens(guest), ct);
+                    transport.Tokens(participation), ct);
 
             return await GetScheduleRowAsync(transport.Id, ct);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating transportation schedule for guest {GuestId}", request.GuestId);
+            _logger.LogError(ex, "Error creating transportation schedule for participation {EventGuestId}", request.EventGuestId);
             return ApiResponse<ScheduleRow>.ServerErrorResponse("An error occurred while creating the schedule");
         }
     }
 
-    public async Task<ApiResponse<List<AssignedDriverDto>>> AssignDriversToGuestAsync(
-        Guid guestId, AssignDriversRequest request, int userId, CancellationToken ct = default)
+    public async Task<ApiResponse<List<ScheduleRow>>> GetGuestScheduleAsync(Guid eventGuestId, CancellationToken ct = default)
     {
-        try
-        {
-            var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
-            if (guest == null) return ApiResponse<List<AssignedDriverDto>>.NotFoundResponse("Guest not found");
-
-            var driverIds = new List<int>();
-            foreach (var publicId in request.DriverIds ?? new List<Guid>())
-            {
-                var driver = await _unitOfWork.DriverProfiles.GetByPublicIdAsync(publicId, ct);
-                if (driver == null) return ApiResponse<List<AssignedDriverDto>>.ErrorResponse($"Invalid driver: {publicId}");
-                driverIds.Add(driver.Id);
-            }
-
-            var existing = await _unitOfWork.GuestDriverAssignments.Query()
-                .Where(a => a.GuestId == guest.Id)
-                .Select(a => a.DriverId)
-                .ToListAsync(ct);
-
-            foreach (var driverId in driverIds.Except(existing))
-            {
-                var assignment = new GuestDriverAssignment { GuestId = guest.Id, DriverId = driverId };
-                assignment.SetCreationAudit(userId);
-                await _unitOfWork.GuestDriverAssignments.AddAsync(assignment, ct);
-            }
-            await _unitOfWork.SaveChangesAsync(ct);
-
-            return await GetAssignedDriversAsync(guestId, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error assigning drivers to guest {GuestId}", guestId);
-            return ApiResponse<List<AssignedDriverDto>>.ServerErrorResponse("An error occurred while assigning drivers");
-        }
-    }
-
-    public async Task<ApiResponse<List<AssignedDriverDto>>> GetAssignedDriversAsync(Guid guestId, CancellationToken ct = default)
-    {
-        var data = await _unitOfWork.GuestDriverAssignments.Query()
-            .Where(a => a.Guest.PublicId == guestId)
-            .Select(a => new AssignedDriverDto
-            {
-                DriverId = a.Driver.PublicId,
-                DriverName = (a.Driver.User.FirstName + " " + a.Driver.User.LastName).Trim(),
-            })
-            .ToListAsync(ct);
-        return ApiResponse<List<AssignedDriverDto>>.SuccessResponse(data);
-    }
-
-    public async Task<ApiResponse<List<ScheduleRow>>> GetGuestScheduleAsync(Guid guestId, CancellationToken ct = default)
-    {
-        var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
-        if (guest == null) return ApiResponse<List<ScheduleRow>>.NotFoundResponse("Guest not found");
+        var participation = await _unitOfWork.EventGuests.GetByPublicIdAsync(eventGuestId, ct);
+        if (participation == null) return ApiResponse<List<ScheduleRow>>.NotFoundResponse("Guest not found");
 
         var data = await _unitOfWork.Transports.Query()
-            .Where(t => t.GuestId == guest.Id)
+            .Where(t => t.EventGuestId == participation.Id)
             .OrderBy(t => t.PickupTime == null).ThenBy(t => t.PickupTime)
             .Select(Project)
             .ToListAsync(ct);
 
         return ApiResponse<List<ScheduleRow>>.SuccessResponse(data);
+    }
+
+    /// <summary>The drivers already on this participation's rides. Transport is the
+    /// only record of a driver-to-guest assignment (DriverId + EventGuestId), so the
+    /// distinct drivers across the participation's trips ARE the pool.</summary>
+    public async Task<ApiResponse<List<AssignedDriverDto>>> GetAssignedDriversAsync(Guid eventGuestId, CancellationToken ct = default)
+    {
+        var participation = await _unitOfWork.EventGuests.GetByPublicIdAsync(eventGuestId, ct);
+        if (participation == null) return ApiResponse<List<AssignedDriverDto>>.NotFoundResponse("Guest not found");
+
+        // Distinct on the raw columns, then shaped client-side — Distinct over a
+        // projected DTO isn't reliably translatable. Trim client-side for the same
+        // reason it's cheap: the rows are already in memory.
+        var rows = await _unitOfWork.Transports.QueryNoTracking()
+            .Where(t => t.EventGuestId == participation.Id && t.Driver != null)
+            .Select(t => new { t.Driver.PublicId, t.Driver.User.FirstName, t.Driver.User.LastName })
+            .Distinct()
+            .ToListAsync(ct);
+
+        var data = rows
+            .Select(r => new AssignedDriverDto
+            {
+                DriverId = r.PublicId,
+                DriverName = (r.FirstName + " " + r.LastName).Trim(),
+            })
+            .OrderBy(d => d.DriverName)
+            .ToList();
+
+        return ApiResponse<List<AssignedDriverDto>>.SuccessResponse(data);
     }
 
     public async Task<ApiResponse<PaginatedResponse<ScheduleRow>>> GetEventScheduleAsync(
@@ -167,13 +146,15 @@ public class TransportationScheduleService(
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventId, ct);
         if (ev == null) return ApiResponse<PaginatedResponse<ScheduleRow>>.NotFoundResponse("Event not found");
 
-        var query = _unitOfWork.Transports.Query().Where(t => t.Guest.EventId == ev.Id);
+        // Event filtering goes through the participation — that is the only place
+        // a ride's event is recorded.
+        var query = _unitOfWork.Transports.Query().Where(t => t.EventGuest.EventId == ev.Id);
 
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
         {
             var term = request.SearchTerm.Trim();
             query = query.Where(t =>
-                (t.Guest.FirstName + " " + t.Guest.LastName).Contains(term) ||
+                (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Contains(term) ||
                 (t.Driver != null && (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Contains(term)));
         }
 
@@ -213,17 +194,26 @@ public class TransportationScheduleService(
             // Same reason as the driver notification just below — through the
             // manager so it persists and reaches the VIP app over FCM, not just
             // whatever portal tab happens to be connected.
-            await _notifications.SendToGuestAsync(transport.GuestId,
-                NotificationTemplates.TransportGuestRideCancelled,
-                new Dictionary<string, string> { ["transportId"] = transport.PublicId.ToString() }, ct);
+            // transport.EventGuestId is a PARTICIPATION id; SendToGuestAsync wants the
+            // PERSON id it can resolve to a User and their devices. Resolve once here
+            // and reuse for both notifications rather than passing the wrong int.
+            var participation = await LoadParticipationAsync(transport.EventGuestId, ct);
+
+            if (participation != null)
+                await _notifications.SendToGuestAsync(participation.GuestId,
+                    NotificationTemplates.TransportGuestRideCancelled,
+                    new Dictionary<string, string>
+                    {
+                        ["transportId"] = transport.PublicId.ToString(),
+                        ["eventGuestId"] = participation.PublicId.ToString(),
+                        ["eventId"] = participation.Event?.PublicId.ToString() ?? string.Empty,
+                    }, ct);
 
             if (transport.DriverId.HasValue)
             {
-                var guest = await _unitOfWork.Guests.Query()
-                    .FirstOrDefaultAsync(g => g.Id == transport.GuestId, ct);
                 await _notifications.SendToDriverAsync(_unitOfWork, transport.DriverId.Value,
                     NotificationTemplates.TransportDriverTripCancelled,
-                    transport.Tokens(guest), ct);
+                    transport.Tokens(participation), ct);
             }
 
             return ApiResponse<bool>.SuccessResponse(true, "Schedule cancelled");
@@ -252,14 +242,30 @@ public class TransportationScheduleService(
         await _unitOfWork.SaveChangesAsync(ct);
     }
 
+    // Guest + Event eagerly loaded: both notification paths need the person id
+    // and the event, and neither is reachable from a bare Transport row.
+    private Task<EventGuest> LoadParticipationAsync(int eventGuestId, CancellationToken ct)
+        => _unitOfWork.EventGuests.Query()
+            .Include(eg => eg.Guest)
+            .Include(eg => eg.Event)
+            .FirstOrDefaultAsync(eg => eg.Id == eventGuestId, ct);
+
+    private Task<EventGuest> LoadParticipationAsync(Guid eventGuestPublicId, CancellationToken ct)
+        => _unitOfWork.EventGuests.Query()
+            .Include(eg => eg.Guest)
+            .Include(eg => eg.Event)
+            .FirstOrDefaultAsync(eg => eg.PublicId == eventGuestPublicId, ct);
+
     private static async Task<int?> ResolveNullableId<T>(IGenericRepository<T> repo, Guid? publicId, CancellationToken ct) where T : Entity
         => publicId == null || publicId == Guid.Empty ? null : (await repo.GetByPublicIdAsync(publicId.Value, ct))?.Id;
 
     private static readonly System.Linq.Expressions.Expression<Func<Transport, ScheduleRow>> Project = t => new ScheduleRow
     {
         Id = t.PublicId,
-        GuestId = t.Guest.PublicId,
-        GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
+        EventGuestId = t.EventGuest.PublicId,
+        PersonId = t.EventGuest.Guest.PublicId,
+        EventId = t.EventGuest.Event.PublicId,
+        GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
         DriverId = t.Driver == null ? null : (Guid?)t.Driver.PublicId,
         DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
         VehicleId = t.Vehicle == null ? null : (Guid?)t.Vehicle.PublicId,

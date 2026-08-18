@@ -59,7 +59,6 @@ public class UnitOfWork : IUnitOfWork
         FleetProviders = new GenericRepository<FleetProvider>(_context);
         DriverProfiles = new GenericRepository<DriverProfile>(_context);
         TransportStatusHistories = new GenericRepository<TransportStatusHistory>(_context);
-        GuestDriverAssignments = new GenericRepository<GuestDriverAssignment>(_context);
         Organizations = new GenericRepository<Organization>(_context);
         Services = new GenericRepository<Service>(_context);
         ServiceLevels = new GenericRepository<ServiceLevel>(_context);
@@ -67,6 +66,7 @@ public class UnitOfWork : IUnitOfWork
         GuestServiceEntries = new GenericRepository<GuestServiceEntry>(_context);
 
         Guests = new GenericRepository<Guest>(_context);
+        EventGuests = new GenericRepository<EventGuest>(_context);
         GuestSessions = new GenericRepository<GuestSession>(_context);
         Nationalities = new GenericRepository<Nationality>(_context);
         InvitationTemplates = new GenericRepository<InvitationTemplate>(_context);
@@ -75,7 +75,6 @@ public class UnitOfWork : IUnitOfWork
 
         Notifications = new GenericRepository<Notification>(_context);
 
-        GuestRefreshTokens = new GenericRepository<GuestRefreshToken>(_context);
         SupportMessages = new GenericRepository<SupportMessage>(_context);
         SupportConversations = new GenericRepository<SupportConversation>(_context);
         Devices = new GenericRepository<Device>(_context);
@@ -86,6 +85,7 @@ public class UnitOfWork : IUnitOfWork
 
     public IGenericRepository<User> Users { get; private set; }
     public IGenericRepository<Guest> Guests { get; private set; }
+    public IGenericRepository<EventGuest> EventGuests { get; private set; }
     public IGenericRepository<GuestSession> GuestSessions { get; private set; }
     public IGenericRepository<Venue> Venues { get; private set; }
     public IGenericRepository<VenueBox> VenueBoxes { get; private set; }
@@ -113,7 +113,6 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<FleetProvider> FleetProviders { get; private set; }
     public IGenericRepository<DriverProfile> DriverProfiles { get; private set; }
     public IGenericRepository<TransportStatusHistory> TransportStatusHistories { get; private set; }
-    public IGenericRepository<GuestDriverAssignment> GuestDriverAssignments { get; private set; }
     public IGenericRepository<Organization> Organizations { get; private set; }
     public IGenericRepository<Service> Services { get; private set; }
     public IGenericRepository<ServiceLevel> ServiceLevels { get; private set; }
@@ -136,7 +135,6 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<AccountRequest> AccountRequests { get; private set; }
     public IGenericRepository<UserModuleGrant> UserModuleGrants { get; private set; }
     public IGenericRepository<Notification> Notifications { get; private set; }
-    public IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; private set; }
     public IGenericRepository<SupportMessage> SupportMessages { get; private set; }
     public IGenericRepository<SupportConversation> SupportConversations { get; private set; }
     public IGenericRepository<Device> Devices { get; private set; }

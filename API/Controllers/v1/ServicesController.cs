@@ -84,25 +84,29 @@ public class ServiceLevelsController(IServiceCatalogService _catalog, ICurrentUs
         => ToResponse(await _catalog.DeleteServiceLevelAsync(levelId, _currentUser.UserId, ct));
 }
 
-/// <summary>A guest's service checklist and the entries completed against it.</summary>
+/// <summary>
+/// One participation's service checklist and the entries completed against it.
+/// The path id is an <c>EventGuest.PublicId</c> (GuestResponse.id): a service
+/// level, and therefore the checklist it produces, belongs to one event.
+/// </summary>
 [ApiController]
-[Route("api/v1/guests/{guestId:guid}/services")]
+[Route("api/v1/guests/{eventGuestId:guid}/services")]
 [Authorize]
 public class GuestServicesController(IServiceCatalogService _catalog, ICurrentUser _currentUser) : BaseApiController
 {
     [HttpGet]
-    public async Task<IActionResult> GetPlan(Guid guestId, CancellationToken ct)
-        => ToResponse(await _catalog.GetGuestServicePlanAsync(guestId, ct));
+    public async Task<IActionResult> GetPlan(Guid eventGuestId, CancellationToken ct)
+        => ToResponse(await _catalog.GetGuestServicePlanAsync(eventGuestId, ct));
 
     // Guarded by the guest permission, not a service one: filling in a guest's
     // flight is guest work. Services.Manage governs the catalogue itself.
     [HttpPost]
     [HasPermission(PermissionCodes.GuestsUpdate)]
-    public async Task<IActionResult> Save(Guid guestId, [FromBody] SaveGuestServiceEntryRequest request, CancellationToken ct)
-        => ToResponse(await _catalog.SaveGuestServiceEntryAsync(guestId, request, _currentUser.UserId, ct));
+    public async Task<IActionResult> Save(Guid eventGuestId, [FromBody] SaveGuestServiceEntryRequest request, CancellationToken ct)
+        => ToResponse(await _catalog.SaveGuestServiceEntryAsync(eventGuestId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{entryId:guid}")]
     [HasPermission(PermissionCodes.GuestsUpdate)]
-    public async Task<IActionResult> Delete(Guid guestId, Guid entryId, CancellationToken ct)
-        => ToResponse(await _catalog.DeleteGuestServiceEntryAsync(guestId, entryId, _currentUser.UserId, ct));
+    public async Task<IActionResult> Delete(Guid eventGuestId, Guid entryId, CancellationToken ct)
+        => ToResponse(await _catalog.DeleteGuestServiceEntryAsync(eventGuestId, entryId, _currentUser.UserId, ct));
 }

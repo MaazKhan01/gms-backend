@@ -28,10 +28,15 @@ that ride rewrites the whole document.
   "eventId":    "1a2b...",           // string? — event PublicId
   "eventName":  "Formula 1 Weekend", // string?
 
+  // The ride's participation (EventGuest PublicId). Also mirrored inside
+  // guest{} so a client holding only that object still has it.
+  "eventGuestId": "5e7f...",         // string  — EventGuest PublicId
+
   "guest": {
-    "id":       "9c4d...",           // string  — guest PublicId
+    "id":       "9c4d...",           // string  — PERSON id (Guest PublicId)
+    "eventGuestId": "5e7f...",       // string  — this ride's participation
     "name":     "Ayesha Khan",       // string
-    "tier":     "VVIP",              // string?
+    "tier":     "VVIP",              // string?  — per event, from EventGuest
     "phone":    "+9712...",          // string?
     "photoUrl": "https://..."        // string?
   },
@@ -109,9 +114,11 @@ One ride, same document, three moments. Timestamp fields are real Firestore
 
   "eventId": "1a2b8c9d-33e4-4a7b-9f10-5c6d7e8f9a0b",
   "eventName": "Formula 1 Weekend",
+  "eventGuestId": "5e7f6a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
 
   "guest": {
     "id": "9c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e7f",
+    "eventGuestId": "5e7f6a1b-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
     "name": "Ayesha Khan",
     "tier": "VVIP",
     "phone": "+971501234567",
@@ -213,7 +220,7 @@ immediately after each one.
 
 | `status` | Set by | REST call |
 |---|---|---|
-| `new` | guest creates the request | `POST /api/v1/vip-app/transport-requests` |
+| `new` | guest creates the request (**`eventId` is required** — see below) | `POST /api/v1/vip-app/transport-requests` |
 | `assigned` | driver claims it (`driverId` + `driver{}` appear) | `POST /api/v1/transport-app/jobs/{id}/accept` |
 | `in-progress` | driver sets off | `.../jobs/{id}/start-job` |
 | `arrived` | driver is at the pickup point | `.../jobs/{id}/arrived` |
@@ -297,3 +304,24 @@ No credentials configured => `RideMirror` logs a warning once and no-ops, so a d
 machine without a key still runs.
 
 Source: `Infrastructure/Services/RideMirror.cs`.
+
+
+## Guest identity: person vs participation
+
+`guest.id` is the **person** (`Guest.PublicId`) — stable across every event they
+attend, and what person-level things key off: OTP login, push notifications,
+support chat, driver chat.
+
+`eventGuestId` is the **participation** (`EventGuest.PublicId`) — one person on
+one event. Every ride belongs to exactly one of these, which is what makes
+`eventId`/`eventName` above answerable at all.
+
+The two are different ids and are not interchangeable. In particular, a client
+must not send an `eventGuestId` where a guest/person id is expected — the
+notification and chat endpoints resolve people, not bookings.
+
+`POST /api/v1/vip-app/transport-requests` therefore **requires `eventId`**. The
+server resolves the caller's participation in that event and checks
+`allowedServices` on that exact participation; it will not guess an event from
+the guest's other bookings. A guest not on the named event gets a 404, and one
+without transport self-service on it gets a 403.

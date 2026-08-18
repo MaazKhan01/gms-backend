@@ -86,7 +86,7 @@ public class VehicleService(
             .Where(t => t.VehicleId != null && t.TripStatus != TransportStatuses.Cancelled);
 
         if (eventId is { } evId && evId != Guid.Empty)
-            query = query.Where(t => t.Guest.Event.PublicId == evId);
+            query = query.Where(t => t.EventGuest.Event.PublicId == evId);
         if (from != null)
             query = query.Where(t => t.PickupTime >= from);
         if (to != null)
@@ -299,10 +299,10 @@ public class VehicleService(
         DriverId = t.Driver == null ? (Guid?)null : t.Driver.PublicId,
         DriverName = t.Driver == null ? null : (t.Driver.User.FirstName + " " + t.Driver.User.LastName).Trim(),
         DriverPhone = t.Driver == null ? null : t.Driver.User.Phone,
-        GuestId = t.Guest.PublicId,
-        GuestName = (t.Guest.FirstName + " " + t.Guest.LastName).Trim(),
-        GuestEmail = t.Guest.Email,
-        GuestPhotoUrl = t.Guest.PhotoUrl,
+        EventGuestId = t.EventGuest.PublicId,
+        GuestName = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+        GuestEmail = t.EventGuest.Guest.Email,
+        GuestPhotoUrl = t.EventGuest.Guest.PhotoUrl,
         PickupTime = t.PickupTime,
         DropoffTime = t.DropoffTime,
         Pickup = t.PickupLocation == null ? null : t.PickupLocation.Address,

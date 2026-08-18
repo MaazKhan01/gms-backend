@@ -29,24 +29,22 @@ namespace Infrastructure.Services
                 if (eventEntity == null)
                     return ApiResponse<GetMeetingResponse>.NotFoundResponse("Event not found.");
 
-                var requestedIds = (request.GuestIds ?? new List<Guid>()).Distinct().ToList();
+                var requestedIds = (request.EventGuestIds ?? new List<Guid>()).Distinct().ToList();
 
-                var guests = new List<Guest>();
+                var attendees = new List<EventGuest>();
                 if (requestedIds.Count > 0)
                 {
-                    // GuestIds are public Guids — match on PublicId.
-                    guests = await _unitOfWork.Guests.Query()
-                        .Where(g => requestedIds.Contains(g.PublicId))
-                        .ToListAsync(ct);
+                    var (resolved, attendeeError) = await ResolveAttendeesAsync(requestedIds, eventEntity.Id, ct);
+                    if (attendeeError != null)
+                        return ApiResponse<GetMeetingResponse>.ErrorResponse(attendeeError);
+                    attendees = resolved;
 
-                    if (guests.Count != requestedIds.Count)
-                        return ApiResponse<GetMeetingResponse>.NotFoundResponse("One or more guests were not found.");
-
-                    // First check a meeting doesn't already exist for one of these guests
-                    // at an overlapping date/time — a guest can't be in two meetings at once.
+                    // First check a meeting doesn't already exist for one of these
+                    // attendees at an overlapping date/time — nobody can be in two
+                    // meetings at once.
                     var conflictingMeeting = await _unitOfWork.Meetings.Query()
                         .Where(m => m.IsDeleted != true && m.Date == request.Date)
-                        .Where(m => m.Guests.Any(g => requestedIds.Contains(g.PublicId)))
+                        .Where(m => m.EventGuests.Any(eg => requestedIds.Contains(eg.PublicId)))
                         .Where(m => request.StartTime == null || request.EndTime == null
                                  || m.StartTime == null || m.EndTime == null
                                  || (m.StartTime < request.EndTime && request.StartTime < m.EndTime))
@@ -65,7 +63,7 @@ namespace Infrastructure.Services
                     StartTime = request.StartTime,
                     EndTime = request.EndTime,
                     MeetingAgenda = request.MeetingAgenda,
-                    Guests = guests,
+                    EventGuests = attendees,
                     EventId = eventEntity.Id
                 };
                 meeting.SetCreationAudit(_currentUser.UserId);
@@ -83,9 +81,7 @@ namespace Infrastructure.Services
                     EndTime = meeting.EndTime,
                     MeetingAgenda = meeting.MeetingAgenda,
                     EventId = request.EventId,
-                    Guests = guests
-                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim(), Email = g.Email, PhotoUrl = g.PhotoUrl })
-                        .ToList(),
+                    Guests = attendees.Select(MapAttendee).ToList(),
                 };
 
                 return ApiResponse<GetMeetingResponse>.SuccessResponse(response, "Meeting created successfully.");
@@ -111,7 +107,7 @@ namespace Infrastructure.Services
                     return ApiResponse<List<GetMeetingResponse>>.SuccessResponse(new List<GetMeetingResponse>());
 
                 var meetings = await _unitOfWork.Meetings.Query()
-                    .Include(m => m.Guests)
+                    .Include(m => m.EventGuests).ThenInclude(eg => eg.Guest)
                     .Where(m => m.EventId == eventEntity.Id && m.IsDeleted != true)
                     .OrderBy(m => m.Date).ThenBy(m => m.StartTime)
                     .ToListAsync(ct);
@@ -126,9 +122,7 @@ namespace Infrastructure.Services
                     EndTime = m.EndTime,
                     MeetingAgenda = m.MeetingAgenda,
                     EventId = eventId,
-                    Guests = m.Guests
-                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim(), Email = g.Email, PhotoUrl = g.PhotoUrl })
-                        .ToList(),
+                    Guests = m.EventGuests.Select(MapAttendee).ToList(),
                 }).ToList();
 
                 return ApiResponse<List<GetMeetingResponse>>.SuccessResponse(response);
@@ -154,7 +148,7 @@ namespace Infrastructure.Services
                     return ApiResponse<GetMeetingResponse>.NotFoundResponse("Meeting not found.");
 
                 var meeting = await _unitOfWork.Meetings.Query()
-                    .Include(m => m.Guests)
+                    .Include(m => m.EventGuests).ThenInclude(eg => eg.Guest)
                     .FirstOrDefaultAsync(m => m.PublicId == request.MeetId && m.EventId == eventEntity.Id, ct);
 
                 if (meeting == null || meeting.IsDeleted == true)
@@ -172,18 +166,17 @@ namespace Infrastructure.Services
                 if (request.EndTime.HasValue) meeting.EndTime = request.EndTime;
                 if (request.Agenda != null) meeting.MeetingAgenda = request.Agenda;
 
-                // GuestIds omitted (null) leaves attendees untouched; an explicit empty
-                // list clears them — the two are meaningfully different.
-                if (request.GuestIds != null)
+                // EventGuestIds omitted (null) leaves attendees untouched; an explicit
+                // empty list clears them — the two are meaningfully different.
+                if (request.EventGuestIds != null)
                 {
-                    var requestedIds = request.GuestIds.Distinct().ToList();
+                    var requestedIds = request.EventGuestIds.Distinct().ToList();
 
-                    var guests = requestedIds.Count == 0
-                        ? new List<Guest>()
-                        : await _unitOfWork.Guests.Query().Where(g => requestedIds.Contains(g.PublicId)).ToListAsync(ct);
-
-                    if (guests.Count != requestedIds.Count)
-                        return ApiResponse<GetMeetingResponse>.NotFoundResponse("One or more guests were not found.");
+                    var (attendees, attendeeError) = requestedIds.Count == 0
+                        ? (new List<EventGuest>(), null)
+                        : await ResolveAttendeesAsync(requestedIds, meeting.EventId, ct);
+                    if (attendeeError != null)
+                        return ApiResponse<GetMeetingResponse>.ErrorResponse(attendeeError);
 
                     if (requestedIds.Count > 0)
                     {
@@ -191,7 +184,7 @@ namespace Infrastructure.Services
                         // meeting itself so re-saving its own existing guests isn't a "conflict".
                         var conflictingMeeting = await _unitOfWork.Meetings.Query()
                             .Where(m => m.Id != meeting.Id && m.IsDeleted != true && m.Date == meeting.Date)
-                            .Where(m => m.Guests.Any(g => requestedIds.Contains(g.PublicId)))
+                            .Where(m => m.EventGuests.Any(eg => requestedIds.Contains(eg.PublicId)))
                             .Where(m => meeting.StartTime == null || meeting.EndTime == null
                                      || m.StartTime == null || m.EndTime == null
                                      || (m.StartTime < meeting.EndTime && meeting.StartTime < m.EndTime))
@@ -202,8 +195,8 @@ namespace Infrastructure.Services
                                 "One or more guests already have a meeting scheduled at this date/time.");
                     }
 
-                    meeting.Guests.Clear();
-                    foreach (var g in guests) meeting.Guests.Add(g);
+                    meeting.EventGuests.Clear();
+                    foreach (var eg in attendees) meeting.EventGuests.Add(eg);
                 }
 
                 meeting.SetUpdateAudit(_currentUser.UserId);
@@ -219,9 +212,7 @@ namespace Infrastructure.Services
                     EndTime = meeting.EndTime,
                     MeetingAgenda = meeting.MeetingAgenda,
                     EventId = request.EventId,
-                    Guests = meeting.Guests
-                        .Select(g => new GuestInfo { Id = g.PublicId, Name = $"{g.FirstName} {g.LastName}".Trim(), Email = g.Email, PhotoUrl = g.PhotoUrl })
-                        .ToList(),
+                    Guests = meeting.EventGuests.Select(MapAttendee).ToList(),
                 };
 
                 return ApiResponse<GetMeetingResponse>.SuccessResponse(response, "Meeting updated successfully.");
@@ -232,5 +223,41 @@ namespace Infrastructure.Services
                 return ApiResponse<GetMeetingResponse>.ServerErrorResponse("Error updating meeting.");
             }
         }
+
+        /// <summary>
+        /// Turns the requested EventGuest public ids into rows, refusing any that
+        /// belong to a different event.
+        /// </summary>
+        /// <remarks>
+        /// A meeting is an event-scoped thing, so an attendee from another event is
+        /// a client bug worth naming rather than a silently dropped row — and
+        /// letting one through would put a guest in a meeting for an event they
+        /// aren't on.
+        /// </remarks>
+        private async Task<(List<EventGuest> attendees, string error)> ResolveAttendeesAsync(
+            List<Guid> eventGuestPublicIds, int eventId, CancellationToken ct)
+        {
+            var attendees = await _unitOfWork.EventGuests.Query()
+                .Include(eg => eg.Guest)
+                .Where(eg => eventGuestPublicIds.Contains(eg.PublicId))
+                .ToListAsync(ct);
+
+            if (attendees.Count != eventGuestPublicIds.Count)
+                return (null, "One or more guests were not found.");
+
+            if (attendees.Any(eg => eg.EventId != eventId))
+                return (null, "One or more guests are not on this meeting's event.");
+
+            return (attendees, null);
+        }
+
+        private static GuestInfo MapAttendee(EventGuest eg) => new()
+        {
+            Id = eg.PublicId,
+            PersonId = eg.Guest?.PublicId,
+            Name = $"{eg.Guest?.FirstName} {eg.Guest?.LastName}".Trim(),
+            Email = eg.Guest?.Email,
+            PhotoUrl = eg.Guest?.PhotoUrl,
+        };
     }
 }

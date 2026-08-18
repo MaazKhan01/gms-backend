@@ -118,7 +118,8 @@ public class GuestTravelResponse
 public class EventFlightRow
 {
     public Guid Id { get; set; }
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId — the participation this row belongs to.</summary>
+    public Guid EventGuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
     public string Email { get; set; }
@@ -168,7 +169,8 @@ public class ArrivalsDeparturesRequest : PagedRequest
 
 public class ArrivalDepartureRow
 {
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId — the participation this row belongs to.</summary>
+    public Guid EventGuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
     public string Email { get; set; }
@@ -221,7 +223,8 @@ public class FlightLegRow
 public class EventAccommodationRow
 {
     public Guid Id { get; set; }
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId — the participation this row belongs to.</summary>
+    public Guid EventGuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
     public string Email { get; set; }
@@ -243,7 +246,8 @@ public class EventAccommodationRow
 public class EventTransportRow
 {
     public Guid Id { get; set; }
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId — the participation this row belongs to.</summary>
+    public Guid EventGuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
     public string Email { get; set; }

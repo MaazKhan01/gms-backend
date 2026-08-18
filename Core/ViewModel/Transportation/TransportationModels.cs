@@ -6,7 +6,9 @@ namespace Core.ViewModel.Transportation;
 // ── Admin — pre-scheduled transportation (Day 1) ─────────────────────────────
 public class CreateScheduleRequest
 {
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId — transport belongs to one event participation,
+    /// which is what makes "which event is this ride for?" answerable.</summary>
+    public Guid EventGuestId { get; set; }
     public Guid? DriverId { get; set; }
     public Guid? VehicleId { get; set; }
     public Guid? PickupLocationId { get; set; }
@@ -35,8 +37,12 @@ public class AssignedDriverDto
 public class ScheduleRow
 {
     public Guid Id { get; set; }
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId of the ride's participation.</summary>
+    public Guid EventGuestId { get; set; }
+    /// <summary>Guest.PublicId — the person behind it.</summary>
+    public Guid PersonId { get; set; }
     public string GuestName { get; set; }
+    public Guid EventId { get; set; }
     public Guid? DriverId { get; set; }
     public string DriverName { get; set; }
     public Guid? VehicleId { get; set; }

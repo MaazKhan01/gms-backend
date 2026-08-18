@@ -43,10 +43,8 @@ public class GuestOverviewPagedRequest : PagedRequest
 
 public class GuestOverviewRow
 {
-    /// <summary>The PublicId of this person's most recent Guest row (their most
-    /// recent event participation) — used to resolve the full cross-event detail
-    /// via GET /v1/guest-overview/{id}. Not a stable "person id": there isn't
-    /// one, see GroupByEmail below.</summary>
+    /// <summary>Guest.PublicId — the person. Stable across every event they
+    /// attend; feed it to GET /v1/guest-overview/{id} for the cross-event detail.</summary>
     public Guid Id { get; set; }
     public string FirstName { get; set; }
     public string LastName { get; set; }
@@ -108,8 +106,7 @@ public class GuestOverviewRow
 // event it came from.
 public class GuestOverviewDetailResponse
 {
-    /// <summary>The anchor guest row's id — kept for reference, not a stable
-    /// person id (there isn't one; see Email).</summary>
+    /// <summary>Guest.PublicId — the person this detail is for.</summary>
     public Guid Id { get; set; }
     public string Email { get; set; }
     public List<GuestOverviewEventBlock> Events { get; set; } = new();
@@ -126,9 +123,9 @@ public class GuestOverviewDetailResponse
 
 public class GuestOverviewEventBlock
 {
-    /// <summary>This specific event participation's own Guest row id — the one
-    /// to use if some future action needs to edit that particular booking.</summary>
-    public Guid GuestId { get; set; }
+    /// <summary>This participation's EventGuest.PublicId — what every
+    /// event-scoped call (guest CRUD, travel, seating, meetings) takes.</summary>
+    public Guid EventGuestId { get; set; }
     public Guid EventId { get; set; }
     public string EventTitle { get; set; }
     public string EventType { get; set; }

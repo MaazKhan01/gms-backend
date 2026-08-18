@@ -35,16 +35,18 @@ public class TravelController(ITravelService _travel, ICurrentUser _currentUser)
 
     // Prefill on edit. ?bookingId= targets one specific booking (Services' table
     // lists one row per booking); without it, the most recent of each kind.
-    [HttpGet("guest/{guestId:guid}")]
-    public async Task<IActionResult> GetGuestTravel(Guid guestId, [FromQuery] Guid? bookingId, CancellationToken ct)
-        => ToResponse(await _travel.GetGuestTravelAsync(guestId, bookingId, ct));
+    /// <summary>Path id is an <c>EventGuest.PublicId</c> — travel is booked per
+    /// event, so the same person on two events has two independent wizards.</summary>
+    [HttpGet("guest/{eventGuestId:guid}")]
+    public async Task<IActionResult> GetGuestTravel(Guid eventGuestId, [FromQuery] Guid? bookingId, CancellationToken ct)
+        => ToResponse(await _travel.GetGuestTravelAsync(eventGuestId, bookingId, ct));
 
     // Upsert the selected sections (any subset of flight/accommodation/transport).
     // A section with an Id updates that specific booking in place; without one,
     // it adds a new booking alongside whatever the guest already has.
-    [HttpPost("guest/{guestId:guid}")]
-    public async Task<IActionResult> SaveGuestTravel(Guid guestId, [FromBody] GuestTravelRequest request, CancellationToken ct)
-        => ToResponse(await _travel.SaveGuestTravelAsync(guestId, request, _currentUser.UserId, ct));
+    [HttpPost("guest/{eventGuestId:guid}")]
+    public async Task<IActionResult> SaveGuestTravel(Guid eventGuestId, [FromBody] GuestTravelRequest request, CancellationToken ct)
+        => ToResponse(await _travel.SaveGuestTravelAsync(eventGuestId, request, _currentUser.UserId, ct));
 
     // Remove one specific booking (a guest may have several of a kind).
     [HttpDelete("flight/{id:guid}")]

@@ -22,8 +22,11 @@ public class ZeroBufferConflictWindowPolicy : IConflictWindowPolicy
 public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictWindowPolicy _windowPolicy)
     : ITransportationConflictValidator
 {
+    // Scoped to ONE participation, not to the person: the same human attending
+    // two events on the same day is two separate schedules, and a ride on one
+    // must not block a ride on the other.
     public async Task<ConflictCheckResult> CheckGuestConflictAsync(
-        int guestId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default)
+        int eventGuestId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default)
     {
         var dayStart = candidateTime.Date;
         var dayEnd = dayStart.AddDays(1);
@@ -32,7 +35,7 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
         // still waiting for a driver — a guest can't be in two cars at one time
         // regardless of which flow booked them.
         var bookedTimes = await _unitOfWork.Transports.Query()
-            .Where(t => t.GuestId == guestId
+            .Where(t => t.EventGuestId == eventGuestId
                 && TransportStatuses.Live.Contains(t.TripStatus)
                 && t.PickupTime >= dayStart && t.PickupTime < dayEnd
                 && (excludeTransportId == null || t.Id != excludeTransportId))

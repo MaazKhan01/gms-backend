@@ -38,8 +38,11 @@ public interface IConflictWindowPolicy
 // 10:00→10:45 must also block 10:30, which an equality test would wave through.
 public interface ITransportationConflictValidator
 {
+    /// <summary>Is this event participation free at <paramref name="candidateTime"/>?
+    /// Scoped to the EventGuest, not the person: the same human on two events the
+    /// same day keeps two independent schedules.</summary>
     Task<ConflictCheckResult> CheckGuestConflictAsync(
-        int guestId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default);
+        int eventGuestId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default);
 
     Task<ConflictCheckResult> CheckDriverConflictAsync(
         int driverId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default);

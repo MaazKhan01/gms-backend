@@ -78,28 +78,33 @@ namespace Infrastructure.Services
 
         private async Task<InvitationDetailResponse> BuildDetailAsync(Guid token, CancellationToken ct)
         {
+            // An invitation belongs to one participation, so the event, the level
+            // and the dates all come off EventGuest; only the name/email/photo are
+            // the person's.
             var invitation = await _unitOfWork.Invitations.Query()
-                .Include(i => i.Guest).ThenInclude(g => g.Event)
-                .Include(i => i.Guest).ThenInclude(g => g.ServiceLevel).ThenInclude(l => l.Services).ThenInclude(a => a.Service)
+                .Include(i => i.EventGuest).ThenInclude(eg => eg.Guest)
+                .Include(i => i.EventGuest).ThenInclude(eg => eg.Event)
+                .Include(i => i.EventGuest).ThenInclude(eg => eg.ServiceLevel).ThenInclude(l => l.Services).ThenInclude(a => a.Service)
                 .FirstOrDefaultAsync(i => i.InvitationToken == token, ct);
-            if (invitation?.Guest == null) return null;
+            if (invitation?.EventGuest?.Guest == null) return null;
 
-            var guest = invitation.Guest;
-            var ev = guest.Event;
-            var level = guest.ServiceLevel;
+            var participation = invitation.EventGuest;
+            var guest = participation.Guest;
+            var ev = participation.Event;
+            var level = participation.ServiceLevel;
 
             return new InvitationDetailResponse
             {
                 GuestName = $"{guest.FirstName} {guest.LastName}".Trim(),
                 GuestEmail = guest.Email,
                 GuestPhotoUrl = guest.PhotoUrl,
-                Organization = guest.Organization,
-                Tier = guest.Tier,
+                Organization = participation.Organization,
+                Tier = participation.Tier,
                 ServiceLevelName = level?.Name,
                 ServiceLevelNameAr = level?.NameAr,
                 ServiceLevelColor = level?.Color,
-                ArrivalDate = guest.ArrivalDate,
-                DepartureDate = guest.DepartureDate,
+                ArrivalDate = participation.ArrivalDate,
+                DepartureDate = participation.DepartureDate,
                 EventTitle = ev?.Title,
                 EventVenue = ev?.VenueName,
                 EventStartDate = ev?.StartDate,

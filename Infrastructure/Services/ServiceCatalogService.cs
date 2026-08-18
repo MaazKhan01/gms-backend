@@ -209,9 +209,9 @@ public class ServiceCatalogService(
                 .OrderBy(l => l.SortOrder).ThenBy(l => l.Name)
                 .ToListAsync(ct);
 
-            var counts = await _unitOfWork.Guests.Query()
-                .Where(g => g.ServiceLevelId != null)
-                .GroupBy(g => g.ServiceLevelId!.Value)
+            var counts = await _unitOfWork.EventGuests.Query()
+                .Where(eg => eg.ServiceLevelId != null)
+                .GroupBy(eg => eg.ServiceLevelId!.Value)
                 .Select(gr => new { LevelId = gr.Key, Count = gr.Count() })
                 .ToDictionaryAsync(x => x.LevelId, x => x.Count, ct);
 
@@ -236,7 +236,7 @@ public class ServiceCatalogService(
             .FirstOrDefaultAsync(l => l.PublicId == levelId, ct);
         if (level == null) return ApiResponse<ServiceLevelResponse>.NotFoundResponse("Service level not found.");
 
-        var count = await _unitOfWork.Guests.Query().CountAsync(g => g.ServiceLevelId == level.Id, ct);
+        var count = await _unitOfWork.EventGuests.Query().CountAsync(eg => eg.ServiceLevelId == level.Id, ct);
         return ApiResponse<ServiceLevelResponse>.SuccessResponse(ToLevelResponse(level, count));
     }
 
@@ -329,7 +329,7 @@ public class ServiceCatalogService(
                 .FirstOrDefaultAsync(l => l.PublicId == levelId, ct);
             if (level == null) return ApiResponse<bool>.NotFoundResponse("Service level not found.");
 
-            var guestCount = await _unitOfWork.Guests.Query().CountAsync(g => g.ServiceLevelId == level.Id, ct);
+            var guestCount = await _unitOfWork.EventGuests.Query().CountAsync(eg => eg.ServiceLevelId == level.Id, ct);
             if (guestCount > 0)
             {
                 return ApiResponse<bool>.ConflictResponse(
@@ -355,33 +355,35 @@ public class ServiceCatalogService(
     //  Guest service plan
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// <summary>The checklist for ONE event participation — <paramref name="eventGuestId"/>
+    /// is an EventGuest.PublicId.</summary>
     public async Task<ApiResponse<GuestServicePlanResponse>> GetGuestServicePlanAsync(
-        Guid guestId, CancellationToken ct = default)
+        Guid eventGuestId, CancellationToken ct = default)
     {
         try
         {
-            var guest = await LoadGuestAsync(guestId, ct);
-            if (guest == null) return ApiResponse<GuestServicePlanResponse>.NotFoundResponse("Guest not found.");
+            var participation = await LoadGuestAsync(eventGuestId, ct);
+            if (participation == null) return ApiResponse<GuestServicePlanResponse>.NotFoundResponse("Guest not found.");
 
-            var plan = await BuildPlanAsync(guest, ct);
+            var plan = await BuildPlanAsync(participation, ct);
             return ApiResponse<GuestServicePlanResponse>.SuccessResponse(plan);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error building service plan for guest {GuestId}", guestId);
+            _logger.LogError(ex, "Error building service plan for participation {EventGuestId}", eventGuestId);
             return ApiResponse<GuestServicePlanResponse>.ServerErrorResponse("Could not load the guest's services.");
         }
     }
 
     public async Task<ApiResponse<GuestServiceEntryResponse>> SaveGuestServiceEntryAsync(
-        Guid guestId, SaveGuestServiceEntryRequest request, int userId, CancellationToken ct = default)
+        Guid eventGuestId, SaveGuestServiceEntryRequest request, int userId, CancellationToken ct = default)
     {
         try
         {
-            var guest = await LoadGuestAsync(guestId, ct);
-            if (guest == null) return ApiResponse<GuestServiceEntryResponse>.NotFoundResponse("Guest not found.");
+            var participation = await LoadGuestAsync(eventGuestId, ct);
+            if (participation == null) return ApiResponse<GuestServiceEntryResponse>.NotFoundResponse("Guest not found.");
 
-            var plan = await BuildPlanAsync(guest, ct);
+            var plan = await BuildPlanAsync(participation, ct);
             var slot = plan.Slots.FirstOrDefault(s => s.ServiceId == request.ServiceId);
             if (slot == null)
             {
@@ -430,7 +432,7 @@ public class ServiceCatalogService(
             // value is wrong even in a half-finished form, and catching it now
             // avoids storing something that can never be completed.
             var constraintErrors = ServiceFormSchema.ConstraintErrors(
-                form, values, guest.Event?.StartDate, guest.Event?.EndDate);
+                form, values, participation.Event?.StartDate, participation.Event?.EndDate);
             if (constraintErrors.Count > 0)
                 return ApiResponse<GuestServiceEntryResponse>.ErrorResponse(string.Join(" ", constraintErrors));
 
@@ -450,14 +452,14 @@ public class ServiceCatalogService(
             if (editingExisting)
             {
                 entry = await _unitOfWork.GuestServiceEntries.Query()
-                    .FirstOrDefaultAsync(e => e.PublicId == request.Id.Value && e.GuestId == guest.Id, ct);
+                    .FirstOrDefaultAsync(e => e.PublicId == request.Id.Value && e.EventGuestId == participation.Id, ct);
                 if (entry == null)
                     return ApiResponse<GuestServiceEntryResponse>.NotFoundResponse("Service entry not found.");
                 entry.SetUpdateAudit(userId);
             }
             else
             {
-                entry = new GuestServiceEntry { GuestId = guest.Id, ServiceId = service.Id };
+                entry = new GuestServiceEntry { EventGuestId = participation.Id, ServiceId = service.Id };
                 entry.SetCreationAudit(userId);
                 await _unitOfWork.GuestServiceEntries.AddAsync(entry, ct);
             }
@@ -475,37 +477,37 @@ public class ServiceCatalogService(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error saving service entry for guest {GuestId}", guestId);
+            _logger.LogError(ex, "Error saving service entry for participation {EventGuestId}", eventGuestId);
             return ApiResponse<GuestServiceEntryResponse>.ServerErrorResponse("Could not save the service.");
         }
     }
 
     public async Task<ApiResponse<bool>> DeleteGuestServiceEntryAsync(
-        Guid guestId, Guid entryId, int userId, CancellationToken ct = default)
+        Guid eventGuestId, Guid entryId, int userId, CancellationToken ct = default)
     {
         try
         {
-            var guest = await LoadGuestAsync(guestId, ct);
-            if (guest == null) return ApiResponse<bool>.NotFoundResponse("Guest not found.");
+            var participation = await LoadGuestAsync(eventGuestId, ct);
+            if (participation == null) return ApiResponse<bool>.NotFoundResponse("Guest not found.");
 
             var entry = await _unitOfWork.GuestServiceEntries.Query()
                 .Include(e => e.Service)
-                .FirstOrDefaultAsync(e => e.PublicId == entryId && e.GuestId == guest.Id, ct);
+                .FirstOrDefaultAsync(e => e.PublicId == entryId && e.EventGuestId == participation.Id, ct);
             if (entry == null) return ApiResponse<bool>.NotFoundResponse("Service entry not found.");
 
             // Removing the last completed entry for a service re-locks everything
             // after it in a Fixed sequence. Blocked, because silently invalidating
             // work already done further down the chain is worse than refusing.
-            if (EventGuestModels.UsesServiceLevels(guest.Event?.GuestModel)
+            if (EventGuestModels.UsesServiceLevels(participation.Event?.GuestModel)
                 && entry.Status == GuestServiceStatus.Completed)
             {
                 var siblings = await _unitOfWork.GuestServiceEntries.Query()
-                    .CountAsync(e => e.GuestId == guest.Id
+                    .CountAsync(e => e.EventGuestId == participation.Id
                                      && e.ServiceId == entry.ServiceId
                                      && e.PublicId != entryId
                                      && e.Status == GuestServiceStatus.Completed, ct);
 
-                if (siblings == 0 && await HasLaterCompletedAsync(guest, entry.ServiceId, ct))
+                if (siblings == 0 && await HasLaterCompletedAsync(participation, entry.ServiceId, ct))
                 {
                     return ApiResponse<bool>.ConflictResponse(
                         $"\"{entry.Service?.Name}\" comes before services that are already completed. "
@@ -551,23 +553,24 @@ public class ServiceCatalogService(
                 return ApiResponse<PaginatedResponse<ServiceEntryRow>>.NotFoundResponse("Event not found.");
 
             var query = _unitOfWork.GuestServiceEntries.Query()
-                .Where(e => e.ServiceId == service.Id && e.Guest.EventId == ev.Id)
-                .Include(e => e.Guest).ThenInclude(g => g.ServiceLevel);
+                .Where(e => e.ServiceId == service.Id && e.EventGuest.EventId == ev.Id)
+                .Include(e => e.EventGuest).ThenInclude(eg => eg.Guest)
+                .Include(e => e.EventGuest).ThenInclude(eg => eg.ServiceLevel);
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
             {
                 var term = request.SearchTerm.Trim();
                 query = (Microsoft.EntityFrameworkCore.Query.IIncludableQueryable<GuestServiceEntry, ServiceLevel>)
                     query.Where(e =>
-                        (e.Guest.FirstName + " " + e.Guest.LastName).Contains(term)
-                        || (e.Guest.Email != null && e.Guest.Email.Contains(term))
-                        || (e.Guest.Organization != null && e.Guest.Organization.Contains(term)));
+                        (e.EventGuest.Guest.FirstName + " " + e.EventGuest.Guest.LastName).Contains(term)
+                        || (e.EventGuest.Guest.Email != null && e.EventGuest.Guest.Email.Contains(term))
+                        || (e.EventGuest.Organization != null && e.EventGuest.Organization.Contains(term)));
             }
 
             var total = await query.CountAsync(ct);
 
             var rows = await query
-                .OrderBy(e => e.Guest.FirstName).ThenBy(e => e.Guest.LastName).ThenBy(e => e.CreatedAt)
+                .OrderBy(e => e.EventGuest.Guest.FirstName).ThenBy(e => e.EventGuest.Guest.LastName).ThenBy(e => e.CreatedAt)
                 .Skip((request.PageNumber - 1) * request.PageSize)
                 .Take(request.PageSize)
                 .ToListAsync(ct);
@@ -575,13 +578,13 @@ public class ServiceCatalogService(
             var items = rows.Select(e => new ServiceEntryRow
             {
                 EntryId = e.PublicId,
-                GuestId = e.Guest.PublicId,
-                GuestName = ($"{e.Guest.FirstName} {e.Guest.LastName}").Trim(),
-                PhotoUrl = e.Guest.PhotoUrl,
-                Email = e.Guest.Email,
-                Organization = e.Guest.Organization,
-                ServiceLevelName = e.Guest.ServiceLevel?.Name,
-                ServiceLevelColor = e.Guest.ServiceLevel?.Color,
+                EventGuestId = e.EventGuest.PublicId,
+                GuestName = ($"{e.EventGuest.Guest.FirstName} {e.EventGuest.Guest.LastName}").Trim(),
+                PhotoUrl = e.EventGuest.Guest.PhotoUrl,
+                Email = e.EventGuest.Guest.Email,
+                Organization = e.EventGuest.Organization,
+                ServiceLevelName = e.EventGuest.ServiceLevel?.Name,
+                ServiceLevelColor = e.EventGuest.ServiceLevel?.Color,
                 Status = e.Status,
                 CompletedAt = e.CompletedAt,
                 Values = ServiceFormSchema.ParseValues(e.ValuesJson),
@@ -601,11 +604,14 @@ public class ServiceCatalogService(
     //  Internals
     // ═══════════════════════════════════════════════════════════════════════
 
-    private async Task<Guest> LoadGuestAsync(Guid guestId, CancellationToken ct) =>
-        await _unitOfWork.Guests.Query()
-            .Include(g => g.Event)
-            .Include(g => g.ServiceLevel)
-            .FirstOrDefaultAsync(g => g.PublicId == guestId, ct);
+    // A service plan belongs to one event participation — the level, the event's
+    // guest model and the bookings that fill the system slots are all per event.
+    private async Task<EventGuest> LoadGuestAsync(Guid eventGuestId, CancellationToken ct) =>
+        await _unitOfWork.EventGuests.Query()
+            .Include(eg => eg.Guest)
+            .Include(eg => eg.Event)
+            .Include(eg => eg.ServiceLevel)
+            .FirstOrDefaultAsync(eg => eg.PublicId == eventGuestId, ct);
 
     /// <summary>
     /// The guest's checklist. Slot order is the level's configured sequence; on a
@@ -613,30 +619,30 @@ public class ServiceCatalogService(
     /// entry, which is also what makes every service mandatory — the chain simply
     /// cannot be finished by skipping one.
     /// </summary>
-    private async Task<GuestServicePlanResponse> BuildPlanAsync(Guest guest, CancellationToken ct)
+    private async Task<GuestServicePlanResponse> BuildPlanAsync(EventGuest participation, CancellationToken ct)
     {
-        var isFixed = EventGuestModels.UsesServiceLevels(guest.Event?.GuestModel);
+        var isFixed = EventGuestModels.UsesServiceLevels(participation.Event?.GuestModel);
 
         var plan = new GuestServicePlanResponse
         {
-            GuestId = guest.PublicId,
-            ServiceLevelId = guest.ServiceLevel?.PublicId,
-            ServiceLevelName = guest.ServiceLevel?.Name,
-            ServiceLevelColor = guest.ServiceLevel?.Color,
+            EventGuestId = participation.PublicId,
+            ServiceLevelId = participation.ServiceLevel?.PublicId,
+            ServiceLevelName = participation.ServiceLevel?.Name,
+            ServiceLevelColor = participation.ServiceLevel?.Color,
             GuestModel = isFixed ? EventGuestModels.Fixed : EventGuestModels.Flexible,
             IsComplete = true,
         };
 
-        if (guest.ServiceLevelId == null) return plan;
+        if (participation.ServiceLevelId == null) return plan;
 
         var assignments = await _unitOfWork.ServiceLevelServices.Query()
-            .Where(a => a.ServiceLevelId == guest.ServiceLevelId.Value)
+            .Where(a => a.ServiceLevelId == participation.ServiceLevelId.Value)
             .Include(a => a.Service)
             .OrderBy(a => a.SortOrder)
             .ToListAsync(ct);
 
         var entries = await _unitOfWork.GuestServiceEntries.Query()
-            .Where(e => e.GuestId == guest.Id)
+            .Where(e => e.EventGuestId == participation.Id)
             .Include(e => e.Service)
             .OrderBy(e => e.CreatedAt)
             .ToListAsync(ct);
@@ -649,7 +655,7 @@ public class ServiceCatalogService(
             .Select(a => a.Service.Code.Trim().ToLowerInvariant())
             .ToHashSet();
 
-        var bookings = await LoadSystemBookingsAsync(guest.Id, systemCodes, ct);
+        var bookings = await LoadSystemBookingsAsync(participation.Id, systemCodes, ct);
 
         var blockedBy = (string)null;
 
@@ -728,7 +734,7 @@ public class ServiceCatalogService(
     /// back through them, so there is no id to preserve here.
     /// </summary>
     private async Task<Dictionary<string, List<GuestServiceEntryResponse>>> LoadSystemBookingsAsync(
-        int guestId, HashSet<string> codes, CancellationToken ct)
+        int eventGuestId, HashSet<string> codes, CancellationToken ct)
     {
         var result = new Dictionary<string, List<GuestServiceEntryResponse>>();
         if (codes.Count == 0) return result;
@@ -736,7 +742,7 @@ public class ServiceCatalogService(
         if (codes.Contains(SystemServices.Flight))
         {
             var flights = await _unitOfWork.Flights.Query()
-                .Where(f => f.GuestId == guestId)
+                .Where(f => f.EventGuestId == eventGuestId)
                 .Include(f => f.Legs)
                 .OrderBy(f => f.DepartureTime ?? f.CreatedAt)
                 .ToListAsync(ct);
@@ -760,15 +766,15 @@ public class ServiceCatalogService(
         if (codes.Contains(SystemServices.Accommodation))
         {
             var stays = await _unitOfWork.Accommodations.Query()
-                .Where(a => a.GuestId == guestId)
-                .Include(a => a.Hotel)
+                .Where(a => a.EventGuestId == eventGuestId)
+                .Include(a => a.Contract).ThenInclude(c => c.Hotel)
                 .Include(a => a.RoomType)
                 .OrderBy(a => a.CheckIn)
                 .ToListAsync(ct);
 
             result[SystemServices.Accommodation] = stays.Select(a => BookingEntry(a.PublicId, new()
             {
-                ["Hotel"] = a.Hotel?.Name,
+                ["Hotel"] = a.Contract?.Hotel?.Name,
                 ["Room type"] = a.RoomType?.Name,
                 ["Check-in"] = a.CheckIn?.ToString("dd-MMM-yyyy"),
                 ["Check-out"] = a.CheckOut?.ToString("dd-MMM-yyyy"),
@@ -778,7 +784,7 @@ public class ServiceCatalogService(
         if (codes.Contains(SystemServices.Transport))
         {
             var rides = await _unitOfWork.Transports.Query()
-                .Where(t => t.GuestId == guestId)
+                .Where(t => t.EventGuestId == eventGuestId)
                 .Include(t => t.PickupLocation)
                 .Include(t => t.DropoffLocation)
                 .Include(t => t.Vehicle)
@@ -811,10 +817,10 @@ public class ServiceCatalogService(
     private static string Text(DateTime? when) => when?.ToString("dd-MMM-yyyy HH:mm");
 
     /// <summary>True when any service after <paramref name="serviceId"/> in the guest's level already has a completed entry.</summary>
-    private async Task<bool> HasLaterCompletedAsync(Guest guest, int serviceId, CancellationToken ct)
+    private async Task<bool> HasLaterCompletedAsync(EventGuest participation, int serviceId, CancellationToken ct)
     {
         var assignments = await _unitOfWork.ServiceLevelServices.Query()
-            .Where(a => a.ServiceLevelId == guest.ServiceLevelId)
+            .Where(a => a.ServiceLevelId == participation.ServiceLevelId)
             .OrderBy(a => a.SortOrder)
             .ToListAsync(ct);
 
@@ -825,7 +831,7 @@ public class ServiceCatalogService(
         if (laterIds.Count == 0) return false;
 
         return await _unitOfWork.GuestServiceEntries.Query()
-            .AnyAsync(e => e.GuestId == guest.Id
+            .AnyAsync(e => e.EventGuestId == participation.Id
                            && laterIds.Contains(e.ServiceId)
                            && e.Status == GuestServiceStatus.Completed, ct);
     }

@@ -57,9 +57,13 @@ namespace Infrastructure.Services
                 if (ev == null)
                     return ApiResponse<GetDashboardResponse>.NotFoundResponse("Event not found.");
 
-                var guests = await _unitOfWork.Guests.Query()
-                    .Where(g => g.EventId == ev.Id)
-                    .Include(g => g.ServiceLevel)
+                // The dashboard counts PARTICIPATIONS, not people: "120 guests" on
+                // this event means 120 EventGuest rows, and the same person on a
+                // second event is that event's number, not this one's.
+                var guests = await _unitOfWork.EventGuests.Query()
+                    .Where(eg => eg.EventId == ev.Id)
+                    .Include(eg => eg.Guest)
+                    .Include(eg => eg.ServiceLevel)
                     .ToListAsync(ct);
 
                 var meetings = await _unitOfWork.Meetings.Query()
@@ -70,20 +74,20 @@ namespace Infrastructure.Services
                 // Invitation/accreditation status + travel moved to their own tables.
                 var guestIds = guests.Select(g => g.Id).ToList();
                 var invitations = (await _unitOfWork.Invitations.Query()
-                        .Where(i => guestIds.Contains(i.GuestId)).ToListAsync(ct))
-                    .GroupBy(i => i.GuestId)
+                        .Where(i => guestIds.Contains(i.EventGuestId)).ToListAsync(ct))
+                    .GroupBy(i => i.EventGuestId)
                     .ToDictionary(gr => gr.Key, gr => gr.First());
                 var flightGuestIds = (await _unitOfWork.Flights.Query()
-                    .Where(f => guestIds.Contains(f.GuestId)).Select(f => f.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(f => guestIds.Contains(f.EventGuestId)).Select(f => f.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
                 var accommodationGuestIds = (await _unitOfWork.Accommodations.Query()
-                    .Where(a => guestIds.Contains(a.GuestId)).Select(a => a.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(a => guestIds.Contains(a.EventGuestId)).Select(a => a.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
                 var transportGuestIds = (await _unitOfWork.Transports.Query()
-                    .Where(t => guestIds.Contains(t.GuestId)).Select(t => t.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(t => guestIds.Contains(t.EventGuestId)).Select(t => t.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
                 var seatedGuestIds = (await _unitOfWork.SeatAssigns.Query()
-                    .Where(sa => guestIds.Contains(sa.GuestId)).Select(sa => sa.GuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                    .Where(sa => guestIds.Contains(sa.EventGuestId)).Select(sa => sa.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
 
                 var sessionGuestCounts = (await _unitOfWork.GuestSessions.Query()
-                        .Where(gs => guestIds.Contains(gs.GuestId))
+                        .Where(gs => guestIds.Contains(gs.EventGuestId))
                         .GroupBy(gs => gs.SessionId)
                         .Select(gr => new { SessionId = gr.Key, Count = gr.Count() })
                         .ToListAsync(ct))
@@ -150,9 +154,9 @@ namespace Infrastructure.Services
                         .Select(g => new DashboardGuestDto
                         {
                             Id = g.PublicId,
-                            Name = $"{g.FirstName} {g.LastName}".Trim(),
-                            Email = g.Email,
-                            PhotoUrl = g.PhotoUrl,
+                            Name = $"{g.Guest.FirstName} {g.Guest.LastName}".Trim(),
+                            Email = g.Guest.Email,
+                            PhotoUrl = g.Guest.PhotoUrl,
                             Organization = g.Organization,
                             ServiceLevelName = g.ServiceLevel?.Name,
                             ServiceLevelColor = g.ServiceLevel?.Color,
@@ -162,7 +166,7 @@ namespace Infrastructure.Services
                 };
 
                 // -- Analytics -------------------------------------------------
-                Invitation InvOf(int guestId) => invitations.TryGetValue(guestId, out var i) ? i : null;
+                Invitation InvOf(int eventGuestId) => invitations.TryGetValue(eventGuestId, out var i) ? i : null;
 
                 var invited = guests.Count(g => InvOf(g.Id) != null
                                              && InvOf(g.Id).InvitationStatus != GuestInvitationStatus.NotSent);
@@ -236,8 +240,8 @@ namespace Infrastructure.Services
                 }
 
                 response.Nationalities = TopBreakdown(
-                    guests.Where(g => g.NationalityId != null)
-                          .GroupBy(g => g.NationalityId.Value)
+                    guests.Where(g => g.Guest.NationalityId != null)
+                          .GroupBy(g => g.Guest.NationalityId.Value)
                           .Select(gr => new DashboardBreakdownDto
                           {
                               Label = nationalityNames.ContainsKey(gr.Key) ? nationalityNames[gr.Key].Name : "Unknown",

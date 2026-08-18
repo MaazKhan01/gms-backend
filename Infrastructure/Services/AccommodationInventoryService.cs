@@ -108,8 +108,7 @@ public class AccommodationInventoryService(
             // Dropping the contract would strand every stay booked at this hotel:
             // its room blocks go with it, so those bookings lose their capacity.
             var booked = await _unitOfWork.Accommodations.Query()
-                .AnyAsync(a => a.Guest.EventId == contract.EventId
-                    && a.AccommodationHotelId == contract.AccommodationHotelId, ct);
+                .AnyAsync(a => a.EventHotelContractId == contract.Id, ct);
             if (booked)
                 return ApiResponse<bool>.ErrorResponse("Guests are already booked at this hotel for this event");
 
@@ -393,14 +392,14 @@ public class AccommodationInventoryService(
         if (blocks.Count == 0) return ApiResponse<RoomAvailabilityResponse>.SuccessResponse(result);
 
         var stays = await _unitOfWork.Accommodations.Query()
-            .Where(a => a.Guest.EventId == ev.Id
+            .Where(a => a.EventId == ev.Id
                 && a.CheckIn != null && a.CheckOut != null
                 && a.RoomTypeId != null
-                && (hotelId == null || a.Hotel.PublicId == hotelId)
+                && (hotelId == null || a.Contract.Hotel.PublicId == hotelId)
                 && (roomTypeId == null || a.RoomType.PublicId == roomTypeId))
             .Select(a => new
             {
-                HotelId = a.Hotel.PublicId,
+                HotelId = a.Contract.Hotel.PublicId,
                 RoomTypeId = a.RoomType.PublicId,
                 CheckIn = a.CheckIn.Value,
                 CheckOut = a.CheckOut.Value,
@@ -456,26 +455,26 @@ public class AccommodationInventoryService(
     // ── Enforcement ──────────────────────────────────────────────────────────
 
     public async Task<string> CheckStayAvailabilityAsync(
-        int eventId, int hotelId, int? roomTypeId, DateOnly checkIn, DateOnly checkOut,
+        int eventHotelContractId, int? roomTypeId, DateOnly checkIn, DateOnly checkOut,
         int? excludeAccommodationId = null, CancellationToken ct = default)
     {
         if (checkOut <= checkIn) return "Check-out must be after check-in";
 
-        // A hotel with no blocks at all is unmanaged: events that predate this
+        // A contract with no blocks at all is unmanaged: events that predate this
         // module (or that don't hold rooms) keep booking freely. Room type is only
         // required once someone starts holding rooms there.
         var hotelIsManaged = await _unitOfWork.HotelRoomInventories.Query()
-            .AnyAsync(i => i.Contract.EventId == eventId && i.Contract.AccommodationHotelId == hotelId, ct);
+            .AnyAsync(i => i.EventHotelContractId == eventHotelContractId, ct);
         if (!hotelIsManaged) return null;
 
         if (roomTypeId == null)
             return "Room type is required — this hotel's rooms are managed as inventory for this event";
 
-        var blocks = await LoadBlocksAsync(eventId, hotelId, roomTypeId.Value, ct);
+        var blocks = await LoadBlocksAsync(eventHotelContractId, roomTypeId.Value, ct);
         if (blocks.Count == 0)
             return "No rooms of this type are held at this hotel for this event";
 
-        var stays = await LoadStaysAsync(eventId, hotelId, roomTypeId.Value, excludeAccommodationId, ct);
+        var stays = await LoadStaysAsync(eventHotelContractId, roomTypeId.Value, excludeAccommodationId, ct);
 
         for (var night = checkIn; night < checkOut; night = night.AddDays(1))
         {
@@ -503,19 +502,19 @@ public class AccommodationInventoryService(
     private static int Taken(List<Stay> stays, DateOnly night)
         => stays.Count(s => night >= s.CheckIn && night < s.CheckOut);
 
-    private async Task<List<Block>> LoadBlocksAsync(int eventId, int hotelId, int roomTypeId, CancellationToken ct)
+    private async Task<List<Block>> LoadBlocksAsync(int eventHotelContractId, int roomTypeId, CancellationToken ct)
         => await _unitOfWork.HotelRoomInventories.Query()
-            .Where(i => i.Contract.EventId == eventId
-                && i.Contract.AccommodationHotelId == hotelId
+            .Where(i => i.EventHotelContractId == eventHotelContractId
                 && i.RoomTypeId == roomTypeId)
             .Select(i => new Block(i.FromDate, i.ToDate, i.RoomCount))
             .ToListAsync(ct);
 
+    // One contract == one hotel on one event, so the contract id alone scopes both
+    // the blocks held and the stays booked against them.
     private async Task<List<Stay>> LoadStaysAsync(
-        int eventId, int hotelId, int roomTypeId, int? excludeAccommodationId, CancellationToken ct)
+        int eventHotelContractId, int roomTypeId, int? excludeAccommodationId, CancellationToken ct)
         => await _unitOfWork.Accommodations.Query()
-            .Where(a => a.Guest.EventId == eventId
-                && a.AccommodationHotelId == hotelId
+            .Where(a => a.EventHotelContractId == eventHotelContractId
                 && a.RoomTypeId == roomTypeId
                 && a.CheckIn != null && a.CheckOut != null
                 && (excludeAccommodationId == null || a.Id != excludeAccommodationId))
@@ -540,10 +539,6 @@ public class AccommodationInventoryService(
     private async Task<string> FindBreachAsync(
         HotelRoomInventory block, int newRoomTypeId, List<Block> replacements, CancellationToken ct)
     {
-        var contract = await _unitOfWork.EventHotelContracts.Query()
-            .FirstOrDefaultAsync(c => c.Id == block.EventHotelContractId, ct);
-        if (contract == null) return null;
-
         // Changing a block's room type drops capacity from the old type, so that's
         // the side to check.
         var affectedRoomTypeId = block.RoomTypeId;
@@ -558,7 +553,7 @@ public class AccommodationInventoryService(
         if (newRoomTypeId == affectedRoomTypeId)
             others.AddRange(replacements);
 
-        var stays = await LoadStaysAsync(contract.EventId, contract.AccommodationHotelId, affectedRoomTypeId, null, ct);
+        var stays = await LoadStaysAsync(block.EventHotelContractId, affectedRoomTypeId, null, ct);
 
         for (var night = block.FromDate; night <= block.ToDate; night = night.AddDays(1))
         {

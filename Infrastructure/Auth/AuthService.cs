@@ -180,7 +180,10 @@ public class AuthService(
             var principal = ValidateJwt(refreshToken, validateLifetime: false);
             var jti = principal.FindFirstValue(JwtRegisteredClaimNames.Jti);
 
-            if (string.IsNullOrEmpty(jti))
+            // Guest sessions share this table with a "guest-refresh" token_type, so
+            // without this check a guest token posted here would revoke its row via
+            // the staff endpoint. Access tokens are turned away for the same reason.
+            if (string.IsNullOrEmpty(jti) || principal.FindFirstValue("token_type") != "refresh")
                 return ApiResponse<bool>.SuccessResponse(true, "Logged out");
 
             var storedToken = await _unitOfWork.UserRefreshTokens

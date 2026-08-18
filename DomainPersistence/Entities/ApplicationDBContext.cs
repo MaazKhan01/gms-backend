@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,11 +46,14 @@ public partial class ApplicationDBContext : DbContext
             // never NULL, when IsDeleted isn't explicitly set on insert.
             // "AND [Email] IS NOT NULL" is required too: a plain unique index in
             // SQL Server treats multiple NULLs as duplicates (unlike ANSI), and
-            // guest-linked Users (see Guest.UserId) always have Email = NULL by
-            // design — without this, the second active guest would violate the
-            // index.
+            // an invited-but-unfinished User can still have Email = NULL.
+            // A guest-linked User now carries the Guest's email (and the same
+            // value as its UserName) — Guests.Email is itself unique among active
+            // rows, so the two constraints agree rather than fight.
             entity.HasIndex(e => e.Email).IsUnique().HasFilter("[IsDeleted] = 0 AND [Email] IS NOT NULL");
-            entity.HasIndex(e => e.UserName).IsUnique().HasFilter("[UserName] IS NOT NULL");
+            // Same active-rows-only scoping as Email above: without it a deleted
+            // guest's email would stay permanently unusable as a UserName.
+            entity.HasIndex(e => e.UserName).IsUnique().HasFilter("[IsDeleted] = 0 AND [UserName] IS NOT NULL");
             entity.Property(e => e.UserName).HasMaxLength(100);
             entity.Property(e => e.Email).HasMaxLength(255);
             entity.Property(e => e.FirstName).HasMaxLength(150);

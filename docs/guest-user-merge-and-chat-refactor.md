@@ -25,13 +25,22 @@ cached `Guests.UserId` lookup per request. This is what lets `ICurrentUser`,
 `CreatedBy`/`UpdatedBy` stamping resolve correctly for a guest token the same
 way they already do for a staff token, without any client-side change.
 
-Why not fully absorb `Guest` into `Users` (single table)? `Users.Email`/
-`Users.UserName` are unique (filtered), but `Guests.Email` is not — the same
-person can legitimately have multiple `Guest` rows across different events
-with the same email. Merging by shared key would have forced either dropping
-that flexibility or a much larger, riskier schema change. The extension-table
-approach reuses an already-proven pattern in this codebase and needed no
-changes to guest event/registration behavior.
+> **Superseded in part — see [guest-schema-eventguest.md](guest-schema-eventguest.md).**
+> The paragraph below described the state when `Guest` was one row *per event*.
+> It no longer is: `Guest` is the master person record, `EventGuest` is the
+> per-event participation, and `Guests.Email` is now **required and unique among
+> active rows** — it is also the linked `User`'s `Email` *and* `UserName`. The
+> 1:1 `Guest`/`User` extension-table shape and everything below about the JWT,
+> `CurrentGuest` and unified notifications is unchanged.
+
+Why not fully absorb `Guest` into `Users` (single table)? At the time, `Users.Email`/
+`Users.UserName` were unique (filtered) while `Guests.Email` was not — the same
+person then had one `Guest` row per event, all sharing an email. Merging by
+shared key would have forced either dropping that flexibility or a much larger,
+riskier schema change. The extension-table approach reuses an already-proven
+pattern in this codebase and needed no changes to guest event/registration
+behavior. (The `EventGuest` split has since removed the duplicate-email case, so
+the two uniqueness rules now agree rather than conflict.)
 
 ## 2. Database changes
 
@@ -202,11 +211,17 @@ and an `AdminSupport` conversationId gets 404 — this endpoint only serves
   it if missing, reuses (and reopens if `Closed`) otherwise.
 - **Targeting**: `RecipientUserId` (either side's `User.PublicId`) works in
   both directions. `RecipientRole="driver"` is guest-only and resolves via
-  that guest's `GuestDriverAssignment` pool (errors if zero or more than one
-  driver is assigned, asking for an explicit `RecipientUserId` in the
-  ambiguous case). A driver sender must always specify `RecipientUserId` —
-  there's no single implicit guest for a driver the way there's a single
-  implicit "any admin" for `AdminSupport`.
+  the drivers on that guest's `Transport` rows (`Transport.DriverId` +
+  `Transport.EventGuestId` are the only record of the pairing — there is no
+  separate driver-pool table). Errors if zero or more than one driver is
+  assigned, asking for an explicit `RecipientUserId` in the ambiguous case.
+  A driver sender must always specify `RecipientUserId` — there's no single
+  implicit guest for a driver the way there's a single implicit "any admin"
+  for `AdminSupport`.
+- **Authorization**: either way, the send is rejected (403) unless at least one
+  non-deleted `Transport` links the driver's profile id to the target guest's
+  user (`Transport.DriverId == driverProfile.Id` and
+  `Transport.EventGuest.Guest.UserId == guestUserId`).
 - **Validation**: unknown role -> 403; recipient not found -> 404; recipient
   inactive -> 400; recipient role doesn't match the expected counterpart
   (e.g. a guest targeting another guest) -> 400. **Blocked users are not

@@ -27,22 +27,24 @@ public interface IServiceCatalogService
     Task<ApiResponse<ServiceLevelResponse>> UpdateServiceLevelAsync(Guid levelId, UpdateServiceLevelRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteServiceLevelAsync(Guid levelId, int userId, CancellationToken ct = default);
 
-    // ── A guest's service plan ───────────────────────────────────────────────
+    // ── A participation's service plan ───────────────────────────────────────
+    // Every id below is an EventGuest.PublicId: a service level, and therefore
+    // the checklist it produces, belongs to one event, not to the person.
 
     /// <summary>
-    /// The guest's checklist: every service on their level, what has been filled
-    /// in, and which are unlocked given the event's guest model.
+    /// The participation's checklist: every service on their level, what has been
+    /// filled in, and which are unlocked given the event's guest model.
     /// </summary>
-    Task<ApiResponse<GuestServicePlanResponse>> GetGuestServicePlanAsync(Guid guestId, CancellationToken ct = default);
+    Task<ApiResponse<GuestServicePlanResponse>> GetGuestServicePlanAsync(Guid eventGuestId, CancellationToken ct = default);
 
     /// <summary>
     /// Creates or updates one entry. Rejects a service the guest's level does not
     /// include, and on a Fixed event one whose predecessors are still pending.
     /// </summary>
     Task<ApiResponse<GuestServiceEntryResponse>> SaveGuestServiceEntryAsync(
-        Guid guestId, SaveGuestServiceEntryRequest request, int userId, CancellationToken ct = default);
+        Guid eventGuestId, SaveGuestServiceEntryRequest request, int userId, CancellationToken ct = default);
 
-    Task<ApiResponse<bool>> DeleteGuestServiceEntryAsync(Guid guestId, Guid entryId, int userId, CancellationToken ct = default);
+    Task<ApiResponse<bool>> DeleteGuestServiceEntryAsync(Guid eventGuestId, Guid entryId, int userId, CancellationToken ct = default);
 
     /// <summary>
     /// Every entry for one service across an event — what the operational

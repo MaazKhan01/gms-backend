@@ -58,14 +58,17 @@ public class RideMirror(
                     x.ActualPickupTime,
                     x.ActualDropOffTime,
 
-                    EventId = x.Guest.Event == null ? (Guid?)null : x.Guest.Event.PublicId,
-                    EventName = x.Guest.Event == null ? null : x.Guest.Event.Title,
+                    EventId = x.EventGuest.Event == null ? (Guid?)null : x.EventGuest.Event.PublicId,
+                    EventName = x.EventGuest.Event == null ? null : x.EventGuest.Event.Title,
 
-                    GuestId = x.Guest.PublicId,
-                    GuestName = (x.Guest.FirstName + " " + x.Guest.LastName).Trim(),
-                    GuestTier = x.Guest.Tier,
-                    GuestPhone = x.Guest.User == null ? null : x.Guest.User.Phone,
-                    GuestPhotoUrl = x.Guest.PhotoUrl,
+                    // Both ids: the driver app addresses the RIDE by participation,
+                    // but any person-level action (chat, push) needs the Guest id.
+                    EventGuestId = x.EventGuest.PublicId,
+                    GuestId = x.EventGuest.Guest.PublicId,
+                    GuestName = (x.EventGuest.Guest.FirstName + " " + x.EventGuest.Guest.LastName).Trim(),
+                    GuestTier = x.EventGuest.Tier,
+                    GuestPhone = x.EventGuest.Guest.User == null ? null : x.EventGuest.Guest.User.Phone,
+                    GuestPhotoUrl = x.EventGuest.Guest.PhotoUrl,
 
                     Pickup = x.PickupLocation == null ? null : x.PickupLocation.Address,
                     PickupLat = x.PickupLocation == null ? null : x.PickupLocation.Latitude,
@@ -99,9 +102,12 @@ public class RideMirror(
                 ["eventId"] = t.EventId?.ToString(),
                 ["eventName"] = t.EventName,
 
+                ["eventGuestId"] = t.EventGuestId.ToString(),
+
                 ["guest"] = new Dictionary<string, object>
                 {
                     ["id"] = t.GuestId.ToString(),
+                    ["eventGuestId"] = t.EventGuestId.ToString(),
                     ["name"] = t.GuestName,
                     ["tier"] = t.GuestTier,
                     ["phone"] = t.GuestPhone,

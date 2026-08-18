@@ -10,6 +10,7 @@ public interface IUnitOfWork : IDisposable
     // Auth / RBAC
     IGenericRepository<User> Users { get; }
     IGenericRepository<Guest> Guests { get; }
+    IGenericRepository<EventGuest> EventGuests { get; }
     IGenericRepository<GuestSession> GuestSessions { get; }
     IGenericRepository<Role> Roles { get; }
     IGenericRepository<Permission> Permissions { get; }
@@ -70,7 +71,6 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<FleetProvider> FleetProviders { get; }
     IGenericRepository<DriverProfile> DriverProfiles { get; }
     IGenericRepository<TransportStatusHistory> TransportStatusHistories { get; }
-    IGenericRepository<GuestDriverAssignment> GuestDriverAssignments { get; }
     IGenericRepository<Organization> Organizations { get; }
 
     // Per-event service catalog + guest grades
@@ -83,7 +83,6 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<Notification> Notifications { get; }
 
     // VIP guest app
-    IGenericRepository<GuestRefreshToken> GuestRefreshTokens { get; }
     IGenericRepository<SupportMessage> SupportMessages { get; }
     IGenericRepository<SupportConversation> SupportConversations { get; }
     IGenericRepository<Device> Devices { get; }

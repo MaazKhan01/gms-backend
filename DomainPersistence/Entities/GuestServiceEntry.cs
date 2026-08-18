@@ -12,7 +12,7 @@ namespace DomainPersistence.Entities
     /// </remarks>
     public class GuestServiceEntry : Entity
     {
-        public int GuestId { get; set; }
+        public int EventGuestId { get; set; }
         public int ServiceId { get; set; }
 
         /// <summary>pending | completed — see Core.Constants.GuestServiceStatus.</summary>
@@ -28,7 +28,7 @@ namespace DomainPersistence.Entities
         public DateTime? CompletedAt { get; set; }
         public int? CompletedBy { get; set; }
 
-        public virtual Guest Guest { get; set; }
+        public virtual EventGuest EventGuest { get; set; }
         public virtual Service Service { get; set; }
     }
 }

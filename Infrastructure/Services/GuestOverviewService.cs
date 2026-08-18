@@ -10,12 +10,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
 
-// System-wide guest listing + on-demand per-guest detail for the "Guest
+// System-wide guest listing + on-demand per-person detail for the "Guest
 // Overview" screen. Kept separate from GuestService: that one is scoped to a
 // single event everywhere (GetGuestsAsync(eventId, ...)), and threading an
 // "optional event" concern through its filters/queries would have touched
 // every existing call site. This service only reads — sections it doesn't own
 // (seating, dynamic services) are pulled from the services that do.
+//
+// One row per PERSON here, one section per participation inside the detail:
+// Guest is the cross-event identity, EventGuest is the per-event booking, so
+// the grouping this screen needs is now a plain join rather than the
+// group-by-email reconstruction it used to be.
 public class GuestOverviewService(
     IUnitOfWork _unitOfWork,
     IServiceCatalogService _serviceCatalogService,
@@ -37,10 +42,15 @@ public class GuestOverviewService(
 
             var query = _unitOfWork.Guests.QueryNoTracking();
 
+            // Every filter below except the person's own name/email is a property
+            // of a participation, so each is "has at least one EventGuest where…".
+            // A person matches if any of their events does.
             if (request.EventId is { } eventPublicId && eventPublicId != Guid.Empty)
             {
                 var ev = await _unitOfWork.Events.GetByPublicIdAsync(eventPublicId, ct);
-                query = ev == null ? query.Where(_ => false) : query.Where(g => g.EventId == ev.Id);
+                query = ev == null
+                    ? query.Where(_ => false)
+                    : query.Where(g => g.EventGuests.Any(eg => eg.EventId == ev.Id));
             }
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
@@ -50,34 +60,37 @@ public class GuestOverviewService(
                     g.FirstName.ToLower().Contains(term) ||
                     g.LastName.ToLower().Contains(term) ||
                     (g.Email != null && g.Email.ToLower().Contains(term)) ||
-                    (g.Organization != null && g.Organization.ToLower().Contains(term)));
+                    g.EventGuests.Any(eg => eg.Organization != null && eg.Organization.ToLower().Contains(term)));
             }
 
             if (!string.IsNullOrWhiteSpace(request.Tier))
             {
                 var tier = request.Tier.ToLower();
-                query = query.Where(g => g.Tier != null && g.Tier.ToLower() == tier);
+                query = query.Where(g => g.EventGuests.Any(eg => eg.Tier != null && eg.Tier.ToLower() == tier));
             }
 
             if (!string.IsNullOrWhiteSpace(request.GuestType))
             {
                 var type = request.GuestType.ToLower();
-                query = query.Where(g => g.GuestType != null && g.GuestType.ToLower() == type);
+                query = query.Where(g => g.EventGuests.Any(eg => eg.GuestType != null && eg.GuestType.ToLower() == type));
             }
 
             if (request.ServiceLevelId is { } levelPublicId && levelPublicId != Guid.Empty)
             {
                 var level = await _unitOfWork.ServiceLevels.QueryNoTracking()
                     .FirstOrDefaultAsync(l => l.PublicId == levelPublicId, ct);
-                query = level == null ? query.Where(_ => false) : query.Where(g => g.ServiceLevelId == level.Id);
+                query = level == null
+                    ? query.Where(_ => false)
+                    : query.Where(g => g.EventGuests.Any(eg => eg.ServiceLevelId == level.Id));
             }
 
             if (request.OrganizationId is { } orgPublicId && orgPublicId != Guid.Empty)
             {
                 var org = await _unitOfWork.Organizations.GetByPublicIdAsync(orgPublicId, ct);
-                query = query.Where(g => org != null && g.OrganizationId == org.Id);
+                query = query.Where(g => org != null && g.EventGuests.Any(eg => eg.OrganizationId == org.Id));
             }
 
+            // Nationality is person-level now, so this one is a plain column test.
             if (request.NationalityId is { } natPublicId && natPublicId != Guid.Empty)
             {
                 var nat = await _unitOfWork.Nationalities.GetByPublicIdAsync(natPublicId, ct);
@@ -89,7 +102,8 @@ public class GuestOverviewService(
                 var session = await _unitOfWork.Sessions.GetByPublicIdAsync(sessionPublicId, ct);
                 query = session == null
                     ? query.Where(_ => false)
-                    : query.Where(g => guestSessions.Any(gs => gs.GuestId == g.Id && gs.SessionId == session.Id));
+                    : query.Where(g => g.EventGuests.Any(eg =>
+                        guestSessions.Any(gs => gs.EventGuestId == eg.Id && gs.SessionId == session.Id)));
             }
 
             // Same "not_sent also covers no row at all" rule as GuestService.GetGuestsAsync.
@@ -101,136 +115,120 @@ public class GuestOverviewService(
                 if (statuses.Count > 0)
                 {
                     var includesNotSent = statuses.Contains(GuestInvitationStatus.NotSent);
-                    var otherStatuses = statuses.Where(s => s != GuestInvitationStatus.NotSent).ToList();
-                    query = query.Where(g =>
-                        (includesNotSent && !invitations.Any(i => i.GuestId == g.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
-                        || (otherStatuses.Count > 0 && invitations.Any(i => i.GuestId == g.Id && otherStatuses.Contains(i.InvitationStatus))));
+                    var otherStatuses = statuses.Where(x => x != GuestInvitationStatus.NotSent).ToList();
+                    query = query.Where(g => g.EventGuests.Any(eg =>
+                        (includesNotSent && !invitations.Any(i => i.EventGuestId == eg.Id && i.InvitationStatus != GuestInvitationStatus.NotSent))
+                        || (otherStatuses.Count > 0 && invitations.Any(i => i.EventGuestId == eg.Id && otherStatuses.Contains(i.InvitationStatus)))));
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(request.AccreditationStatus))
             {
                 if (request.AccreditationStatus == "not_required")
-                    query = query.Where(g => !g.AccreditationRequired);
+                    query = query.Where(g => g.EventGuests.Any(eg => !eg.AccreditationRequired));
                 else if (request.AccreditationStatus == GuestAccreditationStatus.Issued)
-                    query = query.Where(g => g.AccreditationRequired && invitations.Any(i => i.GuestId == g.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
+                    query = query.Where(g => g.EventGuests.Any(eg => eg.AccreditationRequired
+                        && invitations.Any(i => i.EventGuestId == eg.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued)));
                 else if (request.AccreditationStatus == "pending")
-                    query = query.Where(g => g.AccreditationRequired && !invitations.Any(i => i.GuestId == g.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued));
+                    query = query.Where(g => g.EventGuests.Any(eg => eg.AccreditationRequired
+                        && !invitations.Any(i => i.EventGuestId == eg.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued)));
             }
 
             if (request.ArrivalFrom.HasValue)
-                query = query.Where(g => g.ArrivalDate != null && g.ArrivalDate >= request.ArrivalFrom.Value);
+                query = query.Where(g => g.EventGuests.Any(eg => eg.ArrivalDate != null && eg.ArrivalDate >= request.ArrivalFrom.Value));
             if (request.ArrivalTo.HasValue)
-                query = query.Where(g => g.ArrivalDate != null && g.ArrivalDate <= request.ArrivalTo.Value);
+                query = query.Where(g => g.EventGuests.Any(eg => eg.ArrivalDate != null && eg.ArrivalDate <= request.ArrivalTo.Value));
             if (request.DepartureFrom.HasValue)
-                query = query.Where(g => g.DepartureDate != null && g.DepartureDate >= request.DepartureFrom.Value);
+                query = query.Where(g => g.EventGuests.Any(eg => eg.DepartureDate != null && eg.DepartureDate >= request.DepartureFrom.Value));
             if (request.DepartureTo.HasValue)
-                query = query.Where(g => g.DepartureDate != null && g.DepartureDate <= request.DepartureTo.Value);
+                query = query.Where(g => g.EventGuests.Any(eg => eg.DepartureDate != null && eg.DepartureDate <= request.DepartureTo.Value));
 
             // Counts/flags are correlated subqueries done inside the same projection
             // — one round trip for every row this filter set matches, not per guest.
-            var raw = await query
-                .Select(g => new
+            // Everything per-event is aggregated across the person's participations,
+            // which is exactly what this cross-event screen is asking for.
+            // One round trip for every person this filter set matches. Each
+            // aggregate is a plain correlated subquery over the child table,
+            // joined back through EventGuest — nesting them inside a Sum() over
+            // the navigation collection reads nicer but is not something the
+            // provider can translate.
+            var rows = await query
+                .Select(g => new GuestOverviewRow
                 {
-                    g.PublicId,
-                    g.FirstName,
-                    g.LastName,
-                    g.Email,
-                    g.PhotoUrl,
-                    g.GuestType,
-                    EventId = g.Event.PublicId,
-                    EventTitle = g.Event.Title,
-                    g.Organization,
+                    Id = g.PublicId,
+                    FirstName = g.FirstName,
+                    LastName = g.LastName,
+                    Email = g.Email,
+                    PhotoUrl = g.PhotoUrl,
                     NationalityName = g.Nationality != null ? g.Nationality.Name : null,
                     NationalityFlag = g.Nationality != null ? g.Nationality.Flag : null,
-                    g.Tier,
-                    ServiceLevelId = g.ServiceLevel != null ? g.ServiceLevel.PublicId : (Guid?)null,
-                    ServiceLevelName = g.ServiceLevel != null ? g.ServiceLevel.Name : null,
-                    ServiceLevelColor = g.ServiceLevel != null ? g.ServiceLevel.Color : null,
-                    InvitationStatus = invitations.Where(i => i.GuestId == g.Id).Select(i => i.InvitationStatus).FirstOrDefault() ?? GuestInvitationStatus.NotSent,
-                    AccreditationStatus = invitations.Where(i => i.GuestId == g.Id).Select(i => i.AccreditationStatus).FirstOrDefault() ?? GuestAccreditationStatus.NotIssued,
-                    g.ArrivalDate,
-                    g.DepartureDate,
-                    SessionsCount = guestSessions.Count(gs => gs.GuestId == g.Id),
-                    ServicesCount = serviceEntries.Count(e => e.GuestId == g.Id),
-                    PendingServicesCount = serviceEntries.Count(e => e.GuestId == g.Id && e.Status == "pending"),
-                    SeatsCount = seatAssigns.Count(sa => sa.GuestId == g.Id),
-                    HasFlight = flights.Any(f => f.GuestId == g.Id),
-                    HasAccommodation = accommodations.Any(a => a.GuestId == g.Id),
-                    HasTransport = transports.Any(t => t.GuestId == g.Id),
-                    g.CreatedAt,
+
+                    // "Primary" = their most recent participation, which is what the
+                    // single-value columns (event, tier, organisation, statuses) show.
+                    GuestType = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.GuestType).FirstOrDefault(),
+                    EventId = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.Event.PublicId).FirstOrDefault(),
+                    EventTitle = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.Event.Title).FirstOrDefault(),
+                    EventsCount = g.EventGuests.Count,
+                    // Deduped after materialisation — Distinct() inside a collection
+                    // projection is not translatable.
+                    EventTitles = g.EventGuests.Select(eg => eg.Event.Title).ToList(),
+                    Organization = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.Organization).FirstOrDefault(),
+                    Tier = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.Tier).FirstOrDefault(),
+                    ServiceLevelId = g.EventGuests.OrderByDescending(eg => eg.CreatedAt)
+                        .Select(eg => eg.ServiceLevel != null ? eg.ServiceLevel.PublicId : (Guid?)null).FirstOrDefault(),
+                    ServiceLevelName = g.EventGuests.OrderByDescending(eg => eg.CreatedAt)
+                        .Select(eg => eg.ServiceLevel != null ? eg.ServiceLevel.Name : null).FirstOrDefault(),
+                    ServiceLevelColor = g.EventGuests.OrderByDescending(eg => eg.CreatedAt)
+                        .Select(eg => eg.ServiceLevel != null ? eg.ServiceLevel.Color : null).FirstOrDefault(),
+                    InvitationStatus = invitations
+                        .Where(i => i.EventGuest.GuestId == g.Id)
+                        .OrderByDescending(i => i.EventGuest.CreatedAt)
+                        .Select(i => i.InvitationStatus)
+                        .FirstOrDefault() ?? GuestInvitationStatus.NotSent,
+                    AccreditationStatus = invitations
+                        .Where(i => i.EventGuest.GuestId == g.Id)
+                        .OrderByDescending(i => i.EventGuest.CreatedAt)
+                        .Select(i => i.AccreditationStatus)
+                        .FirstOrDefault() ?? GuestAccreditationStatus.NotIssued,
+
+                    ArrivalDate = g.EventGuests.Min(eg => eg.ArrivalDate),
+                    DepartureDate = g.EventGuests.Max(eg => eg.DepartureDate),
+
+                    SessionsCount = guestSessions.Count(gs => gs.EventGuest.GuestId == g.Id),
+                    ServicesCount = serviceEntries.Count(e => e.EventGuest.GuestId == g.Id),
+                    PendingServicesCount = serviceEntries.Count(e => e.EventGuest.GuestId == g.Id && e.Status == "pending"),
+                    SeatsCount = seatAssigns.Count(sa => sa.EventGuest.GuestId == g.Id),
+                    HasFlight = flights.Any(f => f.EventGuest.GuestId == g.Id),
+                    HasAccommodation = accommodations.Any(a => a.EventGuest.GuestId == g.Id),
+                    HasTransport = transports.Any(t => t.EventGuest.GuestId == g.Id),
+                    CreatedAt = g.CreatedAt,
                 })
                 .ToListAsync(ct);
 
-            // The same person gets a brand-new Guest row per event (no shared
-            // person identity in the data model — see Guest.cs "identity is now
-            // (Event, Person, ServiceLevel)"). Email is the one field every guest
-            // is required to have, so it's the grouping key: one row per person,
-            // not one per booking. Aggregating a variable number of sibling rows
-            // (sum counts, OR flags, min/max dates) isn't a clean single GROUP BY
-            // projection in EF, and at guest-table scale (hundreds/thousands, not
-            // millions) one filtered round trip plus an in-memory GroupBy is
-            // simpler and just as fast in practice.
-            var grouped = raw
-                .GroupBy(g => string.IsNullOrWhiteSpace(g.Email) ? g.PublicId.ToString() : g.Email.Trim().ToLowerInvariant())
-                .Select(grp =>
-                {
-                    var primary = grp.OrderByDescending(r => r.CreatedAt).First();
-                    return new GuestOverviewRow
-                    {
-                        Id = primary.PublicId,
-                        FirstName = primary.FirstName,
-                        LastName = primary.LastName,
-                        Email = primary.Email,
-                        PhotoUrl = primary.PhotoUrl,
-                        GuestType = primary.GuestType,
-                        EventId = primary.EventId,
-                        EventTitle = primary.EventTitle,
-                        EventsCount = grp.Select(r => r.EventId).Distinct().Count(),
-                        EventTitles = grp.Select(r => r.EventTitle).Where(t => t != null).Distinct().ToList(),
-                        Organization = primary.Organization,
-                        NationalityName = primary.NationalityName,
-                        NationalityFlag = primary.NationalityFlag,
-                        Tier = primary.Tier,
-                        ServiceLevelId = primary.ServiceLevelId,
-                        ServiceLevelName = primary.ServiceLevelName,
-                        ServiceLevelColor = primary.ServiceLevelColor,
-                        InvitationStatus = primary.InvitationStatus,
-                        AccreditationStatus = primary.AccreditationStatus,
-                        ArrivalDate = grp.Select(r => r.ArrivalDate).Where(d => d != null).OrderBy(d => d).FirstOrDefault(),
-                        DepartureDate = grp.Select(r => r.DepartureDate).Where(d => d != null).OrderByDescending(d => d).FirstOrDefault(),
-                        SessionsCount = grp.Sum(r => r.SessionsCount),
-                        ServicesCount = grp.Sum(r => r.ServicesCount),
-                        PendingServicesCount = grp.Sum(r => r.PendingServicesCount),
-                        SeatsCount = grp.Sum(r => r.SeatsCount),
-                        HasFlight = grp.Any(r => r.HasFlight),
-                        HasAccommodation = grp.Any(r => r.HasAccommodation),
-                        HasTransport = grp.Any(r => r.HasTransport),
-                        CreatedAt = grp.Min(r => r.CreatedAt),
-                    };
-                })
-                .AsEnumerable();
+            foreach (var r in rows)
+                r.EventTitles = r.EventTitles.Where(t => t != null).Distinct().ToList();
 
-            // These four flags are now an OR across a person's events, so they can
-            // only be tested after grouping.
+            // These four are ORs across a person's events, which the projection
+            // above has already collapsed — so they filter here rather than in SQL.
+            IEnumerable<GuestOverviewRow> people = rows;
             if (request.HasFlight.HasValue)
-                grouped = grouped.Where(r => r.HasFlight == request.HasFlight.Value);
+                people = people.Where(r => r.HasFlight == request.HasFlight.Value);
             if (request.HasAccommodation.HasValue)
-                grouped = grouped.Where(r => r.HasAccommodation == request.HasAccommodation.Value);
+                people = people.Where(r => r.HasAccommodation == request.HasAccommodation.Value);
             if (request.HasTransport.HasValue)
-                grouped = grouped.Where(r => r.HasTransport == request.HasTransport.Value);
+                people = people.Where(r => r.HasTransport == request.HasTransport.Value);
             if (request.HasPendingServices.HasValue)
-                grouped = grouped.Where(r => (r.PendingServicesCount > 0) == request.HasPendingServices.Value);
+                people = people.Where(r => (r.PendingServicesCount > 0) == request.HasPendingServices.Value);
 
-            var people = grouped.ToList();
-            var total = people.Count;
+            var filtered = people.ToList();
+            var total = filtered.Count;
 
             IEnumerable<GuestOverviewRow> ordered = request.SortBy?.ToLowerInvariant() switch
             {
-                "organization" => request.SortDescending ? people.OrderByDescending(r => r.Organization) : people.OrderBy(r => r.Organization),
-                "arrival" => request.SortDescending ? people.OrderByDescending(r => r.ArrivalDate) : people.OrderBy(r => r.ArrivalDate),
-                "created" => request.SortDescending ? people.OrderByDescending(r => r.CreatedAt) : people.OrderBy(r => r.CreatedAt),
-                _ => request.SortDescending ? people.OrderByDescending(r => r.FirstName) : people.OrderBy(r => r.FirstName),
+                "organization" => request.SortDescending ? filtered.OrderByDescending(r => r.Organization) : filtered.OrderBy(r => r.Organization),
+                "arrival" => request.SortDescending ? filtered.OrderByDescending(r => r.ArrivalDate) : filtered.OrderBy(r => r.ArrivalDate),
+                "created" => request.SortDescending ? filtered.OrderByDescending(r => r.CreatedAt) : filtered.OrderBy(r => r.CreatedAt),
+                _ => request.SortDescending ? filtered.OrderByDescending(r => r.FirstName) : filtered.OrderBy(r => r.FirstName),
             };
 
             var items = ordered
@@ -248,57 +246,55 @@ public class GuestOverviewService(
         }
     }
 
-    public async Task<ApiResponse<GuestOverviewDetailResponse>> GetGuestOverviewDetailAsync(Guid guestId, CancellationToken ct = default)
+    /// <summary><paramref name="personId"/> is a <c>Guest.PublicId</c> — this
+    /// screen is the person's whole history, so it is keyed on the person, not on
+    /// one of their participations.</summary>
+    public async Task<ApiResponse<GuestOverviewDetailResponse>> GetGuestOverviewDetailAsync(Guid personId, CancellationToken ct = default)
     {
         try
         {
-            var anchor = await _unitOfWork.Guests.QueryNoTracking()
-                .FirstOrDefaultAsync(g => g.PublicId == guestId, ct);
-            if (anchor == null)
+            var person = await _unitOfWork.Guests.QueryNoTracking()
+                .FirstOrDefaultAsync(g => g.PublicId == personId, ct);
+            if (person == null)
                 return ApiResponse<GuestOverviewDetailResponse>.NotFoundResponse("Guest not found");
 
-            // Every Guest row this person holds — one per event, see
-            // GetGuestOverviewAsync for why email is the grouping key. Sections
-            // below flatten across all of them, each item tagged with its event.
-            var siblings = string.IsNullOrWhiteSpace(anchor.Email)
-                ? new List<Guest> { anchor }
-                : await _unitOfWork.Guests.QueryNoTracking()
-                    .Include(g => g.Event)
-                    .Include(g => g.ServiceLevel)
-                    .Where(g => g.Email != null && g.Email.ToLower() == anchor.Email.ToLower())
-                    .OrderBy(g => g.Event.StartDate)
-                    .ToListAsync(ct);
-            if (siblings.Count == 0)
-                siblings.Add(anchor);
+            // Every event this person participates in. Sections below flatten
+            // across all of them, each item tagged with its event.
+            var participations = await _unitOfWork.EventGuests.QueryNoTracking()
+                .Include(eg => eg.Event)
+                .Include(eg => eg.ServiceLevel)
+                .Where(eg => eg.GuestId == person.Id)
+                .OrderBy(eg => eg.Event.StartDate)
+                .ToListAsync(ct);
 
-            var detail = new GuestOverviewDetailResponse { Id = anchor.PublicId, Email = anchor.Email };
+            var detail = new GuestOverviewDetailResponse { Id = person.PublicId, Email = person.Email };
 
-            foreach (var g in siblings)
+            foreach (var eg in participations)
             {
                 var invitation = await _unitOfWork.Invitations.QueryNoTracking()
-                    .FirstOrDefaultAsync(i => i.GuestId == g.Id, ct);
+                    .FirstOrDefaultAsync(i => i.EventGuestId == eg.Id, ct);
 
                 detail.Events.Add(new GuestOverviewEventBlock
                 {
-                    GuestId = g.PublicId,
-                    EventId = g.Event?.PublicId ?? Guid.Empty,
-                    EventTitle = g.Event?.Title,
-                    EventType = g.Event?.Type,
-                    StartDate = g.Event?.StartDate,
-                    EndDate = g.Event?.EndDate,
-                    VenueName = g.Event?.VenueName,
-                    ServiceLevelName = g.ServiceLevel?.Name,
-                    ServiceLevelColor = g.ServiceLevel?.Color,
+                    EventGuestId = eg.PublicId,
+                    EventId = eg.Event?.PublicId ?? Guid.Empty,
+                    EventTitle = eg.Event?.Title,
+                    EventType = eg.Event?.Type,
+                    StartDate = eg.Event?.StartDate,
+                    EndDate = eg.Event?.EndDate,
+                    VenueName = eg.Event?.VenueName,
+                    ServiceLevelName = eg.ServiceLevel?.Name,
+                    ServiceLevelColor = eg.ServiceLevel?.Color,
                     InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent,
                     AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued,
-                    ArrivalDate = g.ArrivalDate,
-                    DepartureDate = g.DepartureDate,
+                    ArrivalDate = eg.ArrivalDate,
+                    DepartureDate = eg.DepartureDate,
                 });
 
-                var eventTitle = g.Event?.Title;
+                var eventTitle = eg.Event?.Title;
 
                 detail.Sessions.AddRange(await _unitOfWork.GuestSessions.QueryNoTracking()
-                    .Where(gs => gs.GuestId == g.Id)
+                    .Where(gs => gs.EventGuestId == eg.Id)
                     .Select(gs => new GuestOverviewSessionRow
                     {
                         EventTitle = eventTitle,
@@ -313,7 +309,7 @@ public class GuestOverviewService(
                     .ToListAsync(ct));
 
                 detail.Flights.AddRange(await _unitOfWork.Flights.QueryNoTracking()
-                    .Where(f => f.GuestId == g.Id)
+                    .Where(f => f.EventGuestId == eg.Id)
                     .Select(f => new GuestOverviewFlightRow
                     {
                         EventTitle = eventTitle,
@@ -341,13 +337,13 @@ public class GuestOverviewService(
                     .ToListAsync(ct));
 
                 detail.Accommodations.AddRange(await _unitOfWork.Accommodations.QueryNoTracking()
-                    .Where(a => a.GuestId == g.Id)
+                    .Where(a => a.EventGuestId == eg.Id)
                     .Select(a => new GuestOverviewAccommodationRow
                     {
                         EventTitle = eventTitle,
                         Id = a.PublicId,
-                        Hotel = a.Hotel != null ? a.Hotel.Name : null,
-                        HotelImageUrl = a.Hotel != null ? a.Hotel.ImageUrl : null,
+                        Hotel = a.Contract != null ? a.Contract.Hotel.Name : null,
+                        HotelImageUrl = a.Contract != null ? a.Contract.Hotel.ImageUrl : null,
                         RoomType = a.RoomType != null ? a.RoomType.Name : null,
                         CheckIn = a.CheckIn,
                         CheckOut = a.CheckOut,
@@ -356,7 +352,7 @@ public class GuestOverviewService(
                     .ToListAsync(ct));
 
                 detail.Transport.AddRange(await _unitOfWork.Transports.QueryNoTracking()
-                    .Where(t => t.GuestId == g.Id)
+                    .Where(t => t.EventGuestId == eg.Id)
                     .Select(t => new GuestOverviewTransportRow
                     {
                         EventTitle = eventTitle,
@@ -371,31 +367,31 @@ public class GuestOverviewService(
                     })
                     .ToListAsync(ct));
 
-                var seatResult = await _seatingService.GetGuestSeatAssignmentsAsync(g.PublicId, ct);
+                var seatResult = await _seatingService.GetGuestSeatAssignmentsAsync(eg.PublicId, ct);
                 detail.Seatings.AddRange((seatResult.Data ?? new List<GuestSeatAssignmentDto>())
-                    .Select(s => new GuestOverviewSeatRow
+                    .Select(x => new GuestOverviewSeatRow
                     {
-                        EventTitle = s.EventTitle,
-                        SessionTitle = s.SessionTitle,
-                        SeatCode = s.SeatCode,
+                        EventTitle = x.EventTitle,
+                        SessionTitle = x.SessionTitle,
+                        SeatCode = x.SeatCode,
                     }));
 
                 // Flight/Accommodation/Transport are system slots on this same
                 // plan — already covered by the three sections above.
-                var planResult = await _serviceCatalogService.GetGuestServicePlanAsync(g.PublicId, ct);
+                var planResult = await _serviceCatalogService.GetGuestServicePlanAsync(eg.PublicId, ct);
                 detail.OtherServices.AddRange((planResult.Data?.Slots ?? new())
-                    .Where(s => !s.IsSystem)
-                    .Select(s => new GuestOverviewOtherServiceRow
+                    .Where(x => !x.IsSystem)
+                    .Select(x => new GuestOverviewOtherServiceRow
                     {
                         EventTitle = eventTitle,
-                        ServiceId = s.ServiceId,
-                        Name = s.Name,
-                        NameAr = s.NameAr,
-                        Icon = s.Icon,
-                        Status = s.Status,
-                        IsUnlocked = s.IsUnlocked,
-                        LockedReason = s.LockedReason,
-                        Entries = s.Entries,
+                        ServiceId = x.ServiceId,
+                        Name = x.Name,
+                        NameAr = x.NameAr,
+                        Icon = x.Icon,
+                        Status = x.Status,
+                        IsUnlocked = x.IsUnlocked,
+                        LockedReason = x.LockedReason,
+                        Entries = x.Entries,
                     }));
             }
 
@@ -403,7 +399,7 @@ public class GuestOverviewService(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving guest overview detail for guest {GuestId}", guestId);
+            _logger.LogError(ex, "Error retrieving guest overview detail for person {PersonId}", personId);
             return ApiResponse<GuestOverviewDetailResponse>.ServerErrorResponse("An error occurred while retrieving guest detail");
         }
     }

@@ -29,7 +29,9 @@ public interface ISupportChatService
     // the safe path when the admin's local list is stale and a conversation
     // already exists for this guest — it just continues that thread instead
     // of erroring or duplicating it.
-    Task<ApiResponse<SupportMessageResponse>> StartOrReplyByGuestAsync(Guid guestId, SendSupportMessageRequest request, CancellationToken ct = default);
+    /// <summary>Support chat is person-level (one thread per human), so
+    /// <paramref name="personId"/> is a Guest.PublicId — never an EventGuest id.</summary>
+    Task<ApiResponse<SupportMessageResponse>> StartOrReplyByGuestAsync(Guid personId, SendSupportMessageRequest request, CancellationToken ct = default);
     Task<ApiResponse<bool>> MarkReadByAdminAsync(Guid conversationId, CancellationToken ct = default);
     Task<ApiResponse<bool>> CloseAsync(Guid conversationId, CancellationToken ct = default);
     Task<ApiResponse<bool>> ReopenAsync(Guid conversationId, CancellationToken ct = default);

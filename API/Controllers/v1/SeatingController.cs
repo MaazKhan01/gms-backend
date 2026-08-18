@@ -1,4 +1,4 @@
-﻿using Core.Authorization;
+using Core.Authorization;
 using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
@@ -39,13 +39,14 @@ namespace API.Controllers.v1
             return ToResponse(result);
         }
 
-        // Every seat this guest currently holds, across sessions/scopes — used by
-        // the Guests screen to warn before deleting a seated guest.
-        [HttpGet("guest/{guestId:guid}")]
+        // Every seat this participation currently holds, across sessions/scopes —
+        // used by the Guests screen to warn before removing a seated guest.
+        // The path id is an EventGuest.PublicId: seating is per event.
+        [HttpGet("guest/{eventGuestId:guid}")]
         [HasPermission(PermissionCodes.SeatingView)]
-        public async Task<IActionResult> GetGuestSeatAssignments(Guid guestId, CancellationToken ct = default)
+        public async Task<IActionResult> GetGuestSeatAssignments(Guid eventGuestId, CancellationToken ct = default)
         {
-            var result = await _seatingService.GetGuestSeatAssignmentsAsync(guestId, ct);
+            var result = await _seatingService.GetGuestSeatAssignmentsAsync(eventGuestId, ct);
             return ToResponse(result);
         }
     }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,7 +11,9 @@ namespace Core.ViewModel.Meeting
 
         public Guid MeetId { get; set; }
         public Guid EventId { get; set; }
-        public List<Guid>? GuestIds { get; set; }
+        /// <summary>EventGuest.PublicIds. Null leaves attendees untouched; an
+        /// explicit empty list clears them.</summary>
+        public List<Guid>? EventGuestIds { get; set; }
         public string? Name { get; set; }
         public string? Location { get; set; }
         public TimeOnly? StartTime { get; set; }

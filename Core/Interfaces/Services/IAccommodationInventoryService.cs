@@ -53,9 +53,10 @@ public interface IAccommodationInventoryService
 
     // ── Enforcement (called by the accommodation save path) ──────────────────
     /// <summary>Null when the stay fits, otherwise the message to reject it with.
-    /// Ids are internal. Pass the accommodation being edited as
+    /// Ids are internal. The contract identifies both the event and the hotel, so
+    /// neither is passed separately. Pass the accommodation being edited as
     /// excludeAccommodationId so it doesn't count against itself.</summary>
     Task<string> CheckStayAvailabilityAsync(
-        int eventId, int hotelId, int? roomTypeId, DateOnly checkIn, DateOnly checkOut,
+        int eventHotelContractId, int? roomTypeId, DateOnly checkIn, DateOnly checkOut,
         int? excludeAccommodationId = null, CancellationToken ct = default);
 }

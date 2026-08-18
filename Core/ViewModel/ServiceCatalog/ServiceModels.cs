@@ -159,7 +159,8 @@ public class GuestServiceSlotResponse
 
 public class GuestServicePlanResponse
 {
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId — a service plan is per participation.</summary>
+    public Guid EventGuestId { get; set; }
     public Guid? ServiceLevelId { get; set; }
     public string ServiceLevelName { get; set; }
     public string ServiceLevelColor { get; set; }
@@ -184,7 +185,8 @@ public class GuestServicePlanResponse
 public class ServiceEntryRow
 {
     public Guid EntryId { get; set; }
-    public Guid GuestId { get; set; }
+    /// <summary>EventGuest.PublicId this entry belongs to.</summary>
+    public Guid EventGuestId { get; set; }
     public string GuestName { get; set; }
     public string PhotoUrl { get; set; }
     public string Email { get; set; }

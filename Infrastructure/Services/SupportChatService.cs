@@ -56,8 +56,10 @@ public class SupportChatService(
             return ApiResponse<List<SupportConversationSummaryResponse>>.SuccessResponse(new());
 
         var conversation = await _unitOfWork.SupportConversations.QueryNoTracking()
-            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.OrganizationRef)
             .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.Nationality)
+            // Tier/organisation live on the participation now; the inbox shows the
+            // person's most recent one (ordered in MapSummary).
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.OrganizationRef)
             .FirstOrDefaultAsync(c => c.UserId == guest.UserId && c.Type == SupportChatTypes.AdminSupport, ct);
 
         var data = new List<SupportConversationSummaryResponse>();
@@ -177,8 +179,10 @@ public class SupportChatService(
         var size = request?.PageSize > 0 ? request.PageSize : 20;
 
         var query = _unitOfWork.SupportConversations.QueryNoTracking()
-            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.OrganizationRef)
             .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.Nationality)
+            // Tier/organisation live on the participation now; the inbox shows the
+            // person's most recent one (ordered in MapSummary).
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.OrganizationRef)
             .Where(c => c.Type == SupportChatTypes.AdminSupport);
 
         if (request?.OnlyUnread == true)
@@ -195,13 +199,13 @@ public class SupportChatService(
         if (!string.IsNullOrWhiteSpace(request?.Tier))
         {
             var tier = request.Tier.ToLower();
-            query = query.Where(c => c.User.GuestProfile.Tier.ToLower() == tier);
+            query = query.Where(c => c.User.GuestProfile.EventGuests.Any(eg => eg.Tier != null && eg.Tier.ToLower() == tier));
         }
 
         if (request?.OrganizationId.HasValue == true && request.OrganizationId != Guid.Empty)
         {
             var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.OrganizationId.Value, ct);
-            query = query.Where(c => org != null && c.User.GuestProfile.OrganizationId == org.Id);
+            query = query.Where(c => org != null && c.User.GuestProfile.EventGuests.Any(eg => eg.OrganizationId == org.Id));
         }
 
         if (request?.NationalityId.HasValue == true && request.NationalityId != Guid.Empty)
@@ -271,13 +275,15 @@ public class SupportChatService(
     // send through the exact same path ReplyAsync uses. Safe to call even when a
     // conversation already exists for this guest (e.g. the admin's local list
     // was stale) — it just continues that thread rather than erroring or duplicating it.
-    public async Task<ApiResponse<SupportMessageResponse>> StartOrReplyByGuestAsync(Guid guestId, SendSupportMessageRequest request, CancellationToken ct = default)
+    /// <summary>Admin starts/continues the thread with a PERSON —
+    /// <paramref name="personId"/> is a Guest.PublicId, not a participation.</summary>
+    public async Task<ApiResponse<SupportMessageResponse>> StartOrReplyByGuestAsync(Guid personId, SendSupportMessageRequest request, CancellationToken ct = default)
     {
         var validation = ValidateSend(request);
         if (validation != null)
             return ApiResponse<SupportMessageResponse>.ErrorResponse(validation);
 
-        var guest = await _unitOfWork.Guests.GetByPublicIdAsync(guestId, ct);
+        var guest = await _unitOfWork.Guests.GetByPublicIdAsync(personId, ct);
         if (guest is null)
             return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest not found");
 
@@ -440,19 +446,19 @@ public class SupportChatService(
         else if (!string.IsNullOrWhiteSpace(request.RecipientRole))
         {
             // Role-based targeting is only meaningful for a guest reaching "a"
-            // driver — resolved via that guest's assignment pool. A driver has
+            // driver — resolved from the trips they've been driven on. A driver has
             // (potentially) many guests, so there's no equivalent implicit target.
             if (!isGuestSender || !string.Equals(request.RecipientRole, Roles.DRIVER, StringComparison.OrdinalIgnoreCase))
                 return ApiResponse<SupportMessageResponse>.ErrorResponse(
                     "recipientRole targeting is only supported for a guest messaging \"driver\" — a driver must specify recipientUserId");
 
-            var guestForAssignment = await _unitOfWork.Guests.FindFirstOrDefaultAsync(g => g.UserId == senderUserId, ct);
-            if (guestForAssignment is null)
-                return ApiResponse<SupportMessageResponse>.NotFoundResponse("Guest profile not found");
-
-            var assignedDriverIds = await _unitOfWork.GuestDriverAssignments.Query()
-                .Where(a => a.GuestId == guestForAssignment.Id)
-                .Select(a => a.DriverId)
+            // Transport owns the pairing (DriverId + EventGuestId), so this spans
+            // every event the person is on — chat is person-level and a driver on
+            // any of their trips is someone they can legitimately message.
+            var assignedDriverIds = await _unitOfWork.Transports.Query()
+                .Where(t => t.DriverId != null && t.EventGuest.Guest.UserId == senderUserId)
+                .Select(t => t.DriverId.Value)
+                .Distinct()
                 .ToListAsync(ct);
 
             if (assignedDriverIds.Count == 0)
@@ -472,6 +478,13 @@ public class SupportChatService(
         {
             return ApiResponse<SupportMessageResponse>.ErrorResponse("recipientUserId or recipientRole is required");
         }
+
+        // Both targeting paths land here: the pair must share at least one trip.
+        // Checked for explicit recipientUserId too — otherwise any driver token
+        // could open a thread with any guest.
+        if (!await AreDriverAndGuestLinkedAsync(driverUserId, guestUserId, ct))
+            return ApiResponse<SupportMessageResponse>.ForbiddenResponse(
+                "You can only message a guest you are assigned to drive");
 
         var conversation = await GetOrCreateConversationAsync(guestUserId, SupportChatTypes.DriverGuest, driverUserId, ct);
         if (conversation.Status == SupportChatStatuses.Closed)
@@ -517,6 +530,23 @@ public class SupportChatService(
         await NotifyDriverGuestRecipientAsync(recipientUserId, conversation, msg, senderName, ct);
 
         return ApiResponse<SupportMessageResponse>.SuccessResponse(MapMessage(msg, isMine: true, senderName), "Message sent");
+    }
+
+    /// <summary>Is this driver actually driving this guest? Transport is the only
+    /// record of the pairing — DriverId plus EventGuestId — so a live (non-deleted)
+    /// trip linking the two is what authorises the conversation. Person-level, not
+    /// per-event: one trip on any event is enough.</summary>
+    private async Task<bool> AreDriverAndGuestLinkedAsync(int driverUserId, int guestUserId, CancellationToken ct)
+    {
+        var driverProfileId = await _unitOfWork.DriverProfiles.Query()
+            .Where(d => d.UserId == driverUserId)
+            .Select(d => (int?)d.Id)
+            .FirstOrDefaultAsync(ct);
+        if (driverProfileId is null) return false;
+
+        return await _unitOfWork.Transports.Query()
+            .AnyAsync(t => t.DriverId == driverProfileId
+                && t.EventGuest.Guest.UserId == guestUserId, ct);
     }
 
     public async Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetDriverGuestThreadAsync(
@@ -688,6 +718,9 @@ public class SupportChatService(
     private static SupportConversationSummaryResponse MapSummary(SupportConversation c, int unreadCount)
     {
         var guestProfile = c.User.GuestProfile;
+        // Tier/organisation are per event; the inbox is person-level, so show the
+        // most recent participation's values rather than inventing a "current" one.
+        var latest = guestProfile?.EventGuests?.OrderByDescending(eg => eg.CreatedAt).FirstOrDefault();
         return new()
         {
             Id = c.PublicId,
@@ -700,9 +733,9 @@ public class SupportChatService(
             LastMessageAt = c.LastMessageAt,
             LastMessageFromGuest = c.LastMessageFromGuest,
             UnreadCount = unreadCount,
-            OrganizationName = guestProfile?.OrganizationRef?.Name ?? guestProfile?.Organization,
+            OrganizationName = latest?.OrganizationRef?.Name ?? latest?.Organization,
             NationalityName = guestProfile?.Nationality?.Name,
-            Tier = guestProfile?.Tier
+            Tier = latest?.Tier
         };
     }
 

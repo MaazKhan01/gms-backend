@@ -92,19 +92,27 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.ReviewedBy, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedUserId, opt => opt.Ignore());
 
-        // Guest mappings
-        CreateMap<Guest, GuestResponse>()
+        // Guest mappings — the source is the PARTICIPATION, not the person:
+        // GuestResponse.Id is EventGuest.PublicId (what every event-scoped route
+        // takes) and PersonId is the master Guest.PublicId.
+        CreateMap<EventGuest, GuestResponse>()
             .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.PublicId))
+            .ForMember(dest => dest.PersonId, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.PublicId : Guid.Empty))
+            .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.FirstName : null))
+            .ForMember(dest => dest.LastName, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.LastName : null))
+            .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.Email : null))
+            .ForMember(dest => dest.PhotoUrl, opt => opt.MapFrom(src => src.Guest != null ? src.Guest.PhotoUrl : null))
             .ForMember(dest => dest.EventId, opt => opt.MapFrom(src => src.Event != null ? src.Event.PublicId : Guid.Empty))
-            .ForMember(dest => dest.NationalityId, opt => opt.MapFrom(src => src.Nationality != null ? (Guid?)src.Nationality.PublicId : null))
+            .ForMember(dest => dest.NationalityId,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? (Guid?)src.Guest.Nationality.PublicId : null))
             .ForMember(dest => dest.SessionIds,
                 opt => opt.MapFrom(src => src.GuestSessions.Select(gs => gs.Session.PublicId).ToList()))
             .ForMember(dest => dest.NationalityName,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Name : null))
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Name : null))
             .ForMember(dest => dest.NationalityCode,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Code : null))
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Code : null))
             .ForMember(dest => dest.NationalityFlag,
-                opt => opt.MapFrom(src => src.Nationality != null ? src.Nationality.Flag : null))
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Flag : null))
             .ForMember(dest => dest.OrganizationId,
                 opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null))
             // Stored as JSON on the entity, a plain int list on the wire.
@@ -119,7 +127,11 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.ServiceLevelNameAr,
                 opt => opt.MapFrom(src => src.ServiceLevel != null ? src.ServiceLevel.NameAr : null))
             .ForMember(dest => dest.ServiceLevelColor,
-                opt => opt.MapFrom(src => src.ServiceLevel != null ? src.ServiceLevel.Color : null));
+                opt => opt.MapFrom(src => src.ServiceLevel != null ? src.ServiceLevel.Color : null))
+            // Set from the participation's Invitation row after mapping.
+            .ForMember(dest => dest.InvitationStatus, opt => opt.Ignore())
+            .ForMember(dest => dest.AccreditationStatus, opt => opt.Ignore())
+            .ForMember(dest => dest.InvitationTemplateId, opt => opt.Ignore());
 
         // Nationality mappings
         CreateMap<Nationality, NationalityResponse>()

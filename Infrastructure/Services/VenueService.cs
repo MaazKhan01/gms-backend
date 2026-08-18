@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using Azure;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -949,7 +949,7 @@ namespace Infrastructure.Services
                 // stale (deleting a guest should free their seat) and must never block
                 // a save just because the cleanup didn't happen for some other reason.
                 var seatAssignIds = (await _unitOfWork.SeatAssigns.Query()
-                    .Where(sa => ids.Contains(sa.SeatId) && sa.Guest.IsDeleted != true)
+                    .Where(sa => ids.Contains(sa.SeatId) && sa.EventGuest.IsDeleted != true)
                     .Select(sa => sa.SeatId)
                     .ToListAsync(ct)).ToHashSet();
                 var assigned = candidateRemovedSeats
@@ -1139,7 +1139,7 @@ namespace Infrastructure.Services
             // that should have been freed when the guest was deleted (see
             // GuestService.DeleteGuestByIdAsync) must never block this on their own.
             return await _unitOfWork.SeatAssigns.Query()
-                .AnyAsync(sa => seatIds.Contains(sa.SeatId) && sa.Guest.IsDeleted != true, ct);
+                .AnyAsync(sa => seatIds.Contains(sa.SeatId) && sa.EventGuest.IsDeleted != true, ct);
         }
 
         // Mark an entire box subtree (blocks/layouts → props → seats) for removal.

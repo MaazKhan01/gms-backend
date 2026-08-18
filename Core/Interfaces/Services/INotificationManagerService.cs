@@ -32,8 +32,22 @@ public interface INotificationManagerService
     // Every active user in the system.
     Task<IReadOnlyList<NotificationResponse>> BroadcastToAllUsersAsync(NotificationContent content, CancellationToken ct = default);
 
+    /// <summary>
+    /// Notifies a PERSON. <paramref name="guestId"/> is a <c>Guest.Id</c> — the
+    /// internal id of the master person record, which resolves to their linked
+    /// User and that user's devices.
+    /// </summary>
+    /// <remarks>
+    /// Never pass an <c>EventGuest.Id</c> here. Both are bare ints from the same
+    /// identity sequence, so the wrong one does not fail — it silently notifies
+    /// whichever unrelated person happens to hold that number. Callers holding a
+    /// participation (transport, seating, travel) must resolve
+    /// <c>EventGuest.GuestId</c> first.
+    /// </remarks>
     Task<GuestNotificationResponse> SendToGuestAsync(int guestId, NotificationContent content, CancellationToken ct = default);
 
+    /// <summary>Same contract as <see cref="SendToGuestAsync"/>: these are
+    /// <c>Guest.Id</c> values, never EventGuest ids.</summary>
     Task<IReadOnlyList<GuestNotificationResponse>> SendToGuestsAsync(IEnumerable<int> guestIds, NotificationContent content, CancellationToken ct = default);
 
     // Every Guest with NotificationsEnabled (their own in-app preference toggle —

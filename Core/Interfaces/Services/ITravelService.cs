@@ -17,7 +17,8 @@ public interface ITravelService
     Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default);
     // bookingId narrows the prefill to one specific Flight/Accommodation/Transport
     // (Services' per-booking Edit); omit it for the wizard's "most recent of each".
-    Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid guestId, Guid? bookingId = null, CancellationToken ct = default);
+    /// <summary>Travel is booked per event, so the id is an EventGuest.PublicId.</summary>
+    Task<ApiResponse<GuestTravelResponse>> GetGuestTravelAsync(Guid eventGuestId, Guid? bookingId = null, CancellationToken ct = default);
 
     // Per-event booking lists (one per travel tab).
     Task<ApiResponse<PaginatedResponse<EventFlightRow>>> GetEventFlightsAsync(Guid eventId, PagedRequest request, CancellationToken ct = default);
@@ -27,7 +28,7 @@ public interface ITravelService
     // Read-only arrivals/departures board. Its own method (and endpoint) so it
     // can be permission-gated separately from the Flights tab later on.
     Task<ApiResponse<PaginatedResponse<ArrivalDepartureRow>>> GetEventArrivalsDeparturesAsync(Guid eventId, ArrivalsDeparturesRequest request, CancellationToken ct = default);
-    Task<ApiResponse<bool>> SaveGuestTravelAsync(Guid guestId, GuestTravelRequest request, int userId, CancellationToken ct = default);
+    Task<ApiResponse<bool>> SaveGuestTravelAsync(Guid eventGuestId, GuestTravelRequest request, int userId, CancellationToken ct = default);
 
     // Remove one specific booking (a guest may have several of a kind).
     Task<ApiResponse<bool>> DeleteFlightAsync(Guid id, CancellationToken ct = default);

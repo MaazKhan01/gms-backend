@@ -10,7 +10,7 @@ namespace Core.Constants;
 /// </para>
 /// <para>
 /// <b>Flexible</b> is the pre-service-level flow: no levels, no capacity or
-/// required-field enforcement, and <c>Guest.Tier</c> is a plain string again.
+/// required-field enforcement, and <c>EventGuest.Tier</c> is a plain string again.
 /// One person appears at most once per event.
 /// </para>
 /// Stored on <c>Events.GuestModel</c> as one of these lowercase codes.

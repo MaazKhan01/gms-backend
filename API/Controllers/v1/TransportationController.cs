@@ -31,23 +31,22 @@ public class TransportationController(ITransportationScheduleService _schedule, 
     public async Task<IActionResult> CancelSchedule(Guid id, CancellationToken ct)
         => ToResponse(await _schedule.CancelScheduleAsync(id, _currentUser.UserId, ct));
 
-    [HttpGet("guest/{guestId:guid}")]
+    /// <summary>One participation's rides. The path id is an
+    /// <c>EventGuest.PublicId</c> (GuestResponse.id), not the person's id.</summary>
+    [HttpGet("guest/{eventGuestId:guid}")]
     [HasPermission(PermissionCodes.TransportationView)]
-    public async Task<IActionResult> GetGuestSchedule(Guid guestId, CancellationToken ct)
-        => ToResponse(await _schedule.GetGuestScheduleAsync(guestId, ct));
+    public async Task<IActionResult> GetGuestSchedule(Guid eventGuestId, CancellationToken ct)
+        => ToResponse(await _schedule.GetGuestScheduleAsync(eventGuestId, ct));
 
     [HttpGet("event/{eventId:guid}")]
     [HasPermission(PermissionCodes.TransportationView)]
     public async Task<IActionResult> GetEventSchedule(Guid eventId, [FromQuery] PagedRequest request, CancellationToken ct)
         => ToResponse(await _schedule.GetEventScheduleAsync(eventId, request, ct));
 
-    [HttpGet("guest/{guestId:guid}/drivers")]
+    /// <summary>The eligible-driver pool for one participation — path id is an
+    /// <c>EventGuest.PublicId</c>.</summary>
+    [HttpGet("guest/{eventGuestId:guid}/drivers")]
     [HasPermission(PermissionCodes.TransportationView)]
-    public async Task<IActionResult> GetAssignedDrivers(Guid guestId, CancellationToken ct)
-        => ToResponse(await _schedule.GetAssignedDriversAsync(guestId, ct));
-
-    [HttpPost("guest/{guestId:guid}/drivers")]
-    [HasPermission(PermissionCodes.TransportationAssign)]
-    public async Task<IActionResult> AssignDrivers(Guid guestId, [FromBody] AssignDriversRequest request, CancellationToken ct)
-        => ToResponse(await _schedule.AssignDriversToGuestAsync(guestId, request, _currentUser.UserId, ct));
+    public async Task<IActionResult> GetAssignedDrivers(Guid eventGuestId, CancellationToken ct)
+        => ToResponse(await _schedule.GetAssignedDriversAsync(eventGuestId, ct));
 }

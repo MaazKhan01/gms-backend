@@ -12,6 +12,8 @@ namespace Core.ViewModel.SupportChat;
 public class SupportConversationSummaryResponse
 {
     public Guid Id { get; set; }              // conversation PublicId
+    /// <summary>Guest.PublicId — support chat is person-level, one thread per
+    /// human, so this is never an EventGuest id.</summary>
     public Guid GuestId { get; set; }
     public string GuestName { get; set; }
     public string GuestEmail { get; set; }
@@ -57,8 +59,8 @@ public class SendDriverGuestMessageRequest
     public Guid? RecipientUserId { get; set; }
 
     // Target by role instead of a specific user — only meaningful for a Guest
-    // sender with RecipientRole = "driver" (resolved via that guest's
-    // GuestDriverAssignment pool). A Driver sender must always target a
+    // sender with RecipientRole = "driver" (resolved from the drivers on that
+    // guest's Transports). A Driver sender must always target a
     // specific guest (drivers can have many guests; there's no single implicit one).
     public string RecipientRole { get; set; }
 

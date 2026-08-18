@@ -14,6 +14,21 @@ namespace API.Controllers.v1;
 [ApiVersion("1.0")]
 public class GuestController(IGuestService _guestService, IImportBatchService _importBatchService, ICurrentUser _currentUser) : Controllers.BaseApiController
 {
+    // ── Frontend contract ────────────────────────────────────────────────────
+    // Every {id} on this controller is an EventGuest.PublicId: one person's
+    // participation in one event, which is what these screens create, edit,
+    // accredit and remove. It is what GuestResponse.id returns, and what the
+    // travel / seating / meetings / transport endpoints take.
+    //
+    // The person behind it is GuestResponse.personId (a Guest.PublicId) — stable
+    // across every event they attend, and what the guest-overview detail,
+    // notifications and support chat take instead.
+    //
+    // Adding someone to a second event is just POST with their existing email:
+    // the master Guest and their login are reused and only the participation is
+    // new. Posting an email that is already on THIS event is a 409
+    // (GUEST_ALREADY_ON_EVENT). Email cannot be changed on PUT.
+
     [HttpGet]
     //[HasPermission(PermissionCodes.GuestsView)]
     public async Task<IActionResult> GetGuests([FromQuery] Guid eventId, [FromQuery] GuestPagedRequest request, CancellationToken ct)

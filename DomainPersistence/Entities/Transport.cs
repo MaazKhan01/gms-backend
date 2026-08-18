@@ -3,7 +3,7 @@ namespace DomainPersistence.Entities;
 /// <summary>A guest's ground transport.</summary>
 public class Transport : Entity
 {
-    public int GuestId { get; set; }
+    public int EventGuestId { get; set; }
     public int? PickupLocationId { get; set; }
     public int? DropoffLocationId { get; set; }
     public int? VehicleId { get; set; }       // -> Vehicles (the assigned car, not its category)
@@ -28,7 +28,7 @@ public class Transport : Entity
     public decimal? TotalFare { get; set; }
     public string Currency { get; set; }
 
-    public virtual Guest Guest { get; set; }
+    public virtual EventGuest EventGuest { get; set; }
     public virtual Location PickupLocation { get; set; }
     public virtual Location DropoffLocation { get; set; }
     public virtual Vehicle Vehicle { get; set; }
