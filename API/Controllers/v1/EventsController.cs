@@ -90,7 +90,8 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     public async Task<IActionResult> UpdateEvent(Guid id, [FromBody] UpdateEventRequest request, CancellationToken ct)
         => ToResponse(await _eventService.UpdateEventAsync(id, request, _currentUser.UserId, ct));
 
-    [HttpPatch("{id:guid}/status")]
+
+    [HttpPut("{id:guid}/status")]
     [HasPermission(PermissionCodes.EventsManageStatus)]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateEventStatusRequest request, CancellationToken ct)
         => ToResponse(await _eventService.UpdateStatusAsync(id, request.Status, _currentUser.UserId, ct));
