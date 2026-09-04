@@ -153,6 +153,13 @@ public class TransportationResponse
     public DateTime? PickupTime { get; set; }
     public string ToAddress { get; set; }
     public DateTime? EstimatedArrival { get; set; }
+    /// <summary>Pickup / drop-off coordinates so the app can pin the ride on a
+    /// map. Strings because that is how Locations stores them; null when the
+    /// point has no location row or was never geocoded.</summary>
+    public string FromLatitude { get; set; }
+    public string FromLongitude { get; set; }
+    public string ToLatitude { get; set; }
+    public string ToLongitude { get; set; }
     public string VehicleType { get; set; }
     public string TripStatus { get; set; }  // On Time
     /// <summary>The concrete car assigned, when dispatch has picked one. Null

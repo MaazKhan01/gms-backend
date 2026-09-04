@@ -881,6 +881,10 @@ public class VipAppService(
         Id = t.PublicId,
         FromAddress = t.PickupLocation?.Address,
         ToAddress = t.DropoffLocation?.Address,
+        FromLatitude = t.PickupLocation?.Latitude,
+        FromLongitude = t.PickupLocation?.Longitude,
+        ToLatitude = t.DropoffLocation?.Latitude,
+        ToLongitude = t.DropoffLocation?.Longitude,
         PickupTime = t.PickupTime,
         // Guest app labels this "estimated arrival"; the planned drop-off time is
         // what that means now.
@@ -926,8 +930,12 @@ public class VipAppService(
         if (trips is null) return ApiResponse<List<TransportationResponse>>.NotFoundResponse("Guest not found");
 
         var today = DateTime.UtcNow.Date;
+        // A finished ride is off the guest's day — the screen is "what's left
+        // today", so completed jobs drop out as soon as the driver closes them.
+        // Cancelled ones stay: the guest needs to see their ride was called off.
         var data = trips
             .Where(t => t.PickupTime?.Date == today)
+            .Where(t => !string.Equals(t.TripStatus, TransportStatuses.Completed, StringComparison.OrdinalIgnoreCase))
             .OrderBy(t => t.PickupTime)
             .Select(MapTransport).ToList();
 
@@ -946,7 +954,12 @@ public class VipAppService(
         // up twice. Of what's left: still-open and later = upcoming, the rest
         // (past dates, completed, cancelled) = history. No pickup time yet counts
         // as upcoming — it hasn't happened.
-        var rest = trips.Where(t => t.PickupTime?.Date != today).ToList();
+        // …except today's completed rides: /transportation/today drops those, so
+        // without this they would fall out of the app entirely.
+        var rest = trips
+            .Where(t => t.PickupTime?.Date != today
+                        || string.Equals(t.TripStatus, TransportStatuses.Completed, StringComparison.OrdinalIgnoreCase))
+            .ToList();
         bool IsUpcoming(Transport t) =>
             t.PickupTime is null
             || (t.PickupTime.Value.Date > today
