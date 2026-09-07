@@ -11,6 +11,7 @@ using Core.Interfaces.Services;
 using Core.ViewModel.AccountRequest;
 using Core.ViewModel.Auth;
 using Core.ViewModel.Common;
+using Core.ViewModel.User;
 using DomainPersistence.Entities;
 
 namespace API.Controllers.v1;
@@ -22,12 +23,14 @@ public class AuthController : Controllers.BaseApiController
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthService _authService;
     private readonly ICurrentUser _currentUser;
+    private readonly IUserService _userService;
 
-    public AuthController(IUnitOfWork unitOfWork, IAuthService authService, ICurrentUser currentUser)
+    public AuthController(IUnitOfWork unitOfWork, IAuthService authService, ICurrentUser currentUser, IUserService userService)
     {
         _unitOfWork = unitOfWork;
         _authService = authService;
         _currentUser = currentUser;
+        _userService = userService;
     }
 
     [HttpPost("login")]
@@ -135,4 +138,38 @@ public class AuthController : Controllers.BaseApiController
         var result = await _authService.ValidateToken(token, ct);
         return ToResponse(result);
     }
+
+    // Open (unauthenticated) user creation: email + full name + role name.
+    // Password is optional — leave it out and the user gets in via
+    // forgot-password or POST /v1/users/{id}/admin-set-password.
+    // [HttpPost("create-user")]
+    // [AllowAnonymous]
+    // [EnableRateLimiting("auth")]
+    // public async Task<IActionResult> CreateUser([FromBody] QuickCreateUserRequest request, CancellationToken ct)
+    // {
+    //     if (string.IsNullOrWhiteSpace(request?.Email) ||
+    //         string.IsNullOrWhiteSpace(request.Name) ||
+    //         string.IsNullOrWhiteSpace(request.Role))
+    //         return ToResponse(ApiResponse<UserResponse>.ErrorResponse("Email, name and role are all required"));
+
+    //     var roleKey = request.Role.Trim().ToLower();
+    //     var role = await _unitOfWork.Roles.FindFirstOrDefaultAsync(
+    //         r => r.Code.ToLower() == roleKey || r.Name.ToLower() == roleKey, ct);
+    //     if (role == null)
+    //         return ToResponse(ApiResponse<UserResponse>.NotFoundResponse($"Role '{request.Role}' not found"));
+
+    //     // ponytail: first token is the first name, the rest is the last name.
+    //     var parts = request.Name.Trim().Split(' ', 2);
+
+    //     var result = await _userService.CreateUserAsync(new CreateUserRequest
+    //     {
+    //         FirstName = parts[0],
+    //         LastName = parts.Length > 1 ? parts[1].Trim() : string.Empty,
+    //         Email = request.Email,
+    //         Password = request.Password,
+    //         RoleId = role.PublicId
+    //     }, ct);
+
+    //     return ToResponse(result);
+    // }
 }
