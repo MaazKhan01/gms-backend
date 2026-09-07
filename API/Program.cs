@@ -94,7 +94,7 @@ app.MapOpenApi("/openapi/{documentName}.json");
 app.MapScalarApiReference("/scalar", options =>
 {
     options
-        .WithTitle("GMS API")
+        .WithTitle("DMS API")
         .WithOpenApiRoutePattern("/openapi/{documentName}.json")
         .AddPreferredSecuritySchemes("Bearer");
 });
@@ -102,7 +102,7 @@ app.MapScalarApiReference("/scalar", options =>
 // Swagger UI served against the same native OpenAPI doc.
 app.UseSwaggerUI(options =>
 {
-    options.SwaggerEndpoint("/openapi/v1.json", "GMS API v1");
+    options.SwaggerEndpoint("/openapi/v1.json", "DMS API v1");
     options.RoutePrefix = "swagger";
     // Keeps the Authorize token in browser localStorage, so a reload doesn't
     // log you out of the UI. Dev convenience only — the token is in the browser.
