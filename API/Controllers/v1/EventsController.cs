@@ -20,7 +20,11 @@ public class EventsController(IEventService _eventService, IImportBatchService _
 {
 
     [HttpGet]
-    //[HasPermission(PermissionCodes.EventsView)]
+    // Deliberately open to any signed-in user, not gated on Events.
+    // The mission switcher sits in the app chrome on every screen, and every
+    // mission-scoped module needs the list to resolve the active mission — so
+    // gating this would break all of them for anyone without the Missions menu.
+    // Reading the list is not sensitive; every write below is gated.
     public async Task<IActionResult> GetEvents(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 20,
@@ -34,7 +38,7 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     }
 
     [HttpGet("{id:guid}")]
-    [HasPermission(PermissionCodes.EventsView)]
+    [HasPermission(PermissionCodes.Events)]
     public async Task<IActionResult> GetEventById(Guid id, CancellationToken ct)
         => ToResponse(await _eventService.GetEventByIdAsync(id, ct));
 
@@ -43,12 +47,12 @@ public class EventsController(IEventService _eventService, IImportBatchService _
         => ToResponse(await _eventService.GetEventTypesAsync(ct));
 
     [HttpPost("types")]
-    [HasPermission(PermissionCodes.EventsCreate)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> CreateEventType([FromBody] CreateEventTypeRequest request, CancellationToken ct)
         => ToResponse(await _eventService.CreateEventTypeAsync(request, _currentUser.UserId, ct));
 
     [HttpGet("import-template")]
-    [HasPermission(PermissionCodes.EventsCreate)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> GetImportTemplate(CancellationToken ct)
     {
         var bytes = await _eventService.BuildImportTemplateAsync(ct);
@@ -56,7 +60,7 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     }
 
     [HttpPost("import")]
-    [HasPermission(PermissionCodes.EventsCreate)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     [RequestSizeLimit(20_000_000)]
     public async Task<IActionResult> ImportEvents(IFormFile file, CancellationToken ct)
     {
@@ -71,12 +75,12 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     // Polled by the frontend after StartEventsImportAsync returns — the actual
     // import runs as a Hangfire job, so the user never waits on this request.
     [HttpGet("import/{batchId:guid}")]
-    [HasPermission(PermissionCodes.EventsCreate)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> GetImportBatchStatus(Guid batchId, CancellationToken ct)
         => ToResponse(await _importBatchService.GetStatusAsync(batchId, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.EventsCreate)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> CreateEvent([FromBody] CreateEventRequest request, CancellationToken ct)
     {
         var result = await _eventService.CreateEventAsync(request, _currentUser.UserId, ct);
@@ -86,18 +90,18 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     }
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.EventsUpdate)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> UpdateEvent(Guid id, [FromBody] UpdateEventRequest request, CancellationToken ct)
         => ToResponse(await _eventService.UpdateEventAsync(id, request, _currentUser.UserId, ct));
 
 
     [HttpPut("{id:guid}/status")]
-    [HasPermission(PermissionCodes.EventsManageStatus)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateEventStatusRequest request, CancellationToken ct)
         => ToResponse(await _eventService.UpdateStatusAsync(id, request.Status, _currentUser.UserId, ct));
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.EventsDelete)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> DeleteEvent(Guid id, CancellationToken ct)
         => ToResponse(await _eventService.DeleteEventAsync(id, _currentUser.UserId, ct));
 
@@ -109,17 +113,17 @@ public class EventsController(IEventService _eventService, IImportBatchService _
         => ToResponse(await _eventService.GetSessionsAsync(id, ct));
 
     [HttpPost("{id:guid}/sessions")]
-    [HasPermission(PermissionCodes.EventsManageSessions)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> AddSession(Guid id, [FromBody] CreateSessionRequest request, CancellationToken ct)
         => ToResponse(await _eventService.AddSessionAsync(id, request, _currentUser.UserId, ct));
 
     [HttpPut("{id:guid}/sessions/{sessionId:guid}")]
-    [HasPermission(PermissionCodes.EventsManageSessions)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> UpdateSession(Guid id, Guid sessionId, [FromBody] UpdateSessionRequest request, CancellationToken ct)
         => ToResponse(await _eventService.UpdateSessionAsync(id, sessionId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{id:guid}/sessions/{sessionId:guid}")]
-    [HasPermission(PermissionCodes.EventsManageSessions)]
+    [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> DeleteSession(Guid id, Guid sessionId, CancellationToken ct)
         => ToResponse(await _eventService.DeleteSessionAsync(id, sessionId, _currentUser.UserId, ct));
 }

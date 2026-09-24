@@ -48,17 +48,17 @@ public class SupportChatController(ISupportChatService _supportChat, ICurrentGue
 
     // ================= Admin side — inbox across all guests =================
     [HttpGet("conversations")]
-    [HasPermission(PermissionCodes.SupportChatView)]
+    [HasPermission(PermissionCodes.SupportChat)]
     public async Task<IActionResult> GetConversations([FromQuery] SupportConversationPagedRequest request, CancellationToken ct)
         => ToResponse(await _supportChat.GetConversationsAsync(request, ct));
 
     [HttpGet("conversations/{conversationId:guid}/messages")]
-    [HasPermission(PermissionCodes.SupportChatView)]
+    [HasPermission(PermissionCodes.SupportChat)]
     public async Task<IActionResult> GetMessages(Guid conversationId, [FromQuery] PagedRequest request, CancellationToken ct)
         => ToResponse(await _supportChat.GetMessagesAsync(conversationId, request, ct));
 
     [HttpPost("conversations/{conversationId:guid}/messages"), EnableRateLimiting("chat")]
-    [HasPermission(PermissionCodes.SupportChatManage)]
+    [HasPermission(PermissionCodes.SupportChat, AccessLevel.Write)]
     public async Task<IActionResult> Reply(Guid conversationId, [FromBody] SendSupportMessageRequest request, CancellationToken ct)
         => ToResponse(await _supportChat.ReplyAsync(conversationId, request, ct));
 
@@ -68,22 +68,22 @@ public class SupportChatController(ISupportChatService _supportChat, ICurrentGue
     // Person-level: one support thread per human, not per event. The path id is
     // a Guest.PublicId (GuestResponse.personId).
     [HttpPost("conversations/by-guest/{personId:guid}/messages"), EnableRateLimiting("chat")]
-    [HasPermission(PermissionCodes.SupportChatManage)]
+    [HasPermission(PermissionCodes.SupportChat, AccessLevel.Write)]
     public async Task<IActionResult> StartOrReply(Guid personId, [FromBody] SendSupportMessageRequest request, CancellationToken ct)
         => ToResponse(await _supportChat.StartOrReplyByGuestAsync(personId, request, ct));
 
     [HttpPost("conversations/{conversationId:guid}/read")]
-    [HasPermission(PermissionCodes.SupportChatManage)]
+    [HasPermission(PermissionCodes.SupportChat, AccessLevel.Write)]
     public async Task<IActionResult> MarkRead(Guid conversationId, CancellationToken ct)
         => ToResponse(await _supportChat.MarkReadByAdminAsync(conversationId, ct));
 
     [HttpPost("conversations/{conversationId:guid}/close")]
-    [HasPermission(PermissionCodes.SupportChatManage)]
+    [HasPermission(PermissionCodes.SupportChat, AccessLevel.Write)]
     public async Task<IActionResult> Close(Guid conversationId, CancellationToken ct)
         => ToResponse(await _supportChat.CloseAsync(conversationId, ct));
 
     [HttpPost("conversations/{conversationId:guid}/reopen")]
-    [HasPermission(PermissionCodes.SupportChatManage)]
+    [HasPermission(PermissionCodes.SupportChat, AccessLevel.Write)]
     public async Task<IActionResult> Reopen(Guid conversationId, CancellationToken ct)
         => ToResponse(await _supportChat.ReopenAsync(conversationId, ct));
 }

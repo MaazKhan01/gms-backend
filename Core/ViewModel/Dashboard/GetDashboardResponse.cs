@@ -31,6 +31,9 @@ namespace Core.ViewModel.Dashboard
 
         /// <summary>Arrival/departure counts per day, for the movements chart.</summary>
         public List<DashboardDayCountDto> Movements { get; set; } = new();
+
+        /// <summary>The mission read as one sequence, phase by phase.</summary>
+        public MissionJourneyDto Journey { get; set; } = new();
     }
 
     public class DashboardRsvpDto

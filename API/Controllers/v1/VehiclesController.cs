@@ -48,17 +48,17 @@ public class VehiclesController(IVehicleService _vehicles, ICurrentUser _current
         => ToResponse(await _vehicles.GetByIdAsync(id, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> Create([FromBody] CreateVehicleRequest request, CancellationToken ct)
         => ToResponse(await _vehicles.CreateAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateVehicleRequest request, CancellationToken ct)
         => ToResponse(await _vehicles.UpdateAsync(id, request, _currentUser.UserId, ct));
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         => ToResponse(await _vehicles.DeleteAsync(id, _currentUser.UserId, ct));
 }

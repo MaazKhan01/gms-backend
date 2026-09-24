@@ -23,8 +23,17 @@ public class ApiResponse<T>
     public static ApiResponse<T> SuccessResponse(T data, string message = "Operation successful")
         => new() { Success = true, Message = message, Data = data, StatusCode = 200 };
 
+    /// <summary>A rejected request — failed validation or a rule the caller broke.
+    /// 400, not 200: the frontend's response interceptor unwraps any 2xx as a
+    /// success and hands the caller <c>data</c>, so returning 200 here made a
+    /// validation failure look like a save that returned null.</summary>
     public static ApiResponse<T> ErrorResponse(string message, List<string> errors = null)
-        => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 200 };
+        => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 400 };
+
+    /// <summary>Same, with a machine-readable code for callers that branch on the
+    /// failure rather than display it.</summary>
+    public static ApiResponse<T> ErrorResponse(string message, string errorCode, List<string> errors = null)
+        => new() { Success = false, Message = message, ErrorCode = errorCode, Errors = errors ?? new(), StatusCode = 400 };
 
     public static ApiResponse<T> NotFoundResponse(string message, List<string> errors = null)
         => new() { Success = false, Message = message, Errors = errors ?? new(), StatusCode = 404 };

@@ -16,22 +16,22 @@ public class InvitationTemplateController(
     ICurrentUser _currentUser) : Controllers.BaseApiController
 {
     [HttpGet]
-    [HasPermission(PermissionCodes.InvitationsView)]
+    [HasPermission(PermissionCodes.TemplateBuilder)]
     public async Task<IActionResult> GetByEvent([FromQuery] Guid eventId, CancellationToken ct)
         => ToResponse(await _templateService.GetByEventAsync(eventId, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.InvitationsManageTemplates)]
+    [HasPermission(PermissionCodes.TemplateBuilder, AccessLevel.Write)]
     public async Task<IActionResult> Create([FromBody] CreateInvitationTemplateRequest request, CancellationToken ct)
         => ToResponse(await _templateService.CreateAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.InvitationsManageTemplates)]
+    [HasPermission(PermissionCodes.TemplateBuilder, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateInvitationTemplateRequest request, CancellationToken ct)
         => ToResponse(await _templateService.UpdateAsync(id, request, _currentUser.UserId, ct));
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.InvitationsManageTemplates)]
+    [HasPermission(PermissionCodes.TemplateBuilder, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         => ToResponse(await _templateService.DeleteAsync(id, _currentUser.UserId, ct));
 }

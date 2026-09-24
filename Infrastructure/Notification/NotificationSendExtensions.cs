@@ -1,3 +1,4 @@
+using Core.Authorization;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,8 +40,9 @@ public static class NotificationSendExtensions
 
     public static Task<IReadOnlyList<NotificationResponse>> SendToPermissionAsync(
         this INotificationManagerService notifications,
-        string permissionCode, string templateCode, IDictionary<string, string> tokens = null, CancellationToken ct = default)
-        => notifications.SendToPermissionAsync(permissionCode, NotificationTemplates.Build(templateCode, tokens), ct);
+        string permissionCode, AccessLevel level, string templateCode,
+        IDictionary<string, string> tokens = null, CancellationToken ct = default)
+        => notifications.SendToPermissionAsync(permissionCode, level, NotificationTemplates.Build(templateCode, tokens), ct);
 
     public static Task<GuestNotificationResponse> SendToGuestAsync(
         this INotificationManagerService notifications,

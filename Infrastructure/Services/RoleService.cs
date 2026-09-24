@@ -141,8 +141,6 @@ public class RoleService : IRoleService
             for (int i = 0; i < roles.Count; i++)
             {
                 response[i].UserCount = userCounts.FirstOrDefault(x => x.RoleId == roles[i].Id)?.Count ?? 0;
-                // Nulled, not empty: the DTO omits it when null.
-                response[i].Permissions = null;
             }
 
             return ApiResponse<List<RoleResponse>>.SuccessResponse(response, $"Retrieved {roles.Count} roles");

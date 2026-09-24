@@ -1275,5 +1275,47 @@ namespace Infrastructure.Services
             return ApiResponse<ElementTypeDto>.SuccessResponse(
                 new ElementTypeDto { Id = entity.PublicId, Code = entity.Code, Name = entity.Name, NameAr = entity.NameAr }, "Element type created");
         }
+
+        public async Task<ApiResponse<ElementTypeDto>> UpdateElementTypeAsync(Guid id, UpdateElementTypeRequest request, int userId, CancellationToken ct)
+        {
+            if (id == Guid.Empty)
+                return ApiResponse<ElementTypeDto>.ErrorResponse("Element type id is required.");
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return ApiResponse<ElementTypeDto>.ErrorResponse("Name is required");
+
+            var entity = await _unitOfWork.ElementTypes.Query().FirstOrDefaultAsync(x => x.PublicId == id, ct);
+            if (entity == null)
+                return ApiResponse<ElementTypeDto>.NotFoundResponse("Element type not found.");
+
+            entity.Code = request.Code?.Trim();
+            entity.Name = request.Name.Trim();
+            entity.NameAr = request.NameAr?.Trim();
+            if (userId != 0) entity.SetUpdateAudit(userId);
+
+            _unitOfWork.ElementTypes.Update(entity);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<ElementTypeDto>.SuccessResponse(
+                new ElementTypeDto { Id = entity.PublicId, Code = entity.Code, Name = entity.Name, NameAr = entity.NameAr }, "Element type updated");
+        }
+
+        public async Task<ApiResponse<bool>> DeleteElementTypeAsync(Guid id, int userId, CancellationToken ct)
+        {
+            if (id == Guid.Empty)
+                return ApiResponse<bool>.ErrorResponse("Element type id is required.");
+
+            var entity = await _unitOfWork.ElementTypes.Query().FirstOrDefaultAsync(x => x.PublicId == id, ct);
+            if (entity == null)
+                return ApiResponse<bool>.NotFoundResponse("Element type not found.");
+
+            // Soft delete only. VenueLayout.Type stores the *code* as a plain string
+            // with no FK, so removing the palette row never orphans an existing
+            // layout — already-placed elements keep rendering off their stored code.
+            entity.MarkAsDeleted(userId);
+            _unitOfWork.ElementTypes.Update(entity);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return ApiResponse<bool>.SuccessResponse(true, "Element type deleted");
+        }
     }
 }

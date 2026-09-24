@@ -21,6 +21,19 @@ public partial class ApplicationDBContext : DbContext
 
     // Venue reference data
     public virtual DbSet<VenueType> VenueTypes { get; set; }
+    public virtual DbSet<Department> Departments { get; set; }
+
+    // mission domain
+    public virtual DbSet<HostInvitation> HostInvitations { get; set; }
+    public virtual DbSet<NominationLetter> NominationLetters { get; set; }
+    public virtual DbSet<NominationLetterVersion> NominationLetterVersions { get; set; }
+    public virtual DbSet<NominationLetterHistory> NominationLetterHistory { get; set; }
+    public virtual DbSet<ReadinessWaiver> ReadinessWaivers { get; set; }
+    public virtual DbSet<Incident> Incidents { get; set; }
+    public virtual DbSet<FieldDecision> FieldDecisions { get; set; }
+    public virtual DbSet<PostMissionReport> PostMissionReports { get; set; }
+    public virtual DbSet<CombinedReport> CombinedReports { get; set; }
+    public virtual DbSet<GatheringNotification> GatheringNotifications { get; set; }
     public virtual DbSet<ElementType> ElementTypes { get; set; }
 
     // Notifications
@@ -78,6 +91,10 @@ public partial class ApplicationDBContext : DbContext
             // Defaults to allowed so existing roles keep working; the driver role
             // has to be flipped off explicitly.
             entity.Property(e => e.PortalAccess).HasDefaultValue(true);
+            // Marks the roles a delegate can hold, so nomination lists only those
+            // rather than every portal role. Defaults off: a role is an ordinary
+            // staff role unless someone says otherwise.
+            entity.Property(e => e.IsDelegateRole).HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
         });
 
@@ -85,19 +102,35 @@ public partial class ApplicationDBContext : DbContext
         modelBuilder.Entity<Permission>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.Code).IsUnique();
+            // Unique among non-deleted rows only: a retired menu keeps its code
+            // in the table, and re-adding it must not collide with the tombstone.
+            entity.HasIndex(e => e.Code).IsUnique().HasFilter("[IsDeleted] = 0");
             entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Code).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.Module).HasMaxLength(100);
+            entity.Property(e => e.NameAr).HasMaxLength(200);
             entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.Icon).HasMaxLength(50);
+            entity.Property(e => e.Path).HasMaxLength(200);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            // RESTRICT: retiring a parent that still has children is a data error,
+            // not something to cascade away silently.
+            entity.HasOne(e => e.Parent)
+                .WithMany(e => e.Children)
+                .HasForeignKey(e => e.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.ParentId, e.SortOrder });
         });
 
         // RolePermission
         modelBuilder.Entity<RolePermission>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => new { e.RoleId, e.PermissionId }).IsUnique();
+            // Filtered: a revoke clears the flags rather than deleting the row, but
+            // anything that did soft-delete one must not block the next grant.
+            entity.HasIndex(e => new { e.RoleId, e.PermissionId }).IsUnique().HasFilter("[IsDeleted] = 0");
+            entity.Property(e => e.CanRead).HasDefaultValue(false);
+            entity.Property(e => e.CanWrite).HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.HasOne(d => d.Role)
                 .WithMany(p => p.RolePermissions)

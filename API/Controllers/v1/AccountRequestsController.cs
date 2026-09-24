@@ -19,7 +19,7 @@ public class AccountRequestsController(IAccountRequestService _service, ICurrent
     : Controllers.BaseApiController
 {
     [HttpGet]
-    [HasPermission(PermissionCodes.AccountRequestsView)]
+    [HasPermission(PermissionCodes.AccountRequests)]
     public async Task<IActionResult> GetRequests(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 20,
@@ -33,12 +33,12 @@ public class AccountRequestsController(IAccountRequestService _service, ICurrent
     }
 
     [HttpPost("{id:guid}/approve")]
-    [HasPermission(PermissionCodes.AccountRequestsManage)]
+    [HasPermission(PermissionCodes.AccountRequests, AccessLevel.Write)]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveAccountRequest decision, CancellationToken ct)
         => ToResponse(await _service.ApproveAsync(id, decision, _currentUser.UserId, ct));
 
     [HttpPost("{id:guid}/reject")]
-    [HasPermission(PermissionCodes.AccountRequestsManage)]
+    [HasPermission(PermissionCodes.AccountRequests, AccessLevel.Write)]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectAccountRequest decision, CancellationToken ct)
         => ToResponse(await _service.RejectAsync(id, decision, _currentUser.UserId, ct));
 }

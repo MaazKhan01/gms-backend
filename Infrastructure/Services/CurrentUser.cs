@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Core.Authorization;
 using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Repositories;
@@ -123,13 +124,24 @@ public class CurrentUser : ICurrentUser
     // and an endpoint's [HasPermission] can never disagree. Note this reads the
     // TOKEN, not the DB: a permission granted after the token was issued only
     // takes effect on refresh — identical to how every [HasPermission] behaves.
-    public bool HasPermission(string permissionCode)
-    {
-        if (string.IsNullOrWhiteSpace(permissionCode)) return false;
+    public bool CanRead(string permissionCode) => HasAccess(permissionCode, AccessLevel.Read);
 
+    public bool CanWrite(string permissionCode) => HasAccess(permissionCode, AccessLevel.Write);
+
+    // Same claims PermissionAuthorizationHandler reads, run through the same
+    // evaluator, so an in-service check and an endpoint's [HasPermission] can
+    // never disagree. Note this reads the TOKEN, not the DB: access granted after
+    // the token was issued only takes effect on refresh — identical to how
+    // [HasPermission] behaves.
+    private bool HasAccess(string permissionCode, AccessLevel level)
+    {
         var user = _httpContextAccessor.HttpContext?.User;
         if (user?.Identity?.IsAuthenticated != true) return false;
 
-        return user.FindAll("permission").Any(c => c.Value == permissionCode);
+        return AccessEvaluator.Allows(
+            user.FindAll(AccessClaims.Read).Select(c => c.Value),
+            user.FindAll(AccessClaims.Write).Select(c => c.Value),
+            permissionCode,
+            level);
     }
 }

@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Core.Common;
 using Core.Common.Interfaces;
+using Core.Authorization;
 using Core.Constants;
 using Core.Constants.Notification;
 using Core.Interfaces.Repositories;
@@ -60,6 +61,7 @@ public class SupportChatService(
             // Tier/organisation live on the participation now; the inbox shows the
             // person's most recent one (ordered in MapSummary).
             .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.ServiceLevel)
             .FirstOrDefaultAsync(c => c.UserId == guest.UserId && c.Type == SupportChatTypes.AdminSupport, ct);
 
         var data = new List<SupportConversationSummaryResponse>();
@@ -183,6 +185,7 @@ public class SupportChatService(
             // Tier/organisation live on the participation now; the inbox shows the
             // person's most recent one (ordered in MapSummary).
             .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.OrganizationRef)
+            .Include(c => c.User).ThenInclude(u => u.GuestProfile).ThenInclude(g => g.EventGuests).ThenInclude(eg => eg.ServiceLevel)
             .Where(c => c.Type == SupportChatTypes.AdminSupport);
 
         if (request?.OnlyUnread == true)
@@ -199,7 +202,8 @@ public class SupportChatService(
         if (!string.IsNullOrWhiteSpace(request?.Tier))
         {
             var tier = request.Tier.ToLower();
-            query = query.Where(c => c.User.GuestProfile.EventGuests.Any(eg => eg.Tier != null && eg.Tier.ToLower() == tier));
+            query = query.Where(c => c.User.GuestProfile.EventGuests.Any(
+                eg => eg.ServiceLevel != null && eg.ServiceLevel.Code.ToLower() == tier));
         }
 
         if (request?.OrganizationId.HasValue == true && request.OrganizationId != Guid.Empty)
@@ -608,15 +612,15 @@ public class SupportChatService(
         return conversation;
     }
 
-    // Every User holding SupportChatManage is notified — not a hardcoded single
-    // admin id, so granting the permission to a second User is the entire
-    // "add another admin" story. Persistence + realtime push both happen inside
+    // Every User whose role can WRITE Support Chat is notified — not a hardcoded
+    // single admin id, so granting that to a second role is the entire "add
+    // another admin" story. Persistence + realtime push both happen inside
     // INotificationManagerService.SendToPermissionAsync — this is just the content.
     private async Task NotifyAdminsAsync(SupportConversation conversation, SupportMessage msg, CancellationToken ct)
     {
         try
         {
-            await _notificationManagerService.SendToPermissionAsync(PermissionCodes.SupportChatManage,
+            await _notificationManagerService.SendToPermissionAsync(PermissionCodes.SupportChat, AccessLevel.Write,
                 NotificationTemplates.SupportMessageNew, ChatTokens(conversation, msg), ct);
         }
         catch (Exception ex)
@@ -735,7 +739,7 @@ public class SupportChatService(
             UnreadCount = unreadCount,
             OrganizationName = latest?.OrganizationRef?.Name ?? latest?.Organization,
             NationalityName = guestProfile?.Nationality?.Name,
-            Tier = latest?.Tier
+            Tier = latest?.ServiceLevel?.Code
         };
     }
 

@@ -1,93 +1,42 @@
 using System;
-using Core.Common;
 
 namespace Core.Constants;
 
 /// <summary>
-/// Built-in GMS roles and their default permission sets. The seeder creates any
-/// missing role with these permissions; existing roles are left untouched so
-/// admin edits via the Roles UI are not clobbered. "Manager" naming throughout.
+/// Built-in DMS roles. What each role can SEE and CHANGE is not listed here any
+/// more — that lives in RolePermissions, managed through the Role Access screen,
+/// with the Permissions table (one row per menu/submenu) as the source of truth.
+/// This is only the role roster: code, display name, description, whether the role
+/// may sign into the portal, and whether a delegate can hold it.
 /// </summary>
 public static class RoleDefinitions
 {
-    // PortalAccess defaults to true so every pre-existing RoleDef call site (none
-    // of which pass it) keeps its current behavior. Only roles that must never
-    // sign into the admin portal (driver, guest) pass false explicitly.
-    public sealed record RoleDef(string Code, string Name, string Description, string[] Permissions, bool PortalAccess = true);
-
-    // Every read-only ("view") permission across modules — used by Viewer and
-    // mixed into manager roles that need to see neighbouring modules.
-    public static readonly string[] AllViews =
-    {
-        PermissionCodes.EventsView, PermissionCodes.InvitationsView, PermissionCodes.GuestsView,
-        PermissionCodes.TravelView, PermissionCodes.TransportationView, PermissionCodes.AccreditationView, PermissionCodes.VenueView,
-        PermissionCodes.SeatingView, PermissionCodes.MeetingsView, PermissionCodes.ProtocolView,
-        PermissionCodes.FinancialsView, PermissionCodes.ReportsView, PermissionCodes.DashboardView,
-    };
+    // PortalAccess defaults to true; only roles that must never sign into the
+    // admin portal (driver, guest) pass false explicitly. IsDelegateRole defaults
+    // to false — it marks the roles offered when nominating someone to a mission,
+    // so nomination lists those rather than every portal role.
+    public sealed record RoleDef(
+        string Code,
+        string Name,
+        string Description,
+        bool PortalAccess = true,
+        bool IsDelegateRole = false);
 
     public static readonly RoleDef[] All =
     {
-        // Each role owns ONLY its core module + Dashboard.
-        // Cross-module visibility is granted per-user by admin via User Access.
-
-        new("event-manager", "Event Manager", "Manage events and sessions", new[]
-        {
-            PermissionCodes.EventsView, PermissionCodes.EventsCreate, PermissionCodes.EventsUpdate,
-            PermissionCodes.EventsDelete, PermissionCodes.EventsManageStatus, PermissionCodes.EventsManageSessions,
-            PermissionCodes.EventsImport,
-            PermissionCodes.DashboardView,
-        }),
-        new("invitations-manager", "Invitations Manager", "Design templates and send invitations", new[]
-        {
-            PermissionCodes.InvitationsView, PermissionCodes.InvitationsManageTemplates,
-            PermissionCodes.InvitationsSend, PermissionCodes.DashboardView,
-        }),
-        new("guest-relations-manager", "Guest Relations Manager", "Manage guests and registration", new[]
-        {
-            PermissionCodes.GuestsView, PermissionCodes.GuestsCreate, PermissionCodes.GuestsUpdate,
-            PermissionCodes.GuestsDelete, PermissionCodes.GuestsImport, PermissionCodes.GuestsExport,
-            PermissionCodes.DashboardView,
-        }),
-        new("travel-manager", "Travel & Logistics Manager", "Manage flights, hotels, transfers and visas", new[]
-        {
-            PermissionCodes.TravelView, PermissionCodes.TravelManage, PermissionCodes.TravelSyncHayya,
-            // Transportation module (driver assignment, schedules, on-demand
-            // requests) is the same "transfers" concern this role already owns.
-            PermissionCodes.TransportationView, PermissionCodes.TransportationManage, PermissionCodes.TransportationAssign,
-            PermissionCodes.DashboardView,
-        }),
-        new("accreditation-manager", "Accreditation Manager", "Issue and revoke accreditation badges", new[]
-        {
-            PermissionCodes.AccreditationView, PermissionCodes.AccreditationIssue,
-            PermissionCodes.AccreditationRevoke, PermissionCodes.DashboardView,
-        }),
-        new("seating-manager", "Seating Manager", "Assign guests to seats on the floor plan", new[]
-        {
-            PermissionCodes.SeatingView, PermissionCodes.SeatingAssign, PermissionCodes.DashboardView,
-        }),
-        new("venue-manager", "Venue Manager", "Configure venues and floor plans", new[]
-        {
-            PermissionCodes.VenueView, PermissionCodes.VenueManage, PermissionCodes.DashboardView,
-        }),
-        new("protocol-manager", "Protocol Manager", "Manage protocol notes, checklists and meetings", new[]
-        {
-            // Protocol and Meetings are tightly coupled — kept together.
-            PermissionCodes.ProtocolView, PermissionCodes.ProtocolManage, PermissionCodes.ProtocolChecklist,
-            PermissionCodes.MeetingsView, PermissionCodes.MeetingsManage, PermissionCodes.DashboardView,
-        }),
-        new("finance-manager", "Finance Manager", "Manage budgets, transactions and reports", new[]
-        {
-            PermissionCodes.FinancialsView, PermissionCodes.FinancialsManage,
-            PermissionCodes.ReportsView, PermissionCodes.ReportsGenerate, PermissionCodes.DashboardView,
-        }),
-        new("viewer", "Viewer", "Read-only access across all modules", AllViews),
-        new(Roles.DRIVER, "Driver", "Ground-transport driver with vehicle and license details on file", new[]
-        {
-            PermissionCodes.DashboardView,
-        }, PortalAccess: false),
+        new("protocol-officer", "Protocol Officer", "Logs invitations, creates missions, owns host communication and publishes the mission report"),
+        new("mission-coordinator", "Mission Coordinator", "Assembles the roster, records logistics, runs readiness and manages on-ground operations"),
+        new("department-head", "Department Head", "Nominates staff from their own department"),
+        new("hr-administrator", "HR Administrator", "Verifies passport, grade, visa and insurance records for the roster"),
+        // A roster role as well as a portal role: the Head of Delegation travels
+        // with the delegation and signs into the portal to review the mission.
+        new("head-of-delegation", "Head of Delegation", "Field decisions, protocol order and review of the combined mission report", IsDelegateRole: true),
+        new("delegate", "Delegate", "Travels on the mission; follows the itinerary and submits a trip report", PortalAccess: false, IsDelegateRole: true),
+        new("viewer", "Viewer", "Read-only access across the modules granted to it"),
+        new(Roles.DRIVER, "Driver", "Ground-transport driver with vehicle and license details on file", PortalAccess: false),
         // Auto-provisioned 1:1 with a Guest row (see GuestService.CreateGuestAsync) —
-        // never created directly by an admin. No portal access, no permissions:
-        // a guest only ever authenticates into the VIP app via OTP, never the portal.
-        new(Roles.GUEST, "Guest", "VIP guest app account, auto-provisioned alongside its Guest profile", Array.Empty<string>(), PortalAccess: false),
+        // never created directly by an admin. No portal access: a guest only ever
+        // authenticates into the VIP app via OTP, never the portal.
+        new(Roles.GUEST, "Guest", "VIP guest app account, auto-provisioned alongside its Guest profile", PortalAccess: false, IsDelegateRole: true),
     };
 }

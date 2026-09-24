@@ -82,6 +82,34 @@ public class EventService(
         return ApiResponse<EventResponse>.SuccessResponse(_mapper.Map<EventResponse>(ev));
     }
 
+    /// <summary>
+    /// Lower-cases and checks the two option-set mission attributes in place.
+    /// Returns null when everything is fine, or the message to reject with.
+    /// Cost centre is deliberately not validated — it references a finance
+    /// system DMS does not own.
+    /// </summary>
+    private static string NormalizeMissionAttributes(Event ev)
+    {
+        if (!string.IsNullOrWhiteSpace(ev.DestinationTier))
+        {
+            ev.DestinationTier = ev.DestinationTier.Trim().ToLowerInvariant();
+            if (!DestinationTiers.IsValid(ev.DestinationTier))
+                return $"Destination tier must be one of: {string.Join(", ", DestinationTiers.All)}.";
+        }
+        else ev.DestinationTier = null;
+
+        if (!string.IsNullOrWhiteSpace(ev.FundingModel))
+        {
+            ev.FundingModel = ev.FundingModel.Trim().ToLowerInvariant();
+            if (!FundingModels.IsValid(ev.FundingModel))
+                return $"Funding model must be one of: {string.Join(", ", FundingModels.All)}.";
+        }
+        else ev.FundingModel = null;
+
+        ev.CostCenter = string.IsNullOrWhiteSpace(ev.CostCenter) ? null : ev.CostCenter.Trim();
+        return null;
+    }
+
     public async Task<ApiResponse<EventResponse>> CreateEventAsync(CreateEventRequest request, int userId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
@@ -114,6 +142,38 @@ public class EventService(
             ev.Venue = venue;
         }
 
+        // Destination is a Locations row — create the location first if it is new.
+        if (request.DestinationId.HasValue && request.DestinationId.Value != Guid.Empty)
+        {
+            var location = await _unitOfWork.Locations.GetByPublicIdAsync(request.DestinationId.Value, ct);
+            if (location == null)
+                return ApiResponse<EventResponse>.NotFoundResponse("Destination location not found");
+            ev.DestinationId = location.Id;
+            ev.Destination = location;
+        }
+
+        if (request.DelegationCap is < 1)
+            return ApiResponse<EventResponse>.ErrorResponse("Delegation cap must be at least 1.");
+
+        if (request.StartDate.HasValue && request.EndDate.HasValue && request.EndDate < request.StartDate)
+            return ApiResponse<EventResponse>.ErrorResponse("End date cannot be before the start date.");
+
+        // The host is an Organizations row; the name is copied off it so the
+        // letter and the dashboard never have to join.
+        if (request.HostOrganizationId.HasValue && request.HostOrganizationId.Value != Guid.Empty)
+        {
+            var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.HostOrganizationId.Value, ct);
+            if (org == null)
+                return ApiResponse<EventResponse>.NotFoundResponse("Host organization not found");
+            ev.HostOrganizationId = org.Id;
+            ev.HostName = org.Name;
+            ev.HostOrganization = org;
+        }
+
+        var missionError = NormalizeMissionAttributes(ev);
+        if (missionError != null)
+            return ApiResponse<EventResponse>.ErrorResponse(missionError);
+
         ev.SetCreationAudit(userId);
 
         await _unitOfWork.Events.AddAsync(ev, ct);
@@ -130,7 +190,6 @@ public class EventService(
 
         ev.Title = request.Title ?? ev.Title;
         ev.Type = request.Type ?? ev.Type;
-        ev.Theme = request.Theme ?? ev.Theme;
 
         // Switching to flexible deliberately leaves existing Guest.ServiceLevelId
         // values in place: the assignments stop being enforced, but they are not
@@ -160,10 +219,50 @@ public class EventService(
         ev.StartDate = request.StartDate ?? ev.StartDate;
         ev.EndDate = request.EndDate ?? ev.EndDate;
         ev.ImageUrl = request.ImageUrl ?? ev.ImageUrl;
-        ev.ThemeAccent = request.ThemeAccent ?? ev.ThemeAccent;
-        ev.ThemeSecondary = request.ThemeSecondary ?? ev.ThemeSecondary;
-        ev.LogoDarkUrl = request.LogoDarkUrl ?? ev.LogoDarkUrl;
-        ev.LogoLightUrl = request.LogoLightUrl ?? ev.LogoLightUrl;
+        ev.AttachmentUrl = request.AttachmentUrl ?? ev.AttachmentUrl;
+        ev.HostEmail = request.HostEmail ?? ev.HostEmail;
+        ev.DestinationTier = request.DestinationTier ?? ev.DestinationTier;
+        ev.CostCenter = request.CostCenter ?? ev.CostCenter;
+        ev.FundingModel = request.FundingModel ?? ev.FundingModel;
+
+        var missionAttrError = NormalizeMissionAttributes(ev);
+        if (missionAttrError != null)
+            return ApiResponse<EventResponse>.ErrorResponse(missionAttrError);
+
+        if (request.DelegationCap.HasValue)
+        {
+            if (request.DelegationCap.Value < 1)
+                return ApiResponse<EventResponse>.ErrorResponse("Delegation cap must be at least 1.");
+
+            // Refuse to shrink the cap below the roster already on the mission —
+            // that would leave it permanently over capacity with no way back.
+            var onRoster = await _unitOfWork.EventGuests.QueryNoTracking()
+                .CountAsync(eg => eg.EventId == ev.Id, ct);
+            if (request.DelegationCap.Value < onRoster)
+                return ApiResponse<EventResponse>.ConflictResponse(
+                    $"Cap cannot be below the {onRoster} delegate(s) already nominated.", "DELEGATION_CAP_BELOW_ROSTER");
+
+            ev.DelegationCap = request.DelegationCap.Value;
+        }
+
+        if (request.DestinationId.HasValue && request.DestinationId.Value != Guid.Empty)
+        {
+            var location = await _unitOfWork.Locations.GetByPublicIdAsync(request.DestinationId.Value, ct);
+            if (location == null)
+                return ApiResponse<EventResponse>.NotFoundResponse("Destination location not found");
+            ev.DestinationId = location.Id;
+            ev.Destination = location;
+        }
+
+        if (request.HostOrganizationId.HasValue && request.HostOrganizationId.Value != Guid.Empty)
+        {
+            var org = await _unitOfWork.Organizations.GetByPublicIdAsync(request.HostOrganizationId.Value, ct);
+            if (org == null)
+                return ApiResponse<EventResponse>.NotFoundResponse("Host organization not found");
+            ev.HostOrganizationId = org.Id;
+            ev.HostName = org.Name;
+            ev.HostOrganization = org;
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {

@@ -66,7 +66,8 @@ public class GuestOverviewService(
             if (!string.IsNullOrWhiteSpace(request.Tier))
             {
                 var tier = request.Tier.ToLower();
-                query = query.Where(g => g.EventGuests.Any(eg => eg.Tier != null && eg.Tier.ToLower() == tier));
+                query = query.Where(g => g.EventGuests.Any(
+                    eg => eg.ServiceLevel != null && eg.ServiceLevel.Code.ToLower() == tier));
             }
 
             if (!string.IsNullOrWhiteSpace(request.GuestType))
@@ -134,14 +135,35 @@ public class GuestOverviewService(
                         && !invitations.Any(i => i.EventGuestId == eg.Id && i.AccreditationStatus == GuestAccreditationStatus.Issued)));
             }
 
+            // Travel dates come from the flight bookings now (`flights`, declared
+            // above). The filters are still whole-day bounds, so each DateOnly is
+            // widened to a DateTime half-open range — an inclusive "to" is the START
+            // of the next day, otherwise a flight landing at 14:00 on the bound date
+            // would be excluded.
             if (request.ArrivalFrom.HasValue)
-                query = query.Where(g => g.EventGuests.Any(eg => eg.ArrivalDate != null && eg.ArrivalDate >= request.ArrivalFrom.Value));
+            {
+                var from = request.ArrivalFrom.Value.ToDateTime(TimeOnly.MinValue);
+                query = query.Where(g => g.EventGuests.Any(eg =>
+                    flights.Any(f => f.EventGuestId == eg.Id && f.ArrivalTime != null && f.ArrivalTime >= from)));
+            }
             if (request.ArrivalTo.HasValue)
-                query = query.Where(g => g.EventGuests.Any(eg => eg.ArrivalDate != null && eg.ArrivalDate <= request.ArrivalTo.Value));
+            {
+                var to = request.ArrivalTo.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+                query = query.Where(g => g.EventGuests.Any(eg =>
+                    flights.Any(f => f.EventGuestId == eg.Id && f.ArrivalTime != null && f.ArrivalTime < to)));
+            }
             if (request.DepartureFrom.HasValue)
-                query = query.Where(g => g.EventGuests.Any(eg => eg.DepartureDate != null && eg.DepartureDate >= request.DepartureFrom.Value));
+            {
+                var from = request.DepartureFrom.Value.ToDateTime(TimeOnly.MinValue);
+                query = query.Where(g => g.EventGuests.Any(eg =>
+                    flights.Any(f => f.EventGuestId == eg.Id && f.DepartureTime != null && f.DepartureTime >= from)));
+            }
             if (request.DepartureTo.HasValue)
-                query = query.Where(g => g.EventGuests.Any(eg => eg.DepartureDate != null && eg.DepartureDate <= request.DepartureTo.Value));
+            {
+                var to = request.DepartureTo.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+                query = query.Where(g => g.EventGuests.Any(eg =>
+                    flights.Any(f => f.EventGuestId == eg.Id && f.DepartureTime != null && f.DepartureTime < to)));
+            }
 
             // Counts/flags are correlated subqueries done inside the same projection
             // — one round trip for every row this filter set matches, not per guest.
@@ -173,7 +195,8 @@ public class GuestOverviewService(
                     // projection is not translatable.
                     EventTitles = g.EventGuests.Select(eg => eg.Event.Title).ToList(),
                     Organization = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.Organization).FirstOrDefault(),
-                    Tier = g.EventGuests.OrderByDescending(eg => eg.CreatedAt).Select(eg => eg.Tier).FirstOrDefault(),
+                    Tier = g.EventGuests.OrderByDescending(eg => eg.CreatedAt)
+                        .Select(eg => eg.ServiceLevel != null ? eg.ServiceLevel.Code : null).FirstOrDefault(),
                     ServiceLevelId = g.EventGuests.OrderByDescending(eg => eg.CreatedAt)
                         .Select(eg => eg.ServiceLevel != null ? eg.ServiceLevel.PublicId : (Guid?)null).FirstOrDefault(),
                     ServiceLevelName = g.EventGuests.OrderByDescending(eg => eg.CreatedAt)
@@ -191,8 +214,14 @@ public class GuestOverviewService(
                         .Select(i => i.AccreditationStatus)
                         .FirstOrDefault() ?? GuestAccreditationStatus.NotIssued,
 
-                    ArrivalDate = g.EventGuests.Min(eg => eg.ArrivalDate),
-                    DepartureDate = g.EventGuests.Max(eg => eg.DepartureDate),
+                    // Earliest landing / latest take-off across every flight this
+                    // person has on any participation. Narrowed to DateOnly below.
+                    ArrivalTimeRaw = flights
+                        .Where(f => f.EventGuest.GuestId == g.Id && f.ArrivalTime != null)
+                        .Min(f => f.ArrivalTime),
+                    DepartureTimeRaw = flights
+                        .Where(f => f.EventGuest.GuestId == g.Id && f.DepartureTime != null)
+                        .Max(f => f.DepartureTime),
 
                     SessionsCount = guestSessions.Count(gs => gs.EventGuest.GuestId == g.Id),
                     ServicesCount = serviceEntries.Count(e => e.EventGuest.GuestId == g.Id),
@@ -206,7 +235,11 @@ public class GuestOverviewService(
                 .ToListAsync(ct);
 
             foreach (var r in rows)
+            {
                 r.EventTitles = r.EventTitles.Where(t => t != null).Distinct().ToList();
+                r.ArrivalDate = r.ArrivalTimeRaw.HasValue ? DateOnly.FromDateTime(r.ArrivalTimeRaw.Value) : null;
+                r.DepartureDate = r.DepartureTimeRaw.HasValue ? DateOnly.FromDateTime(r.DepartureTimeRaw.Value) : null;
+            }
 
             // These four are ORs across a person's events, which the projection
             // above has already collapsed — so they filter here rather than in SQL.
@@ -274,6 +307,16 @@ public class GuestOverviewService(
                 var invitation = await _unitOfWork.Invitations.QueryNoTracking()
                     .FirstOrDefaultAsync(i => i.EventGuestId == eg.Id, ct);
 
+                // Travel dates for this participation come off its flights now.
+                // Earliest landing / latest take-off, so a return booking reads as
+                // one trip. Null until something is booked.
+                var egFlightTimes = await _unitOfWork.Flights.QueryNoTracking()
+                    .Where(f => f.EventGuestId == eg.Id)
+                    .Select(f => new { f.ArrivalTime, f.DepartureTime })
+                    .ToListAsync(ct);
+                var egArrival = egFlightTimes.Min(f => f.ArrivalTime);
+                var egDeparture = egFlightTimes.Max(f => f.DepartureTime);
+
                 detail.Events.Add(new GuestOverviewEventBlock
                 {
                     EventGuestId = eg.PublicId,
@@ -287,8 +330,8 @@ public class GuestOverviewService(
                     ServiceLevelColor = eg.ServiceLevel?.Color,
                     InvitationStatus = invitation?.InvitationStatus ?? GuestInvitationStatus.NotSent,
                     AccreditationStatus = invitation?.AccreditationStatus ?? GuestAccreditationStatus.NotIssued,
-                    ArrivalDate = eg.ArrivalDate,
-                    DepartureDate = eg.DepartureDate,
+                    ArrivalDate = egArrival.HasValue ? DateOnly.FromDateTime(egArrival.Value) : null,
+                    DepartureDate = egDeparture.HasValue ? DateOnly.FromDateTime(egDeparture.Value) : null,
                 });
 
                 var eventTitle = eg.Event?.Title;

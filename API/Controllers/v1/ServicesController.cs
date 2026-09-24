@@ -32,17 +32,17 @@ public class ServicesController(IServiceCatalogService _catalog, ICurrentUser _c
         => ToResponse(await _catalog.GetServiceByIdAsync(serviceId, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.ServicesManage)]
+    [HasPermission(PermissionCodes.ManageServices, AccessLevel.Write)]
     public async Task<IActionResult> Create([FromBody] CreateServiceRequest request, CancellationToken ct)
         => ToResponse(await _catalog.CreateServiceAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{serviceId:guid}")]
-    [HasPermission(PermissionCodes.ServicesManage)]
+    [HasPermission(PermissionCodes.ManageServices, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid serviceId, [FromBody] UpdateServiceRequest request, CancellationToken ct)
         => ToResponse(await _catalog.UpdateServiceAsync(serviceId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{serviceId:guid}")]
-    [HasPermission(PermissionCodes.ServicesManage)]
+    [HasPermission(PermissionCodes.ManageServices, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid serviceId, CancellationToken ct)
         => ToResponse(await _catalog.DeleteServiceAsync(serviceId, _currentUser.UserId, ct));
 
@@ -69,17 +69,17 @@ public class ServiceLevelsController(IServiceCatalogService _catalog, ICurrentUs
         => ToResponse(await _catalog.GetServiceLevelByIdAsync(levelId, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.ServiceLevelsManage)]
+    [HasPermission(PermissionCodes.ServiceLevels, AccessLevel.Write)]
     public async Task<IActionResult> Create([FromBody] CreateServiceLevelRequest request, CancellationToken ct)
         => ToResponse(await _catalog.CreateServiceLevelAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{levelId:guid}")]
-    [HasPermission(PermissionCodes.ServiceLevelsManage)]
+    [HasPermission(PermissionCodes.ServiceLevels, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid levelId, [FromBody] UpdateServiceLevelRequest request, CancellationToken ct)
         => ToResponse(await _catalog.UpdateServiceLevelAsync(levelId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{levelId:guid}")]
-    [HasPermission(PermissionCodes.ServiceLevelsManage)]
+    [HasPermission(PermissionCodes.ServiceLevels, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid levelId, CancellationToken ct)
         => ToResponse(await _catalog.DeleteServiceLevelAsync(levelId, _currentUser.UserId, ct));
 }
@@ -101,12 +101,12 @@ public class GuestServicesController(IServiceCatalogService _catalog, ICurrentUs
     // Guarded by the guest permission, not a service one: filling in a guest's
     // flight is guest work. Services.Manage governs the catalogue itself.
     [HttpPost]
-    [HasPermission(PermissionCodes.GuestsUpdate)]
+    [HasPermission(PermissionCodes.Guests, AccessLevel.Write)]
     public async Task<IActionResult> Save(Guid eventGuestId, [FromBody] SaveGuestServiceEntryRequest request, CancellationToken ct)
         => ToResponse(await _catalog.SaveGuestServiceEntryAsync(eventGuestId, request, _currentUser.UserId, ct));
 
     [HttpDelete("{entryId:guid}")]
-    [HasPermission(PermissionCodes.GuestsUpdate)]
+    [HasPermission(PermissionCodes.Guests, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid eventGuestId, Guid entryId, CancellationToken ct)
         => ToResponse(await _catalog.DeleteGuestServiceEntryAsync(eventGuestId, entryId, _currentUser.UserId, ct));
 }

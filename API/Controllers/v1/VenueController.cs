@@ -1,4 +1,4 @@
-﻿using Core.Authorization;
+using Core.Authorization;
 using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
@@ -15,7 +15,7 @@ namespace API.Controllers.v1
     public class VenueController(IVenueService _venueService, ICurrentUser _currentUser) : Controllers.BaseApiController
     {
         [HttpPost]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> CreateVenue([FromBody] CreateVenueRequest request, CancellationToken ct = default) {
             var result = await _venueService.CreateVenueAsync(request, _currentUser.UserId, ct);
             if (result.Success) {
@@ -24,14 +24,14 @@ namespace API.Controllers.v1
             return ToResponse(result);
         }
         [HttpPost("{id:guid}/clone")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> CloneVenue(Guid id, [FromBody] CloneVenueRequest request, CancellationToken ct)
         {
             var result = await _venueService.CloneVenueAsync(id, request, _currentUser.UserId, ct);
             return ToResponse(result);
         }
         [HttpPost("{id:guid}")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> AddVenueBlock(Guid id, [FromQuery] Guid? sessionId, [FromQuery] Guid venueId, [FromBody] CreateVenueBlockDto request, CancellationToken ct)
         {
             var result = await _venueService.AddVenueBlockAsync(id, sessionId, venueId, request, ct);
@@ -39,28 +39,33 @@ namespace API.Controllers.v1
         }
 
         [HttpPost("box")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> CreateVenueBox([FromBody] CreateVenueBoxRequest request, CancellationToken ct = default)
         {
             var result = await _venueService.CreateVenueBoxAsync(request, request.EventId, _currentUser.UserId, ct);
             return ToResponse(result);
         }
+        // Any-of: the venue list is a dropdown on the mission and session forms
+        // and is read by Seating and Meetings, so gating it on Venue Config alone
+        // emptied those pickers for roles that never touch the layout designer.
         [HttpGet]
-        //[HasPermission(PermissionCodes.VenueView)]
+        [HasPermission(AccessLevel.Read,
+            PermissionCodes.VenueConfig, PermissionCodes.Venues, PermissionCodes.Events,
+            PermissionCodes.Seating, PermissionCodes.Meetings)]
         public async Task<IActionResult> GetVenues(CancellationToken ct)
         {
             var result = await _venueService.GetVenuesAsync(ct);
             return ToResponse(result);
         }
         [HttpPut("{id:guid}")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> UpdateVenue(Guid id, [FromBody] UpdateVenueRequest request, CancellationToken ct)
         {
             var result = await _venueService.UpdateVenueAsync(id, request, _currentUser.UserId, ct);
             return ToResponse(result);
         }
         [HttpDelete("box/{id:guid}")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> DeleteVenueBox(
     Guid id,
     [FromQuery] Guid venueId,
@@ -91,15 +96,18 @@ namespace API.Controllers.v1
 
             return ToResponse(result);
         }
+        // Same any-of set as the list above.
         [HttpGet("{id:guid}")]
-        //[HasPermission(PermissionCodes.VenueView)]
+        [HasPermission(AccessLevel.Read,
+            PermissionCodes.VenueConfig, PermissionCodes.Venues, PermissionCodes.Events,
+            PermissionCodes.Seating, PermissionCodes.Meetings)]
         public async Task<IActionResult> GetVenueById(Guid id, CancellationToken ct)
         {
             var result = await _venueService.GetVenueByIdAsync(id, ct);
             return ToResponse(result);
         }
         [HttpDelete("{id:guid}")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> DeleteVenue(Guid id, CancellationToken ct)
         {
             var result = await _venueService.DeleteVenueAsync(id, ct);
@@ -112,7 +120,7 @@ namespace API.Controllers.v1
             => ToResponse(await _venueService.GetVenueTypesAsync(ct));
 
         [HttpPost("types")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> CreateVenueType([FromBody] CreateVenueTypeRequest request, CancellationToken ct)
             => ToResponse(await _venueService.CreateVenueTypeAsync(request, _currentUser.UserId, ct));
 
@@ -121,8 +129,18 @@ namespace API.Controllers.v1
             => ToResponse(await _venueService.GetElementTypesAsync(ct));
 
         [HttpPost("element-types")]
-        [HasPermission(PermissionCodes.VenueManage)]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
         public async Task<IActionResult> CreateElementType([FromBody] CreateElementTypeRequest request, CancellationToken ct)
             => ToResponse(await _venueService.CreateElementTypeAsync(request, _currentUser.UserId, ct));
+
+        [HttpPut("element-types/{id:guid}")]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
+        public async Task<IActionResult> UpdateElementType(Guid id, [FromBody] UpdateElementTypeRequest request, CancellationToken ct)
+            => ToResponse(await _venueService.UpdateElementTypeAsync(id, request, _currentUser.UserId, ct));
+
+        [HttpDelete("element-types/{id:guid}")]
+        [HasPermission(PermissionCodes.VenueConfig, AccessLevel.Write)]
+        public async Task<IActionResult> DeleteElementType(Guid id, CancellationToken ct)
+            => ToResponse(await _venueService.DeleteElementTypeAsync(id, _currentUser.UserId, ct));
     }
 }

@@ -89,6 +89,7 @@ public class VipAppService(
     private Task<EventGuest> GetParticipationAsync(int guestId, Guid eventId, CancellationToken ct)
         => _unitOfWork.EventGuests.Query()
             .Include(eg => eg.Event)
+            .Include(eg => eg.ServiceLevel)
             .FirstOrDefaultAsync(eg => eg.GuestId == guestId && eg.Event.PublicId == eventId, ct);
 
     // "May this person request a car?" — a display flag only. It is true if ANY
@@ -110,6 +111,9 @@ public class VipAppService(
     private Task<EventGuest> LatestParticipationAsync(int guestId, CancellationToken ct)
         => _unitOfWork.EventGuests.QueryNoTracking()
             .Where(eg => eg.GuestId == guestId)
+            // Same reason as GetParticipationAsync: the profile's tier now reads
+            // through this navigation.
+            .Include(eg => eg.ServiceLevel)
             .OrderByDescending(eg => eg.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
@@ -1028,7 +1032,7 @@ public class VipAppService(
             Status = pick != null ? "Confirmed" : "Pending",
             Seating = assign is null ? null : new SeatingResponse
             {
-                Category = participation?.Tier,
+                Category = participation?.ServiceLevel?.Code,
                 Block = assign.Seat?.Block,
                 Row = assign.Seat?.SeatInfo,
                 Seat = assign.Seat?.Code,
@@ -1131,7 +1135,7 @@ public class VipAppService(
     private static GuestProfileResponse MapProfile(Guest g, EventGuest latest = null) => new()
     {
         Id = g.PublicId, FirstName = g.FirstName, LastName = g.LastName, Email = g.Email,
-        Organization = latest?.Organization, Tier = latest?.Tier, PhotoUrl = g.PhotoUrl
+        Organization = latest?.Organization, Tier = latest?.ServiceLevel?.Code, PhotoUrl = g.PhotoUrl
     };
 
     // Support chat lives entirely on SupportChatService / SupportChatController now.
