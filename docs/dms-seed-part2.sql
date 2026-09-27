@@ -1,4 +1,4 @@
--- Required: every table here carries filtered indexes ([IsDeleted] = 0), and
+﻿-- Required: every table here carries filtered indexes ([IsDeleted] = 0), and
 -- SQL Server refuses inserts against those unless QUOTED_IDENTIFIER is ON.
 -- SSMS defaults it ON; sqlcmd does not, so it is set explicitly.
 SET QUOTED_IDENTIFIER ON;
@@ -54,7 +54,6 @@ FROM (VALUES
 
     -- ── EVENT ───────────────────────────────────────────────────────────
     ('services',             N'Services',              N'الخدمات',               N'Flights, accommodation, transport & visa',    'travel',       '/travel',                410),
-    ('transportation',       N'Transportation',        N'المواصلات',             N'Driver assignment and ride requests',         'car',          '/transportation',        420),
     ('support-chat',         N'Support',               N'الدعم',                 N'Conversations with delegates via the app',    'message',      '/support-chat',          430),
 
     -- ── PRE-DEPARTURE ───────────────────────────────────────────────────
@@ -68,13 +67,11 @@ FROM (VALUES
     -- ── REPORTS & CLOSE ─────────────────────────────────────────────────
     ('post-mission-reports', N'Post-Mission Reports',  N'تقارير ما بعد المهمة',  N'Track and nudge delegate trip reports',       'doc',          '/post-mission-reports',  710),
     ('combined-report',      N'Combined Report',       N'التقرير المجمع',        N'Assemble, review, approve & publish',         'reports',      '/combined-report',       720),
-    ('reports',              N'Reports',               N'التقارير',              N'Cross-mission reporting',                     'reports',      '/reports',               730),
 
     -- ── ON-SITE ─────────────────────────────────────────────────────────
     ('accreditation',        N'Accreditation',         N'الاعتماد',              N'Badge issuance and status',                   'badge',        '/accreditation',         810),
     ('seating',              N'Seating',               N'الجلوس',                N'Floor plan and table assignments',            'seating',      '/seating',               820),
     ('meetings',             N'Meetings',              N'الاجتماعات',            N'Scheduled bilaterals and briefings',          'meetings',     '/meetings',              830),
-    ('protocol',             N'Protocol',              N'المراسم',               N'Protocol notes and checklists',               'protocol',     '/protocol',              840),
 
     -- ── VENUE MANAGEMENT ────────────────────────────────────────────────
     ('venue-config',         N'Venue Config',          N'إعداد المكان',          N'Drag-and-drop layout designer',               'venue',        '/venue-config',          910),
@@ -111,7 +108,6 @@ FROM (VALUES
     -- ── USER MANAGEMENT ─────────────────────────────────────────────────
     ('users',                N'Users',                 N'المستخدمون',            N'Portal user accounts',                        'guests',       '/users',                1310),
     ('roles',                N'Roles',                 N'الأدوار',               N'Roles and delegate types',                    'protocol',     '/roles',                1320),
-    ('account-requests',     N'Account Requests',      N'طلبات الحسابات',        N'Self-service sign-ups awaiting approval',     'check',        '/account-requests',     1330),
     ('role-access',          N'Role Access',           N'صلاحيات الأدوار',       N'Read/write permissions per role, per menu',   'protocol',     '/role-access',          1340)
 ) AS v(Code, Name, NameAr, Description, Icon, [Path], SortOrder)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.Permissions p WHERE p.Code = v.Code AND p.IsDeleted = 0);
@@ -133,7 +129,6 @@ JOIN (VALUES
     ('nomination-letter',    'host-communication'),
 
     ('services',             'event'),
-    ('transportation',       'event'),
     ('support-chat',         'event'),
 
     ('readiness',            'pre-departure'),
@@ -144,12 +139,10 @@ JOIN (VALUES
 
     ('post-mission-reports', 'reports-close'),
     ('combined-report',      'reports-close'),
-    ('reports',              'reports-close'),
 
     ('accreditation',        'onsite'),
     ('seating',              'onsite'),
     ('meetings',             'onsite'),
-    ('protocol',             'onsite'),
 
     ('venue-config',         'venue-management'),
     ('venues',               'venue-management'),
@@ -180,7 +173,6 @@ JOIN (VALUES
 
     ('users',                'user-management'),
     ('roles',                'user-management'),
-    ('account-requests',     'user-management'),
     ('role-access',          'user-management')
 ) AS m([ChildCode], [ParentCode]) ON m.[ChildCode] = c.[Code]
 JOIN dbo.Permissions p ON p.[Code] = m.[ParentCode] AND p.IsDeleted = 0

@@ -97,7 +97,12 @@ public class NominationCandidateResponse
     // would make you cross-reference the roster to know who is already on it.
 
     /// <summary>Already nominated to this mission.</summary>
+    /// <summary>Nominated to this mission. NOT the same as merely holding a
+    /// participation — the Delegates screen creates those directly.</summary>
     public bool OnRoster { get; set; }
+    /// <summary>Holds a participation on this mission but has not been
+    /// nominated. They are listed, and the action offered is Nominate.</summary>
+    public bool OnMissionNotNominated { get; set; }
 
     /// <summary>The participation, when they are on it. What edit and remove take.</summary>
     public Guid? ParticipationId { get; set; }
@@ -110,6 +115,13 @@ public class NominationCandidateResponse
     public string VisaStatus { get; set; }
     public bool VisaRequired { get; set; }
     public string InsuranceStatus { get; set; }
+
+    /// <summary>HR's decision on this participation. Null until nominated. The
+    /// nominate screen does not show it as a column — the HR phase comes after
+    /// this one — but it needs to know about a REJECTION, because a rejected
+    /// delegate is the one case where the coordinator has to act from here.</summary>
+    public string HrVerificationStatus { get; set; }
+    public string HrVerificationNote { get; set; }
 
     public string PassportNumber { get; set; }
     public DateOnly? PassportExpiry { get; set; }

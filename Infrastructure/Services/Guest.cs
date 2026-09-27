@@ -911,7 +911,28 @@ public class GuestService(
             }
 
             // ── Event-level: this participation only ────────────────────────────
+            var detailsError = await ApplyNominationDetailsAsync(guest, participation, request, ct);
+            if (detailsError != null) return ApiResponse<GuestResponse>.NotFoundResponse(detailsError);
+
             participation.GuestType      = request.GuestType ?? participation.GuestType;
+            // Mission role: the one the DMS screens actually read. Resolved
+            // right here rather than through the mapper so an unknown id is an
+            // error the caller sees, not a silently dropped field.
+            if (request.MissionRoleId.HasValue)
+            {
+                if (request.MissionRoleId.Value == Guid.Empty)
+                {
+                    participation.MissionRoleId = null;
+                }
+                else
+                {
+                    var role = await _unitOfWork.Roles.QueryNoTracking()
+                        .FirstOrDefaultAsync(r => r.PublicId == request.MissionRoleId.Value, ct);
+                    if (role == null)
+                        return ApiResponse<GuestResponse>.NotFoundResponse("Mission role not found");
+                    participation.MissionRoleId = role.Id;
+                }
+            }
             participation.Organization   = organization?.Name ?? request.Organization;
             participation.OrganizationId = organization?.Id;
             participation.ServiceLevelId = serviceLevel?.Id;
@@ -1017,11 +1038,22 @@ public class GuestService(
 
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
 
+            int? missionRoleId = null;
+            if (request.MissionRoleId.HasValue && request.MissionRoleId.Value != Guid.Empty)
+            {
+                var role = await _unitOfWork.Roles.QueryNoTracking()
+                    .FirstOrDefaultAsync(r => r.PublicId == request.MissionRoleId.Value, ct);
+                if (role == null)
+                    return ApiResponse<GuestResponse>.NotFoundResponse("Mission role not found");
+                missionRoleId = role.Id;
+            }
+
             var participation = new EventGuest
             {
                 GuestId       = guest.Id,
                 EventId       = ev.Id,
                 GuestType     = request.GuestType ?? GuestTypes.Delegate,
+                MissionRoleId = missionRoleId,
                 Organization  = organization?.Name ?? request.Organization,
                 OrganizationId = organization?.Id,
                 ServiceLevelId = serviceLevel?.Id,
@@ -1036,6 +1068,9 @@ public class GuestService(
                 CreatedAt     = DateTime.UtcNow,
                 IsDeleted     = false,
             };
+
+            var detailsError = await ApplyNominationDetailsAsync(guest, participation, request, ct);
+            if (detailsError != null) return ApiResponse<GuestResponse>.NotFoundResponse(detailsError);
 
             await _unitOfWork.EventGuests.AddAsync(participation, ct);
             try
@@ -1211,6 +1246,48 @@ public class GuestService(
     // needs both its internal id (FK) and its Name (kept in sync on the
     // legacy free-text Organization column for every existing string-based
     // consumer — search, CSV export, travel rows, dashboard).
+
+    /// <summary>
+    /// The nomination details the Add Delegate form collects: what HR later
+    /// verifies, captured while the delegate is being entered.
+    ///
+    /// Split deliberately — the first five belong to the PERSON and follow them
+    /// from mission to mission, visa and insurance belong to THIS participation
+    /// because a visa is for one trip. Null leaves a value alone, so a form that
+    /// does not send a field cannot blank it.
+    /// </summary>
+    private async Task<string> ApplyNominationDetailsAsync(
+        DomainPersistence.Entities.Guest person, EventGuest participation,
+        CreateGuestRequest request, CancellationToken ct)
+    {
+        if (request.DepartmentId.HasValue)
+        {
+            if (request.DepartmentId.Value == Guid.Empty)
+            {
+                person.DepartmentId = null;
+            }
+            else
+            {
+                var dept = await _unitOfWork.Departments.GetByPublicIdAsync(request.DepartmentId.Value, ct);
+                if (dept == null) return "Department not found";
+                person.DepartmentId = dept.Id;
+            }
+        }
+
+        if (request.JobTitle != null) person.JobTitle = request.JobTitle.Trim();
+        if (request.EmploymentGrade != null) person.EmploymentGrade = request.EmploymentGrade.Trim();
+        if (request.PassportNumber != null) person.PassportNumber = request.PassportNumber.Trim();
+        if (request.PassportExpiry.HasValue) person.PassportExpiry = request.PassportExpiry;
+
+        if (participation != null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.VisaStatus)) participation.VisaStatus = request.VisaStatus;
+            if (!string.IsNullOrWhiteSpace(request.InsuranceStatus)) participation.InsuranceStatus = request.InsuranceStatus;
+        }
+
+        return null;
+    }
+
     private async Task<Organization> ResolveOrganizationAsync(Guid? publicId, CancellationToken ct)
     {
         if (publicId == null || publicId == Guid.Empty) return null;

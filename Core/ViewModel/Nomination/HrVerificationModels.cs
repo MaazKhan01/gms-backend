@@ -33,3 +33,16 @@ public class HrRejectRequest
     /// coordinator who has to fix it.</summary>
     public string Note { get; set; }
 }
+
+/// <summary>
+/// Puts a decided nomination back to pending. HR sign-off is a judgement made
+/// on documents that change — a renewed passport, a visa that came through, a
+/// rejection entered against the wrong row — so it has to be reversible.
+/// </summary>
+public class HrRevertRequest
+{
+    public List<Guid> Ids { get; set; } = new();
+    /// <summary>Why the decision was withdrawn. Optional, but it is the only
+    /// record of why a verified delegate went back into the queue.</summary>
+    public string Note { get; set; }
+}

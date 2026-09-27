@@ -26,6 +26,33 @@ public class CreateGuestRequest
     public string Email { get; set; }
     public Guid EventId { get; set; }
     public string GuestType { get; set; }
+    /// <summary>
+    /// What this person does ON the mission — a Roles row flagged
+    /// IsDelegateRole (Head of Delegation, Member, Support Staff). Distinct
+    /// from GuestType, which is the GMS category of guest; in DMS the mission
+    /// role is the one that carries meaning, and the readiness, protocol-order
+    /// and nomination-letter screens all read it.
+    /// </summary>
+    public Guid? MissionRoleId { get; set; }
+
+    // ── Nomination details ───────────────────────────────────────────────
+    // What HR later verifies, captured while the delegate is being entered
+    // rather than left for someone to chase afterwards. The first four belong
+    // to the PERSON and follow them between missions; visa and insurance
+    // belong to this participation, because a visa is for one trip.
+    //
+    // Department is what makes someone staff: without it they can be a delegate
+    // on this mission but never appear in the pool for the next one.
+    public Guid? DepartmentId { get; set; }
+    public string JobTitle { get; set; }
+    public string EmploymentGrade { get; set; }
+    public string PassportNumber { get; set; }
+    public DateOnly? PassportExpiry { get; set; }
+
+    /// <summary>Core.Constants.VisaStatuses.</summary>
+    public string VisaStatus { get; set; }
+    /// <summary>Core.Constants.InsuranceStatuses.</summary>
+    public string InsuranceStatus { get; set; }
     // Free-text fallback — only CSV import uses this now (no org id to resolve
     // there). The Add/Edit Guest UI sends OrganizationId instead.
     public string Organization { get; set; }

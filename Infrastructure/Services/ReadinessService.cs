@@ -28,6 +28,9 @@ public class ReadinessService(IUnitOfWork _unitOfWork) : IReadinessService
     private const string Waived = "waived";
     private const string Missing = "missing";
 
+    /// <summary>The catalogue service that IS the visa — Services.Code.</summary>
+    private const string VisaServiceCode = "visa";
+
     public async Task<ApiResponse<List<ReadinessResponse>>> GetAsync(
         Guid eventId, bool onlyNotReady, CancellationToken ct = default)
     {
@@ -191,6 +194,26 @@ public class ReadinessService(IUnitOfWork _unitOfWork) : IReadinessService
         var withTransport = (await _unitOfWork.Transports.QueryNoTracking()
             .Where(t => ids.Contains(t.EventGuestId)).Select(t => t.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
 
+        // Visa is a CATALOGUE service, not a first-class table like the three
+        // above — so "has a visa" is a completed entry against the service whose
+        // code is `visa`. Reading only EventGuest.VisaStatus meant recording the
+        // actual visa, document and all, left readiness showing a red cross,
+        // because nothing writes that column when a booking is made.
+        //
+        // Pending entries do not count: an application in progress is not a visa.
+        var visaServiceId = await _unitOfWork.Services.QueryNoTracking()
+            .Where(s => s.Code == VisaServiceCode)
+            .Select(s => (int?)s.Id)
+            .FirstOrDefaultAsync(ct);
+
+        var withVisaBooking = visaServiceId == null
+            ? new HashSet<int>()
+            : (await _unitOfWork.GuestServiceEntries.QueryNoTracking()
+                .Where(e => ids.Contains(e.EventGuestId)
+                         && e.ServiceId == visaServiceId.Value
+                         && e.Status == GuestServiceStatus.Completed)
+                .Select(e => e.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
+
         var waivers = (await _unitOfWork.ReadinessWaivers.QueryNoTracking()
             .Where(w => ids.Contains(w.EventGuestId))
             .Select(w => new
@@ -219,8 +242,8 @@ public class ReadinessService(IUnitOfWork _unitOfWork) : IReadinessService
                 (ReadinessItems.Passport, PassportMet(r.PassportNumber, r.PassportExpiry, travelDate),
                     PassportDetail(r.PassportNumber, r.PassportExpiry, travelDate)),
 
-                (ReadinessItems.Visa, VisaMet(r.VisaRequired, r.VisaStatus),
-                    !r.VisaRequired ? "Not required" : r.VisaStatus ?? "pending"),
+                (ReadinessItems.Visa, VisaMet(r.VisaRequired, r.VisaStatus, withVisaBooking.Contains(r.Id)),
+                    VisaDetail(r.VisaRequired, r.VisaStatus, withVisaBooking.Contains(r.Id))),
 
                 (ReadinessItems.Flight, withFlight.Contains(r.Id),
                     withFlight.Contains(r.Id) ? "Booked" : "No flight booked"),
@@ -287,11 +310,31 @@ public class ReadinessService(IUnitOfWork _unitOfWork) : IReadinessService
             : $"Valid to {expiry.Value:yyyy-MM-dd}";
     }
 
-    /// <summary>A delegate who needs no visa passes automatically — that is how
-    /// "not required" is expressed, since the status set has no such value.
-    /// Both active and expiring-soon are valid documents.</summary>
-    private static bool VisaMet(bool required, string status)
+    /// <summary>
+    /// Three ways a delegate is cleared on visa, and they are genuinely
+    /// different facts rather than one restated:
+    ///
+    ///  * no visa is needed for this nationality and destination — that is what
+    ///    VisaRequired = false means, since the status set has no such value;
+    ///  * the Visa service has been booked and completed, which is the visa
+    ///    itself, document and all;
+    ///  * the status column says active or expiring-soon, which is how a visa
+    ///    obtained outside DMS gets recorded.
+    ///
+    /// Any one of them is enough. Requiring the status column as well would mean
+    /// booking the visa and then separately declaring it, and nobody does the
+    /// second half.
+    /// </summary>
+    private static bool VisaMet(bool required, string status, bool booked)
         => !required
+           || booked
            || status == VisaStatuses.Active
            || status == VisaStatuses.ExpiringSoon;
+
+    private static string VisaDetail(bool required, string status, bool booked)
+    {
+        if (!required) return "Not required";
+        if (booked) return "Issued";
+        return status ?? "pending";
+    }
 }

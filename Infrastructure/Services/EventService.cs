@@ -110,6 +110,24 @@ public class EventService(
         return null;
     }
 
+    /// <summary>
+    /// Another live mission with the same name and the same start date.
+    /// Case- and whitespace-insensitive, because "Doha Forum 2027" and
+    /// "doha forum 2027 " are the same mission typed twice.
+    /// </summary>
+    private async Task<Event> FindDuplicateAsync(string title, DateOnly? startDate, int? excludeId, CancellationToken ct)
+    {
+        var name = (title ?? string.Empty).Trim().ToLower();
+        if (name.Length == 0) return null;
+
+        return await _unitOfWork.Events.QueryNoTracking()
+            .Where(e => e.Title != null
+                     && e.Title.Trim().ToLower() == name
+                     && e.StartDate == startDate
+                     && (excludeId == null || e.Id != excludeId))
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<ApiResponse<EventResponse>> CreateEventAsync(CreateEventRequest request, int userId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
@@ -122,6 +140,23 @@ public class EventService(
         if (!string.IsNullOrWhiteSpace(request.GuestModel) && !EventGuestModels.IsValid(request.GuestModel))
             return ApiResponse<EventResponse>.ErrorResponse(
                 $"Invalid guest model '{request.GuestModel}'. Expected 'fixed' or 'flexible'.");
+
+        // Two missions with the same name and the same start date are a
+        // double-submit or a second person creating what already exists —
+        // never a real pair. Left alone they are indistinguishable in the
+        // switcher, and a roster ends up split across both.
+        //
+        // The name ALONE is not the rule: an annual fixture legitimately
+        // repeats, so the start date is what separates this year's from last
+        // year's. Two undated drafts of the same name are still caught, which
+        // is the case that actually happens.
+        var duplicate = await FindDuplicateAsync(request.Title, request.StartDate, null, ct);
+        if (duplicate != null)
+            return ApiResponse<EventResponse>.ConflictResponse(
+                request.StartDate.HasValue
+                    ? $"\"{duplicate.Title}\" already exists starting {request.StartDate:dd MMM yyyy}."
+                    : $"\"{duplicate.Title}\" already exists with no start date. Give this one its dates, or edit the existing mission.",
+                "MISSION_DUPLICATE");
 
         var ev = _mapper.Map<Event>(request);
         ev.Status = status;
@@ -218,6 +253,16 @@ public class EventService(
 
         ev.StartDate = request.StartDate ?? ev.StartDate;
         ev.EndDate = request.EndDate ?? ev.EndDate;
+
+        // The same rule as create, applied after the new values are in hand:
+        // renaming or re-dating a mission must not be a back door into the
+        // collision the create guard exists to prevent.
+        var clash = await FindDuplicateAsync(ev.Title, ev.StartDate, ev.Id, ct);
+        if (clash != null)
+            return ApiResponse<EventResponse>.ConflictResponse(
+                $"Another mission called \"{clash.Title}\" already starts on the same date.",
+                "MISSION_DUPLICATE");
+
         ev.ImageUrl = request.ImageUrl ?? ev.ImageUrl;
         ev.AttachmentUrl = request.AttachmentUrl ?? ev.AttachmentUrl;
         ev.HostEmail = request.HostEmail ?? ev.HostEmail;

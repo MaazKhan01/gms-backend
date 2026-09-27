@@ -42,4 +42,15 @@ public class HrVerificationController(INominationService _nominations, ICurrentU
     [HasPermission(PermissionCodes.HrVerification, AccessLevel.Write)]
     public async Task<IActionResult> Reject([FromBody] HrRejectRequest request, CancellationToken ct)
         => ToResponse(await _nominations.RejectAsync(request, _currentUser.UserId, ct));
+
+    /// <summary>
+    /// Withdraws a decision, putting the nomination back to pending. Documents
+    /// change after HR has looked at them — a renewed passport, a visa that
+    /// came through, a rejection entered against the wrong row — so sign-off
+    /// has to be reversible rather than only correctable by re-nominating.
+    /// </summary>
+    [HttpPost("revert")]
+    [HasPermission(PermissionCodes.HrVerification, AccessLevel.Write)]
+    public async Task<IActionResult> Revert([FromBody] HrRevertRequest request, CancellationToken ct)
+        => ToResponse(await _nominations.RevertVerificationAsync(request, _currentUser.UserId, ct));
 }

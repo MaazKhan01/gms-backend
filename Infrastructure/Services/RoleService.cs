@@ -54,6 +54,8 @@ public class RoleService : IRoleService
                     Description = request.Description,
                     // Default on: a new role is a portal role unless told otherwise.
                     PortalAccess = request.PortalAccess ?? true,
+                    // Default off: most roles run the system rather than travel.
+                    IsDelegateRole = request.IsDelegateRole ?? false,
                     CreatedBy = currentUserId,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -178,6 +180,7 @@ public class RoleService : IRoleService
                 role.Name = request.Name;
                 role.Description = request.Description;
                 if (request.PortalAccess.HasValue) role.PortalAccess = request.PortalAccess.Value;
+                if (request.IsDelegateRole.HasValue) role.IsDelegateRole = request.IsDelegateRole.Value;
                 _unitOfWork.Roles.Update(role);
                 await _unitOfWork.SaveChangesAsync(ct);
 

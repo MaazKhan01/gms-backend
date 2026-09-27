@@ -91,6 +91,8 @@ public static class ServiceExtensions
         services.AddScoped<INominationService, NominationService>();
         services.AddScoped<INominationLetterService, NominationLetterService>();
         services.AddScoped<IReadinessService, ReadinessService>();
+        // Phase 9 — delegates' own reports, the combined report, and the close.
+        services.AddScoped<IMissionReportService, MissionReportService>();
         services.AddScoped<IOnMissionOpsService, OnMissionOpsService>();
         services.AddScoped<IIncidentService, IncidentService>();
         services.AddScoped<IFieldDecisionService, FieldDecisionService>();

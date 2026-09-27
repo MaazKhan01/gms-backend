@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Core.Interfaces.Services;
 using Core.ViewModel.Invitation;
+using Core.ViewModel.NominationLetter;
 
 namespace Infrastructure.Email;
 
@@ -305,6 +306,116 @@ public class EmailService : IEmailService
               </tr>
             </table>";
     }
+
+
+    public async Task SendNominationLetterAsync(
+        string toEmail, NominationLetterEmailModel model, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail)) return;
+
+        var dates = model.StartDate is { } s
+            ? (model.EndDate is { } e && e != s ? $"{s:d MMM} – {e:d MMM yyyy}" : $"{s:d MMM yyyy}")
+            : null;
+
+        var subject = $"Nomination Letter — {model.MissionTitle}"
+                    + (model.Version > 1 ? $" (v{model.Version})" : string.Empty);
+
+        // A table, not a prose list: the host has to read names, roles and
+        // passport numbers off it and reply about specific people.
+        var rows = string.Join(string.Empty, model.Roster.Select((r, i) => $@"
+            <tr style='background:{(i % 2 == 1 ? "rgba(255,255,255,0.03)" : "transparent")};'>
+              <td style='{Cell}'>{i + 1}</td>
+              <td style='{Cell}color:{Ink};font-weight:600;'>{Escape(r.FullName)}</td>
+              <td style='{Cell}'>{Escape(r.JobTitle) ?? Dash}</td>
+              <td style='{Cell}'>{Escape(r.MissionRole) ?? Dash}</td>
+              <td style='{Cell}'>{Escape(r.Nationality) ?? Dash}</td>
+              <td style='{Cell}'>{Escape(r.PassportNumber) ?? Dash}</td>
+              <td style='{Cell}'>{(r.PassportExpiry is { } pe ? pe.ToString("d MMM yyyy") : Dash)}</td>
+            </tr>"));
+
+        var note = string.IsNullOrWhiteSpace(model.Note)
+            ? string.Empty
+            : $"<p style='{P}'>{Escape(model.Note)}</p>";
+
+        var destination = string.IsNullOrWhiteSpace(model.Destination)
+            ? string.Empty
+            : $"<p style='{Small}'>Destination: {Escape(model.Destination)}</p>";
+
+        var inner = $@"
+            <p style='{P}'>Dear {Escape(model.HostName) ?? "Sir / Madam"},</p>
+            <p style='{P}'>We are pleased to submit our delegation for
+              <strong style='color:{Ink};'>{Escape(model.MissionTitle)}</strong>{(dates != null ? $", {dates}" : string.Empty)}.
+              The {model.Roster.Count} delegate(s) named below have been verified by our HR department.</p>
+            {note}
+            <table role='presentation' width='100%' cellpadding='0' cellspacing='0'
+                   style='border-collapse:collapse;margin:18px 0;font-size:12.5px;'>
+              <tr>
+                <th style='{Head}'>#</th>
+                <th style='{Head}'>Name</th>
+                <th style='{Head}'>Title</th>
+                <th style='{Head}'>Role</th>
+                <th style='{Head}'>Nationality</th>
+                <th style='{Head}'>Passport</th>
+                <th style='{Head}'>Expires</th>
+              </tr>
+              {rows}
+            </table>
+            {destination}
+            <p style='{Small}'>Please reply to this email to confirm the delegation or request changes.</p>";
+
+        var body = Shell(
+            "Nomination Letter",
+            $"Delegation for<br><em style='font-style:italic;color:{AccentSoft};'>{Escape(model.MissionTitle)}</em>",
+            inner);
+
+        await SendEmailAsync(toEmail, subject, body, ct);
+        _logger.LogInformation(
+            "Nomination letter v{Version} emailed to {Email} with {Count} delegate(s)",
+            model.Version, toEmail, model.Roster.Count);
+    }
+
+    public async Task SendReportReminderAsync(
+        string toEmail, string delegateName, string missionTitle, string note, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail)) return;
+
+        var extra = string.IsNullOrWhiteSpace(note)
+            ? string.Empty
+            : $"<p style='{P}'>{Escape(note)}</p>";
+
+        var inner = $@"
+            <p style='{P}'>Dear {Escape(delegateName) ?? "colleague"},</p>
+            <p style='{P}'>Your post-mission report for
+              <strong style='color:{Ink};'>{Escape(missionTitle)}</strong> has not been submitted yet.
+              The mission's combined report cannot be completed without it.</p>
+            {extra}
+            <p style='{Small}'>Open the app and add your narrative — the trip details are filled in for you.</p>";
+
+        var body = Shell(
+            "Post-Mission Report",
+            $"Still outstanding for<br><em style='font-style:italic;color:{AccentSoft};'>{Escape(missionTitle)}</em>",
+            inner);
+
+        await SendEmailAsync(toEmail, $"Post-mission report — {missionTitle}", body, ct);
+        _logger.LogInformation("Post-mission report reminder sent to {Email} for {Mission}", toEmail, missionTitle);
+    }
+
+    private const string Head = "padding:8px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;"
+                              + "letter-spacing:0.06em;color:rgba(255,255,255,0.55);font-weight:600;"
+                              + "border-bottom:1px solid rgba(255,255,255,0.14);white-space:nowrap;";
+
+    private const string Cell = "padding:8px 10px;color:rgba(255,255,255,0.82);"
+                              + "border-bottom:1px solid rgba(255,255,255,0.06);";
+
+    private const string Dash = "—";
+
+    /// <summary>
+    /// Names and passport numbers go straight into HTML. A delegate called
+    /// O'Brien &amp; Co would otherwise break the table, and anything pasted in
+    /// from a spreadsheet could carry markup with it.
+    /// </summary>
+    private static string Escape(string raw)
+        => string.IsNullOrWhiteSpace(raw) ? null : System.Net.WebUtility.HtmlEncode(raw);
 
     private async Task SendEmailAsync(string toEmail, string subject, string body, CancellationToken ct)
     {

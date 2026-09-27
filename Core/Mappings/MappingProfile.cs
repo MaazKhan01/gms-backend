@@ -69,9 +69,13 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.AppKey, opt => opt.Ignore())
             .ForMember(dest => dest.Sessions, opt => opt.Ignore())
             // Guid on the request, int FK on the entity — resolved and set explicitly
-            // in EventService.CreateEventAsync instead.
+            // in EventService.CreateEventAsync instead. AutoMapper matches these by
+            // name and cannot convert a Guid to an int, so every one of them has to
+            // be listed here: a missing entry does not fall back, it throws
+            // "Error mapping types" on the Map call itself.
             .ForMember(dest => dest.VenueId, opt => opt.Ignore())
-            .ForMember(dest => dest.DestinationId, opt => opt.Ignore());
+            .ForMember(dest => dest.DestinationId, opt => opt.Ignore())
+            .ForMember(dest => dest.HostOrganizationId, opt => opt.Ignore());
         CreateMap<CreateSessionRequest, Session>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.Event, opt => opt.Ignore())
@@ -107,6 +111,29 @@ public class MappingProfile : Profile
                 opt => opt.MapFrom(src => src.Guest != null && src.Guest.Nationality != null ? src.Guest.Nationality.Flag : null))
             .ForMember(dest => dest.OrganizationId,
                 opt => opt.MapFrom(src => src.OrganizationRef != null ? (Guid?)src.OrganizationRef.PublicId : null))
+            // What this person does ON the mission — Head of Delegation, Member,
+            // Support Staff. Distinct from GuestType, which is the GMS category.
+            .ForMember(dest => dest.MissionRoleId,
+                opt => opt.MapFrom(src => src.MissionRole != null ? (Guid?)src.MissionRole.PublicId : null))
+            .ForMember(dest => dest.MissionRoleName,
+                opt => opt.MapFrom(src => src.MissionRole != null ? src.MissionRole.Name : null))
+            // Nomination details. The first five live on the PERSON and follow
+            // them between missions; visa and insurance are on the participation
+            // and map by convention.
+            .ForMember(dest => dest.DepartmentId,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Department != null
+                    ? (Guid?)src.Guest.Department.PublicId : null))
+            .ForMember(dest => dest.DepartmentName,
+                opt => opt.MapFrom(src => src.Guest != null && src.Guest.Department != null
+                    ? src.Guest.Department.Name : null))
+            .ForMember(dest => dest.JobTitle,
+                opt => opt.MapFrom(src => src.Guest != null ? src.Guest.JobTitle : null))
+            .ForMember(dest => dest.EmploymentGrade,
+                opt => opt.MapFrom(src => src.Guest != null ? src.Guest.EmploymentGrade : null))
+            .ForMember(dest => dest.PassportNumber,
+                opt => opt.MapFrom(src => src.Guest != null ? src.Guest.PassportNumber : null))
+            .ForMember(dest => dest.PassportExpiry,
+                opt => opt.MapFrom(src => src.Guest != null ? src.Guest.PassportExpiry : null))
             // Stored as JSON on the entity, a plain int list on the wire.
             .ForMember(dest => dest.AllowedServices,
                 opt => opt.MapFrom(src => GuestServices.Parse(src.AllowedServicesJson)))

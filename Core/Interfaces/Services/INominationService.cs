@@ -37,4 +37,8 @@ public interface INominationService
     Task<ApiResponse<List<NominationResponse>>> GetForVerificationAsync(Guid eventId, string status, CancellationToken ct = default);
     Task<ApiResponse<HrVerificationResult>> VerifyAsync(HrVerifyRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<HrVerificationResult>> RejectAsync(HrRejectRequest request, int userId, CancellationToken ct = default);
+
+    /// <summary>Withdraws a verify or reject, putting the nomination back to
+    /// pending and clearing who signed it off.</summary>
+    Task<ApiResponse<HrVerificationResult>> RevertVerificationAsync(HrRevertRequest request, int userId, CancellationToken ct = default);
 }

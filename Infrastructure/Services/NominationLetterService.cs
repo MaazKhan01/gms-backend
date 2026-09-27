@@ -30,6 +30,7 @@ namespace Infrastructure.Services;
 /// </summary>
 public class NominationLetterService(
     IUnitOfWork _unitOfWork,
+    IEmailService _emailService,
     ILogger<NominationLetterService> _logger) : INominationLetterService
 {
     private static readonly string[] Languages = { "en", "ar" };
@@ -46,6 +47,7 @@ public class NominationLetterService(
         // rather than 404-ing a mission that simply has no letter.
         if (letter == null)
         {
+            var shellSplit = await VerificationSplitAsync(mission.Id, ct);
             return ApiResponse<NominationLetterResponse>.SuccessResponse(new NominationLetterResponse
             {
                 EventId = mission.PublicId,
@@ -54,6 +56,9 @@ public class NominationLetterService(
                 HostName = mission.HostName,
                 HostEmail = mission.HostEmail,
                 LiveRosterCount = await RosterCountAsync(mission.Id, ct),
+                VerifiedCount = shellSplit.verified,
+                PendingCount = shellSplit.pending,
+                RejectedCount = shellSplit.rejected,
             });
         }
 
@@ -103,20 +108,27 @@ public class NominationLetterService(
             return ApiResponse<NominationLetterResponse>.NotFoundResponse("Mission not found.");
 
         var roster = await LoadRosterSnapshotAsync(mission.Id, ct);
+
+        var counts = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.EventId == mission.Id)
+            .GroupBy(eg => eg.HrVerificationStatus)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var pending = counts.FirstOrDefault(c => c.Status == HrVerificationStatuses.Pending)?.Count ?? 0;
+        var rejected = counts.FirstOrDefault(c => c.Status == HrVerificationStatuses.Rejected)?.Count ?? 0;
+
         if (roster.Count == 0)
             return ApiResponse<NominationLetterResponse>.ErrorResponse(
-                "Nominate at least one delegate before generating the letter.");
+                pending + rejected > 0
+                    ? "No delegate has been verified by HR yet, so the letter would name nobody. Verify the roster first."
+                    : "Nominate at least one delegate before generating the letter.");
 
-        // A rejected nomination must never reach the host. Pending is allowed —
-        // HR often signs off while the letter is being drafted — so only a
-        // rejection blocks.
-        var rejected = await _unitOfWork.EventGuests.QueryNoTracking()
-            .CountAsync(eg => eg.EventId == mission.Id
-                           && eg.HrVerificationStatus == HrVerificationStatuses.Rejected, ct);
-        if (rejected > 0)
-            return ApiResponse<NominationLetterResponse>.ConflictResponse(
-                $"{rejected} nomination(s) were rejected by HR. Remove or re-verify them first.",
-                "ROSTER_HAS_REJECTED");
+        // A rejection used to be a hard stop here. It is not: rejecting is HR
+        // exercising their judgement, and a rejected delegate is already left
+        // out of the snapshot, so the letter is correct either way. Blocking
+        // meant one unresolved rejection could hold up a letter for a roster
+        // that was otherwise settled. The counts on the response say how many
+        // were left out; the screen notifies rather than refuses.
 
         await _unitOfWork.BeginTransactionAsync();
         try
@@ -223,6 +235,43 @@ public class NominationLetterService(
             $"{(resend ? "Re-sent" : "Sent")} to host (v{letter.CurrentVersion})", detail, userId, now, ct);
 
         await _unitOfWork.SaveChangesAsync(ct);
+
+        // The email carries the VERSION's pinned roster, not the live one, so
+        // what the host receives and what the version says can never differ —
+        // even if somebody nominates while the send is in flight.
+        var version = await _unitOfWork.NominationLetterVersions.QueryNoTracking()
+            .Where(v => v.NominationLetterId == letter.Id && v.Version == letter.CurrentVersion)
+            .Select(v => new { v.Language, v.RosterSnapshotJson })
+            .FirstOrDefaultAsync(ct);
+
+        try
+        {
+            await _emailService.SendNominationLetterAsync(hostEmail, new NominationLetterEmailModel
+            {
+                MissionTitle = mission.Title,
+                HostName = mission.HostName,
+                StartDate = mission.StartDate,
+                EndDate = mission.EndDate,
+                Destination = mission.Destination?.Address,
+                Version = letter.CurrentVersion,
+                Language = version?.Language,
+                Note = request.Note?.Trim(),
+                Roster = ParseRoster(version?.RosterSnapshotJson),
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            // The send is RECORDED above and stays recorded: the status change
+            // is the fact Protocol acted on, and mail can be re-sent. Rolling it
+            // back because the SMTP hop failed would lose that, so this reports
+            // the failure and leaves the record standing.
+            _logger.LogError(ex, "Nomination letter email to {Email} failed for mission {MissionId}",
+                hostEmail, mission.Id);
+            var recorded = await GetAsync(mission.PublicId, ct);
+            recorded.Message = "Recorded as sent, but the email could not be delivered. Re-send once mail is working.";
+            return recorded;
+        }
+
         return await GetAsync(mission.PublicId, ct);
     }
 
@@ -279,7 +328,12 @@ public class NominationLetterService(
     private Task<Event> FindMissionAsync(Guid eventId, CancellationToken ct)
         => eventId == Guid.Empty
             ? Task.FromResult<Event>(null)
-            : _unitOfWork.Events.QueryNoTracking().FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
+            // Destination is included for the email's header line. There is no
+            // lazy loading, so without this it is silently null rather than
+            // missing loudly.
+            : _unitOfWork.Events.QueryNoTracking()
+                .Include(e => e.Destination)
+                .FirstOrDefaultAsync(e => e.PublicId == eventId, ct);
 
     private Task<NominationLetter> LoadLetterAsync(int missionId, bool tracking, CancellationToken ct)
     {
@@ -305,12 +359,45 @@ public class NominationLetterService(
         return (letter, mission, null);
     }
 
-    private Task<int> RosterCountAsync(int missionId, CancellationToken ct)
-        => _unitOfWork.EventGuests.QueryNoTracking().CountAsync(eg => eg.EventId == missionId, ct);
+    /// <summary>
+    /// How many delegates a version generated NOW would name. Verified-only, to
+    /// match LoadRosterSnapshotAsync — comparing a verified snapshot against the
+    /// whole roster would flag "the roster changed" the moment anyone was
+    /// nominated, whether or not the letter's contents would actually differ.
+    /// </summary>
+    /// <summary>Where the roster stands with HR, in one query.</summary>
+    private async Task<(int verified, int pending, int rejected)> VerificationSplitAsync(
+        int missionId, CancellationToken ct)
+    {
+        var rows = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Where(eg => eg.EventId == missionId)
+            .GroupBy(eg => eg.HrVerificationStatus)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
 
+        int of(string status) => rows.FirstOrDefault(r => r.Status == status)?.Count ?? 0;
+        return (of(HrVerificationStatuses.Verified),
+                of(HrVerificationStatuses.Pending),
+                of(HrVerificationStatuses.Rejected));
+    }
+
+    private Task<int> RosterCountAsync(int missionId, CancellationToken ct)
+        => _unitOfWork.EventGuests.QueryNoTracking()
+            .CountAsync(eg => eg.EventId == missionId
+                           && eg.HrVerificationStatus == HrVerificationStatuses.Verified, ct);
+
+    /// <summary>
+    /// The delegates a version names: HR-VERIFIED only.
+    ///
+    /// Verification is what clears someone to be put in front of the host
+    /// (workflow step 7 before step 11). Pending does not mean "probably fine",
+    /// it means "not checked yet" — and a passport that turns out to be expired
+    /// after the host holds the letter costs a re-issue and a new version.
+    /// </summary>
     private Task<List<NominationLetterRosterEntry>> LoadRosterSnapshotAsync(int missionId, CancellationToken ct)
         => _unitOfWork.EventGuests.QueryNoTracking()
-            .Where(eg => eg.EventId == missionId)
+            .Where(eg => eg.EventId == missionId
+                      && eg.HrVerificationStatus == HrVerificationStatuses.Verified)
             .OrderBy(eg => eg.Subgroup).ThenBy(eg => eg.Guest.FirstName)
             .Select(eg => new NominationLetterRosterEntry
             {
@@ -357,6 +444,8 @@ public class NominationLetterService(
 
     private async Task<NominationLetterResponse> MapAsync(NominationLetter letter, Event mission, CancellationToken ct)
     {
+        var split = await VerificationSplitAsync(mission.Id, ct);
+
         var versions = await _unitOfWork.NominationLetterVersions.QueryNoTracking()
             .Where(v => v.NominationLetterId == letter.Id)
             .OrderByDescending(v => v.Version)
@@ -396,6 +485,9 @@ public class NominationLetterService(
             HostEmail = mission.HostEmail,
             VersionRosterCount = versionCount,
             LiveRosterCount = liveCount,
+            VerifiedCount = split.verified,
+            PendingCount = split.pending,
+            RejectedCount = split.rejected,
             RosterChangedSinceGenerated = letter.CurrentVersion > 0 && versionCount != liveCount,
             Versions = versions.Select(v => new NominationLetterVersionResponse
             {

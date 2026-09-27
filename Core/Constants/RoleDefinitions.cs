@@ -31,12 +31,16 @@ public static class RoleDefinitions
         // A roster role as well as a portal role: the Head of Delegation travels
         // with the delegation and signs into the portal to review the mission.
         new("head-of-delegation", "Head of Delegation", "Field decisions, protocol order and review of the combined mission report", IsDelegateRole: true),
-        new("delegate", "Delegate", "Travels on the mission; follows the itinerary and submits a trip report", PortalAccess: false, IsDelegateRole: true),
         new("viewer", "Viewer", "Read-only access across the modules granted to it"),
         new(Roles.DRIVER, "Driver", "Ground-transport driver with vehicle and license details on file", PortalAccess: false),
         // Auto-provisioned 1:1 with a Guest row (see GuestService.CreateGuestAsync) —
         // never created directly by an admin. No portal access: a guest only ever
         // authenticates into the VIP app via OTP, never the portal.
-        new(Roles.GUEST, "Guest", "VIP guest app account, auto-provisioned alongside its Guest profile", PortalAccess: false, IsDelegateRole: true),
+        // Name says Delegate, code stays `guest`: GuestService and
+        // NominationService resolve it by code, and DMS calls these people
+        // delegates. NOT a delegate role — that flag feeds the mission-role
+        // dropdown (what someone does on the mission), which is a different
+        // question from what their login can do.
+        new(Roles.GUEST, "Delegate", "Delegate account, auto-provisioned alongside the person's delegate profile", PortalAccess: false),
     };
 }

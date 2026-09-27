@@ -96,11 +96,26 @@ public class UserService(
         }
     }
 
-    public async Task<ApiResponse<PaginatedResponse<UserResponse>>> GetUsersAsync(PagedRequest request, CancellationToken ct = default)
+    public async Task<ApiResponse<PaginatedResponse<UserResponse>>> GetUsersAsync(
+        PagedRequest request, string audience = null, CancellationToken ct = default)
     {
         try
         {
             var query = _unitOfWork.Users.Query().Where(u => u.IsDeleted != true);
+
+            // Two populations share this table and have nothing to do with each
+            // other. A delegate's account exists so they can see their own
+            // itinerary; a platform user's exists so they can run the system.
+            // Having them in one list meant the people who administer DMS were
+            // outnumbered by the people it is run for.
+            //
+            // The discriminator is the Guest profile, not the role: a delegate
+            // could be given any role, but only a delegate has a Guest record
+            // behind their login.
+            if (string.Equals(audience, UserAudiences.Platform, StringComparison.OrdinalIgnoreCase))
+                query = query.Where(u => u.GuestProfile == null);
+            else if (string.Equals(audience, UserAudiences.Delegates, StringComparison.OrdinalIgnoreCase))
+                query = query.Where(u => u.GuestProfile != null);
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
             {

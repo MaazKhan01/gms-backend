@@ -32,6 +32,12 @@ public class NominationLetterResponse
     /// generated, so what the host holds is out of date.</summary>
     public bool RosterChangedSinceGenerated { get; set; }
 
+    // The verification split, so the screen can say what a new version would
+    // name before anyone presses Generate. Only `Verified` reaches the host.
+    public int VerifiedCount { get; set; }
+    public int PendingCount { get; set; }
+    public int RejectedCount { get; set; }
+
     public List<NominationLetterVersionResponse> Versions { get; set; } = new();
     public List<NominationLetterHistoryResponse> History { get; set; } = new();
 }
@@ -100,4 +106,24 @@ public class LetterResponseRequest
     public Guid EventId { get; set; }
     /// <summary>What the host said. Required when requesting changes.</summary>
     public string Note { get; set; }
+}
+
+/// <summary>
+/// What the host is actually emailed: the mission, and the verified delegates
+/// being put forward. Built from the version's pinned snapshot, never from the
+/// live roster — the email and the version must say the same thing.
+/// </summary>
+public class NominationLetterEmailModel
+{
+    public string MissionTitle { get; set; }
+    public string HostName { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
+    public string Destination { get; set; }
+    public int Version { get; set; }
+    /// <summary>en | ar — which language the version was generated in.</summary>
+    public string Language { get; set; }
+    /// <summary>Free text the sender added, shown above the table.</summary>
+    public string Note { get; set; }
+    public List<NominationLetterRosterEntry> Roster { get; set; } = new();
 }

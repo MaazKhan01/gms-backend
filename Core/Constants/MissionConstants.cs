@@ -148,3 +148,33 @@ public static class CombinedReportStatuses
     public const string Approved  = "approved";
     public const string Published = "published";
 }
+
+/// <summary>
+/// Which population of accounts a Users listing is about. Platform users run
+/// the system; delegates are the people it is run for, and hold an account only
+/// so they can see their own mission. They share the Users table and nothing
+/// else, so every screen that lists accounts has to say which it means.
+/// </summary>
+public static class UserAudiences
+{
+    /// <summary>Accounts with no Guest profile behind them — staff and admins.</summary>
+    public const string Platform = "platform";
+    /// <summary>Accounts that exist because the person is a delegate.</summary>
+    public const string Delegates = "delegates";
+
+    public static bool IsValid(string value) => value == Platform || value == Delegates;
+}
+
+/// <summary>
+/// A mission's lifecycle. `completed` is derived from the end date elsewhere and
+/// only stops new delegates and bookings; `closed` is a DECISION, taken once the
+/// combined report has been published, after which the mission is an archive.
+/// </summary>
+public static class MissionStatuses
+{
+    public const string Planning  = "planning";
+    public const string Active    = "active";
+    public const string Completed = "completed";
+    public const string Cancelled = "cancelled";
+    public const string Closed    = "closed";
+}

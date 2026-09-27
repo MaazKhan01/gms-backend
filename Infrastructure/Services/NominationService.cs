@@ -70,18 +70,27 @@ public class NominationService(
             departmentInternalId = dept.Id;
         }
 
-        // The STAFF DIRECTORY, minus whoever is already on this mission.
+        // The STAFF DIRECTORY, read against this mission. Two populations, and
+        // the rules for them are different:
         //
-        // A department is what makes someone ours: the workflow has Department
-        // Heads nominating their own people, so a person with no department is
-        // not staff and cannot be nominated. Without this the picker returned
-        // every Guest row in the database — which is to say the delegates of
-        // every other mission, since they are people too.
+        // 1. ANYONE ALREADY ON THIS MISSION. Listed unconditionally. This screen
+        //    has to be a superset of the roster — a delegate added straight from
+        //    the Delegates screen is on the mission whether or not they were
+        //    ever "staff", and a roster member missing from the roster view is
+        //    just a bug wearing a rule.
         //
-        // The roster is the exclusion list, so re-nominating someone is
-        // impossible from the picker rather than merely rejected after the fact.
+        // 2. EVERYONE ELSE WHO COULD BE NOMINATED. Here a department is what
+        //    makes someone ours: the workflow has Department Heads nominating
+        //    their own people, and without it the pool was every Guest row in
+        //    the database. Anyone committed to a DIFFERENT mission is also left
+        //    out — they are that mission's delegate, and borrowing them has to
+        //    be a decision rather than a click on a name that happened to be in
+        //    the list. Delegates ▸ Add Delegate ▸ Existing Delegate is that
+        //    decision; once made, clause 1 brings them back in as "On roster".
         var query = _unitOfWork.Guests.QueryNoTracking()
-            .Where(g => g.DepartmentId != null);
+            .Where(g => g.EventGuests.Any(eg => eg.EventId == mission.Id)
+                     || (g.DepartmentId != null
+                         && !g.EventGuests.Any(eg => eg.EventId != mission.Id)));
 
         if (!includeOnRoster)
             query = query.Where(g => !g.EventGuests.Any(eg => eg.EventId == mission.Id));
@@ -129,7 +138,15 @@ public class NominationService(
                     && mission.StartDate != null && mission.EndDate != null
                     && eg.Event.StartDate <= mission.EndDate && eg.Event.EndDate >= mission.StartDate),
 
-                OnRoster = g.EventGuests.Any(eg => eg.EventId == mission.Id),
+                // "On roster" means NOMINATED. A participation can exist without
+                // one — the Delegates screen creates rows directly — and calling
+                // that on-roster told the coordinator they had nominated somebody
+                // they had not, and hid the button that would have.
+                OnRoster = g.EventGuests.Any(eg => eg.EventId == mission.Id && eg.NominatedOn != null),
+                // Separate flag: on the mission, but not put forward yet. The
+                // row still needs its participation id so it can be edited or
+                // removed without being nominated first.
+                OnMissionNotNominated = g.EventGuests.Any(eg => eg.EventId == mission.Id && eg.NominatedOn == null),
                 ParticipationId = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => (Guid?)eg.PublicId).FirstOrDefault(),
@@ -142,6 +159,12 @@ public class NominationService(
                 VisaStatus = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => eg.VisaStatus).FirstOrDefault(),
+                HrVerificationStatus = g.EventGuests
+                    .Where(eg => eg.EventId == mission.Id)
+                    .Select(eg => eg.HrVerificationStatus).FirstOrDefault(),
+                HrVerificationNote = g.EventGuests
+                    .Where(eg => eg.EventId == mission.Id)
+                    .Select(eg => eg.HrVerificationNote).FirstOrDefault(),
                 VisaRequired = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => eg.VisaRequired).FirstOrDefault(),
@@ -311,23 +334,50 @@ public class NominationService(
             .FirstOrDefaultAsync(g => g.PublicId == request.PersonId, ct);
         if (person == null) return ApiResponse<NominationResponse>.NotFoundResponse("Person not found.");
 
-        if (await _unitOfWork.EventGuests.QueryNoTracking()
-                .AnyAsync(eg => eg.EventId == mission.Id && eg.GuestId == person.Id, ct))
-            return ApiResponse<NominationResponse>.ConflictResponse(
-                "This person is already on the mission.", "ALREADY_ON_MISSION");
+        // A participation may already exist without being a nomination: the
+        // Delegates screen creates one directly. Nominating that person is a
+        // PROMOTION of the row they already have, not a second row — doing it
+        // any other way would either fail as a duplicate or split their
+        // bookings across two participations.
+        var existing = await _unitOfWork.EventGuests.Query()
+            .FirstOrDefaultAsync(eg => eg.EventId == mission.Id && eg.GuestId == person.Id, ct);
 
-        var roleCheck = await ResolveMissionRoleAsync(request.MissionRoleId, mission.Id, null, ct);
+        if (existing is { NominatedOn: not null })
+            return ApiResponse<NominationResponse>.ConflictResponse(
+                "This person has already been nominated to the mission.", "ALREADY_ON_MISSION");
+
+        var roleCheck = await ResolveMissionRoleAsync(
+            request.MissionRoleId, mission.Id, existing?.Id, ct);
         if (roleCheck.Error != null) return roleCheck.Error.As<NominationResponse>();
 
-        // Cap check last among the reads, so a clearer error wins when several apply.
-        if (mission.DelegationCap.HasValue)
+        // Cap check last among the reads, so a clearer error wins when several
+        // apply. It counts NOMINATIONS: the cap is what the host agreed to
+        // receive, and someone merely added to the mission has not been put
+        // forward to them yet. Promoting an existing row does not consume a new
+        // slot, so it skips the check.
+        if (mission.DelegationCap.HasValue && existing == null)
         {
             var onRoster = await _unitOfWork.EventGuests.QueryNoTracking()
-                .CountAsync(eg => eg.EventId == mission.Id, ct);
+                .CountAsync(eg => eg.EventId == mission.Id && eg.NominatedOn != null, ct);
             if (onRoster >= mission.DelegationCap.Value)
                 return ApiResponse<NominationResponse>.ConflictResponse(
                     $"The host's cap of {mission.DelegationCap} delegate(s) is already reached.",
                     "DELEGATION_CAP_REACHED");
+        }
+
+        if (existing != null)
+        {
+            existing.MissionRoleId = roleCheck.RoleId ?? existing.MissionRoleId;
+            if (!string.IsNullOrWhiteSpace(request.Subgroup)) existing.Subgroup = request.Subgroup.Trim();
+            existing.NominatedOn = DateTime.UtcNow;
+            existing.NominatedBy = userId == 0 ? null : userId;
+            existing.HrVerificationStatus = HrVerificationStatuses.Pending;
+            existing.SetUpdateAudit(userId);
+
+            _unitOfWork.EventGuests.Update(existing);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            return await GetOneAsync(existing.PublicId, mission, ct);
         }
 
         var participation = new EventGuest
@@ -466,6 +516,10 @@ public class NominationService(
         return SetVerificationAsync(request.Ids, HrVerificationStatuses.Rejected, request.Note, userId, ct);
     }
 
+    public Task<ApiResponse<HrVerificationResult>> RevertVerificationAsync(
+        HrRevertRequest request, int userId, CancellationToken ct = default)
+        => SetVerificationAsync(request?.Ids, HrVerificationStatuses.Pending, request?.Note, userId, ct);
+
     /// <summary>
     /// Bulk verify/reject. Partial success by design: ids that are unknown or
     /// already in the target state are reported as skips rather than failing the
@@ -497,8 +551,24 @@ public class NominationService(
             }
 
             row.HrVerificationStatus = targetStatus;
-            row.HrVerifiedOn = DateTime.UtcNow;
-            row.HrVerifiedBy = userId == 0 ? null : userId;
+
+            if (targetStatus == HrVerificationStatuses.Pending)
+            {
+                // Back in the queue, so there is no sign-off to point at. Keeping
+                // the old verifier and date would read as though the row were
+                // still decided — and the nomination letter, which names verified
+                // delegates only, would disagree with the screen.
+                row.HrVerifiedOn = null;
+                row.HrVerifiedBy = null;
+            }
+            else
+            {
+                row.HrVerifiedOn = DateTime.UtcNow;
+                row.HrVerifiedBy = userId == 0 ? null : userId;
+            }
+
+            // The note survives a revert: it is the only record of why the
+            // decision was withdrawn.
             row.HrVerificationNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
             row.SetUpdateAudit(userId);
 

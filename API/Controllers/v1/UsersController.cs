@@ -38,14 +38,17 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
 
     [HttpGet]
     [HasPermission(PermissionCodes.Users)]
+    /// <summary><paramref name="audience"/>: platform | delegates. Omitted,
+    /// both populations are listed together.</summary>
     public async Task<IActionResult> GetUsers(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 10,
         [FromQuery] string search = null,
+        [FromQuery] string audience = null,
         CancellationToken ct = default)
     {
         var result = await _userService.GetUsersAsync(
-            new PagedRequest { PageNumber = pageNumber, PageSize = pageSize, SearchTerm = search }, ct);
+            new PagedRequest { PageNumber = pageNumber, PageSize = pageSize, SearchTerm = search }, audience, ct);
         return ToResponse(result);
     }
 

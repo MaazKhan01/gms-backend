@@ -421,7 +421,6 @@ Three fields on the main response make staleness visible without a diff:
 | Rule | Result |
 | --- | --- |
 | Roster empty at generate | 400 |
-| Any nomination HR-**rejected** | 409 `ROSTER_HAS_REJECTED` |
 | `language` not `en` / `ar` | 400 |
 | Send / acknowledge / request-changes before generating | 409 `LETTER_NOT_GENERATED` |
 | Send with no host email anywhere | 400 |
@@ -706,6 +705,59 @@ response field are named "image" for historical reasons only.
 
 ---
 
+## 10.2 Reports & Close (Phase 9)
+
+Two documents, deliberately separate. Each delegate writes their own
+post-mission report; the Head of Delegation assembles those into one Combined
+Mission Report; Protocol approves and publishes it; the mission then closes.
+
+All of Phase 9 is writable **after** the mission has completed. The completion
+guard stops new delegates and bookings — reporting is the work that only starts
+once the mission is over.
+
+### Post-mission reports — `/v1/post-mission-reports` (`post-mission-reports`)
+
+| Method | Route | Notes |
+| --- | --- | --- |
+| GET | `/` | `?eventId=&status=` — `not_submitted` / `submitted` / `approved` / `outstanding` |
+| GET | `/summary` | Totals plus `nudgedAndStillOutstanding` |
+| PUT | `/` | `{ id, narrative, submit }` — `submit:false` saves a draft |
+| POST | `/{participationId}/approve` | Accepts a submitted report; it is then read-only |
+| POST | `/nudge` | `{ eventId, ids, note }` — empty `ids` chases everyone outstanding |
+
+`facts` on each row is the trip as DMS already records it: dates, destination,
+host, hotel and stay, flight legs, transport legs, sessions attended. It is read
+from the booking tables on **every request** rather than snapshotted into the
+report, so a late correction to a flight appears without anyone re-saving. The
+delegate writes only `narrative`.
+
+`nudge` bumps `nudgeCount` and emails the delegate. The count goes up even when
+delivery fails, and the failure is reported per delegate — the chase was
+attempted, and the coordinator needs to know it was delivery that broke.
+
+### Combined report — `/v1/combined-report` (`combined-report`)
+
+| Method | Route | Notes |
+| --- | --- | --- |
+| GET | `/` | Status, body, both sign-offs, delegate-report counts, `staleSinceAssembled` |
+| POST | `/assemble` | Builds the body from submitted reports; refused once approved |
+| PUT | `/` | `{ eventId, contentHtml }` — the Head of Delegation's edits |
+| POST | `/submit` | draft → in_review, records the reviewer |
+| POST | `/approve` | in_review → approved, records the approver |
+| POST | `/publish` | approved → published, with the archived document's URL |
+| POST | `/close-mission` | Sets the mission to `closed`; refused until published |
+
+Reviewing and approving are two endpoints because they are two people answering
+two different questions. `staleSinceAssembled` is true when a delegate report
+arrived after the body was built — the same signal as the nomination letter's
+roster-changed banner, and for the same reason.
+
+Closing is gated on publication alone. The full workflow also gates it on
+finance settlement; finance is out of DMS scope, so that half does not exist
+here.
+
+---
+
 ## 11. Error codes
 
 Machine-readable, for clients that need to branch rather than just display.
@@ -724,7 +776,6 @@ Machine-readable, for clients that need to branch rather than just display.
 | `DELEGATION_CAP_REACHED` | The host's cap is already used up |
 | `HEAD_OF_DELEGATION_TAKEN` | The mission already has one |
 | `NOMINATION_HAS_BOOKINGS` | Delegate still has flights / hotel / transport / seat |
-| `ROSTER_HAS_REJECTED` | Roster contains HR-rejected nominations; cannot go to the host |
 | `LETTER_NOT_GENERATED` | No version issued yet |
 | `LETTER_NOT_SENT` | Cannot record a host reply before sending |
 | `LETTER_ALREADY_ACKNOWLEDGED` | Generate a new version to send again |
@@ -732,6 +783,17 @@ Machine-readable, for clients that need to branch rather than just display.
 | `ITEM_ALREADY_MET` | Nothing to waive — the item is satisfied |
 | `NO_RECIPIENTS` | Nobody matches the broadcast target |
 | `INCIDENT_STATUS_UNCHANGED` | The incident is already in that status |
+| `REPORT_EMPTY` | Nothing written — cannot submit, and cannot send an empty combined report for approval |
+| `REPORT_APPROVED` | That delegate's report is approved and no longer editable |
+| `REPORT_NOT_SUBMITTED` | Only a submitted report can be approved |
+| `NO_REPORTS` | No delegate has submitted, so there is nothing to assemble |
+| `NOT_ASSEMBLED` | The combined report has not been assembled yet |
+| `REPORT_LOCKED` | Approved or published — re-assembling would rewrite what was signed off |
+| `NOT_DRAFT` | Only a draft can be sent for approval |
+| `NOT_IN_REVIEW` | Only a report under review can be approved |
+| `NOT_APPROVED` | Approve before publishing |
+| `REPORT_NOT_PUBLISHED` | The combined report must be published before the mission can close |
+| `ALREADY_CLOSED` | The mission is already closed |
 
 Pre-existing, unchanged: `GUEST_ALREADY_ON_EVENT`, `GUEST_EMAIL_CONFLICT`,
 `SERVICE_LEVEL_RULE`.
