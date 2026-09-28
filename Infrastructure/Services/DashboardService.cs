@@ -437,13 +437,57 @@ namespace Infrastructure.Services
                 Flag = openIncidents > 0 ? $"{openIncidents} open" : null,
             });
 
-            // ── Phase 9: no endpoints yet. Said plainly rather than shown as 0% ──
+            // ── Phase 9: reports in, then the report out ─────────────────────────
+            //
+            // Two things have to happen and they are not the same size, so the
+            // bar is not a simple ratio: collecting every delegate's report is
+            // most of the work, and the combined report's four sign-offs are the
+            // rest. Weighted 60/40 so the step moves while reports come in
+            // rather than sitting at zero until the last one lands.
+            var reportStatuses = await _unitOfWork.PostMissionReports.QueryNoTracking()
+                .Where(r => roster.Select(x => x.Id).Contains(r.EventGuestId))
+                .Select(r => r.Status)
+                .ToListAsync(ct);
+
+            var reportsIn = reportStatuses.Count(st => st == PostMissionReportStatuses.Submitted
+                                                    || st == PostMissionReportStatuses.Approved);
+
+            var combined = await _unitOfWork.CombinedReports.QueryNoTracking()
+                .Where(c => c.EventId == ev.Id)
+                .Select(c => c.Status)
+                .FirstOrDefaultAsync(ct);
+
+            // How far the combined report itself has got, as a fraction of its
+            // own four steps.
+            var combinedPct = combined switch
+            {
+                CombinedReportStatuses.Draft => 25,
+                CombinedReportStatuses.InReview => 50,
+                CombinedReportStatuses.Approved => 75,
+                CombinedReportStatuses.Published => 100,
+                _ => 0,
+            };
+
+            var closed = ev.Status == MissionStatuses.Closed;
+            var reportsPct = total == 0 ? 0 : Pct(reportsIn, total);
+            var phase9 = closed ? 100 : (int)Math.Round(reportsPct * 0.6 + combinedPct * 0.4);
+
+            var outstanding = Math.Max(0, total - reportsIn);
             journey.Steps.Add(new MissionJourneyStepDto
             {
                 Phase = 9, Code = "combined-report",
                 Title = "Reports & Close", TitleAr = "التقارير والإغلاق",
-                Modelled = false,
-                Stat = "Not built yet",
+                Percent = phase9,
+                Stat = closed
+                    ? "Mission closed"
+                    : combined == CombinedReportStatuses.Published
+                        ? "Report published"
+                        : $"{reportsIn}/{total} reports in",
+                // Only worth flagging once the mission is over — before that,
+                // "nobody has reported" is simply the truth and not a problem.
+                Flag = !closed && ev.EndDate.HasValue && ev.EndDate.Value < DateOnly.FromDateTime(DateTime.UtcNow) && outstanding > 0
+                    ? $"{outstanding} report{(outstanding == 1 ? "" : "s")} outstanding"
+                    : null,
             });
 
             return journey;

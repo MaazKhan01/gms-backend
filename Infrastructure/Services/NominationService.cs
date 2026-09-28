@@ -377,6 +377,9 @@ public class NominationService(
             _unitOfWork.EventGuests.Update(existing);
             await _unitOfWork.SaveChangesAsync(ct);
 
+            // The mission role may grant portal access — see DelegateAccountRole.
+            await DelegateAccountRole.SyncAsync(_unitOfWork, existing.GuestId, ct);
+
             return await GetOneAsync(existing.PublicId, mission, ct);
         }
 
@@ -408,6 +411,8 @@ public class NominationService(
                 "This person is already on the mission.", "ALREADY_ON_MISSION");
         }
 
+        await DelegateAccountRole.SyncAsync(_unitOfWork, participation.GuestId, ct);
+
         return await GetOneAsync(participation.PublicId, mission, ct);
     }
 
@@ -433,6 +438,8 @@ public class NominationService(
 
         _unitOfWork.EventGuests.Update(participation);
         await _unitOfWork.SaveChangesAsync(ct);
+
+        await DelegateAccountRole.SyncAsync(_unitOfWork, participation.GuestId, ct);
 
         return await GetOneAsync(participation.PublicId, participation.Event, ct);
     }

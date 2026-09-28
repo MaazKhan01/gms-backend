@@ -973,6 +973,11 @@ public class GuestService(
 
             var response = _mapper.Map<GuestResponse>(updated);
             await MergeInvitationAsync(response, participation.Id, ct);
+
+            // A Head of Delegation signs in to the portal; a plain delegate does
+            // not. Their login has to follow the mission role, or the role that
+            // grants access is the one thing that cannot use it.
+            await DelegateAccountRole.SyncAsync(_unitOfWork, guest.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest updated successfully");
         }
         catch (Exception ex)
@@ -1117,6 +1122,11 @@ public class GuestService(
 
             var response = _mapper.Map<GuestResponse>(created);
             await MergeInvitationAsync(response, participation.Id, ct);
+
+            // A Head of Delegation signs in to the portal; a plain delegate does
+            // not. Their login has to follow the mission role, or the role that
+            // grants access is the one thing that cannot use it.
+            await DelegateAccountRole.SyncAsync(_unitOfWork, guest.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest created successfully");
         }
         catch (Exception ex)

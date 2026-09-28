@@ -308,6 +308,14 @@ public class EmailService : IEmailService
     }
 
 
+    /// <summary>
+    /// The nomination letter is the one email in this system that is a formal
+    /// DOCUMENT rather than a notification, and it goes to a host organisation
+    /// outside the delegation. So it does not use the dark product shell every
+    /// other email shares — it is laid out as correspondence: letterhead, To,
+    /// Subject, body, roster, signature. Ink on white, which is also what it
+    /// looks like when the host prints it.
+    /// </summary>
     public async Task SendNominationLetterAsync(
         string toEmail, NominationLetterEmailModel model, CancellationToken ct = default)
     {
@@ -323,56 +331,100 @@ public class EmailService : IEmailService
         // A table, not a prose list: the host has to read names, roles and
         // passport numbers off it and reply about specific people.
         var rows = string.Join(string.Empty, model.Roster.Select((r, i) => $@"
-            <tr style='background:{(i % 2 == 1 ? "rgba(255,255,255,0.03)" : "transparent")};'>
-              <td style='{Cell}'>{i + 1}</td>
-              <td style='{Cell}color:{Ink};font-weight:600;'>{Escape(r.FullName)}</td>
-              <td style='{Cell}'>{Escape(r.JobTitle) ?? Dash}</td>
-              <td style='{Cell}'>{Escape(r.MissionRole) ?? Dash}</td>
-              <td style='{Cell}'>{Escape(r.Nationality) ?? Dash}</td>
-              <td style='{Cell}'>{Escape(r.PassportNumber) ?? Dash}</td>
-              <td style='{Cell}'>{(r.PassportExpiry is { } pe ? pe.ToString("d MMM yyyy") : Dash)}</td>
+            <tr style='background:{(i % 2 == 1 ? "#f7f8fa" : "#ffffff")};'>
+              <td style='{LCell}color:#8a93a0;'>{i + 1}</td>
+              <td style='{LCell}color:#14181f;font-weight:600;'>{Escape(r.FullName)}</td>
+              <td style='{LCell}'>{Escape(r.JobTitle) ?? Dash}</td>
+              <td style='{LCell}'>{Escape(r.MissionRole) ?? Dash}</td>
+              <td style='{LCell}'>{Escape(r.Nationality) ?? Dash}</td>
+              <td style='{LCell}font-family:monospace;'>{Escape(r.PassportNumber) ?? Dash}</td>
+              <td style='{LCell}'>{(r.PassportExpiry is { } pe ? pe.ToString("d MMM yyyy") : Dash)}</td>
             </tr>"));
 
         var note = string.IsNullOrWhiteSpace(model.Note)
             ? string.Empty
-            : $"<p style='{P}'>{Escape(model.Note)}</p>";
+            : $"<p style='{LP}'>{Escape(model.Note)}</p>";
 
-        var destination = string.IsNullOrWhiteSpace(model.Destination)
+        var where = string.IsNullOrWhiteSpace(model.Destination)
             ? string.Empty
-            : $"<p style='{Small}'>Destination: {Escape(model.Destination)}</p>";
+            : $", {Escape(model.Destination)}";
 
-        var inner = $@"
-            <p style='{P}'>Dear {Escape(model.HostName) ?? "Sir / Madam"},</p>
-            <p style='{P}'>We are pleased to submit our delegation for
-              <strong style='color:{Ink};'>{Escape(model.MissionTitle)}</strong>{(dates != null ? $", {dates}" : string.Empty)}.
-              The {model.Roster.Count} delegate(s) named below have been verified by our HR department.</p>
-            {note}
-            <table role='presentation' width='100%' cellpadding='0' cellspacing='0'
-                   style='border-collapse:collapse;margin:18px 0;font-size:12.5px;'>
-              <tr>
-                <th style='{Head}'>#</th>
-                <th style='{Head}'>Name</th>
-                <th style='{Head}'>Title</th>
-                <th style='{Head}'>Role</th>
-                <th style='{Head}'>Nationality</th>
-                <th style='{Head}'>Passport</th>
-                <th style='{Head}'>Expires</th>
-              </tr>
-              {rows}
-            </table>
-            {destination}
-            <p style='{Small}'>Please reply to this email to confirm the delegation or request changes.</p>";
+        var body = $@"
+<!DOCTYPE html>
+<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'></head>
+<body style='margin:0;padding:0;background:#eef0f4;'>
+  <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background:#eef0f4;padding:28px 12px;'>
+    <tr><td align='center'>
+      <table role='presentation' width='100%' cellpadding='0' cellspacing='0'
+             style='max-width:680px;background:#ffffff;border-radius:10px;
+                    border:1px solid #dfe3ea;padding:34px 36px;
+                    font-family:Georgia,''Times New Roman'',serif;color:#14181f;'>
 
-        var body = Shell(
-            "Nomination Letter",
-            $"Delegation for<br><em style='font-style:italic;color:{AccentSoft};'>{Escape(model.MissionTitle)}</em>",
-            inner);
+        <tr><td style='border-bottom:2px solid #14181f;padding-bottom:12px;'>
+          <div style='font-size:16px;font-weight:700;'>State of Qatar — Protocol Department</div>
+          <div style='font-family:Arial,Helvetica,sans-serif;font-size:11.5px;color:#5b6472;margin-top:4px;'>
+            {DateTime.UtcNow:d MMM yyyy}{(model.Version > 0 ? $" · Version {model.Version}" : string.Empty)}
+          </div>
+        </td></tr>
+
+        <tr><td style='padding-top:20px;'>
+          <p style='{LP}color:#3a424f;margin-bottom:14px;'>
+            To: {Escape(model.HostName) ?? "Sir / Madam"}
+          </p>
+
+          <p style='{LP}'><b>Subject: Nomination Letter — {Escape(model.MissionTitle)}</b></p>
+
+          <p style='{LP}'>Dear {Escape(model.HostName) ?? "Sir / Madam"},</p>
+
+          <p style='{LP}'>We are pleased to confirm the delegation nominated to attend
+            <b>{Escape(model.MissionTitle)}</b>{where}{(dates != null ? $", {dates}" : string.Empty)}.
+            The {model.Roster.Count} delegate(s) named below have been verified by our HR department.</p>
+
+          {note}
+
+          <table role='presentation' width='100%' cellpadding='0' cellspacing='0'
+                 style='border-collapse:collapse;margin:20px 0;
+                        font-family:Arial,Helvetica,sans-serif;font-size:12px;'>
+            <tr>
+              <th style='{LHead}'>#</th>
+              <th style='{LHead}'>Name</th>
+              <th style='{LHead}'>Title</th>
+              <th style='{LHead}'>Role</th>
+              <th style='{LHead}'>Nationality</th>
+              <th style='{LHead}'>Passport</th>
+              <th style='{LHead}'>Expires</th>
+            </tr>
+            {rows}
+          </table>
+
+          <p style='{LP}'>Please reply to this email to confirm the delegation or request changes.</p>
+
+          <p style='{LP}margin-top:26px;'>
+            Sincerely,<br>
+            <b>Protocol Department</b><br>
+            State of Qatar
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>";
 
         await SendEmailAsync(toEmail, subject, body, ct);
         _logger.LogInformation(
             "Nomination letter v{Version} emailed to {Email} with {Count} delegate(s)",
             model.Version, toEmail, model.Roster.Count);
     }
+
+    // The letter's own type scale — light, printable, and deliberately not the
+    // product shell's dark tokens.
+    private const string LP = "margin:0 0 12px;font-size:14px;line-height:1.65;color:#14181f;";
+
+    private const string LHead = "padding:8px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;"
+                               + "letter-spacing:0.05em;color:#3a424f;font-weight:700;background:#eef1f5;"
+                               + "border:1px solid #c9cfd8;white-space:nowrap;";
+
+    private const string LCell = "padding:7px 10px;color:#3a424f;border:1px solid #d7dce3;vertical-align:top;";
 
     public async Task SendReportReminderAsync(
         string toEmail, string delegateName, string missionTitle, string note, CancellationToken ct = default)
