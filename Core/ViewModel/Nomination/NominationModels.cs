@@ -107,6 +107,9 @@ public class NominationCandidateResponse
     /// <summary>The participation, when they are on it. What edit and remove take.</summary>
     public Guid? ParticipationId { get; set; }
 
+    /// <summary>The role's id, not just its label — the nominate form preselects
+    /// it, and a name cannot be fed back to a dropdown keyed by id.</summary>
+    public Guid? MissionRoleId { get; set; }
     public string MissionRoleName { get; set; }
     public string Subgroup { get; set; }
 

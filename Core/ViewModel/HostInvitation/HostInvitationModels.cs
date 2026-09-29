@@ -75,4 +75,11 @@ public class ConvertInvitationRequest
 
     /// <summary>fixed | flexible. Omit for the default (flexible).</summary>
     public string GuestModel { get; set; }
+
+    // The conversion form is the New Mission form, so it collects a cover image
+    // and an attachment like any other mission. Without these the two silently
+    // vanished on save: the form gathered them and the convert request had
+    // nowhere to put them.
+    public string ImageUrl { get; set; }
+    public string AttachmentUrl { get; set; }
 }

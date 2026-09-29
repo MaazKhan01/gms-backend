@@ -150,6 +150,9 @@ public class NominationService(
                 ParticipationId = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => (Guid?)eg.PublicId).FirstOrDefault(),
+                MissionRoleId = g.EventGuests
+                    .Where(eg => eg.EventId == mission.Id && eg.MissionRole != null)
+                    .Select(eg => (Guid?)eg.MissionRole.PublicId).FirstOrDefault(),
                 MissionRoleName = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => eg.MissionRole.Name).FirstOrDefault(),

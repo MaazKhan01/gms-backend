@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Core.Constants;
 using System.Collections.Generic;
 using System.Globalization;
@@ -62,6 +62,12 @@ public class EventService(
             // directly on Event for EventResponse.VenueId.
             .Include(e => e.Venue)
             .Include(e => e.Sessions).ThenInclude(s => s.Venue)
+            // EventResponse maps these ids off the navigation's PublicId, so
+            // without the Include they serialise as null even when set — which
+            // is exactly how a saved host organisation looked "missing".
+            .Include(e => e.Destination)
+            .Include(e => e.HostOrganization)
+            .Include(e => e.HostInvitation)
             .ToListAsync(ct);
 
         var mapped = _mapper.Map<List<EventResponse>>(items);
@@ -74,6 +80,9 @@ public class EventService(
         var ev = await _unitOfWork.Events.Query()
             .Include(e => e.Venue)
             .Include(e => e.Sessions).ThenInclude(s => s.Venue)
+            .Include(e => e.Destination)
+            .Include(e => e.HostOrganization)
+            .Include(e => e.HostInvitation)
             .FirstOrDefaultAsync(e => e.PublicId == id, ct);
 
         if (ev == null)
