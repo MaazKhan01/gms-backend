@@ -130,13 +130,26 @@ public class NominationService(
                 // so rather than leaving a familiar name looking like a leak
                 // from another mission's roster.
                 CurrentMissions = g.EventGuests
-                    .Where(eg => eg.Event.EndDate == null || eg.Event.EndDate >= today)
+                    .Where(eg => eg.EventId != mission.Id
+                              && (eg.Event.EndDate == null || eg.Event.EndDate >= today))
                     .Select(eg => eg.Event.Title)
                     .ToList(),
+                // Deliberately excludes THIS mission: without that, everyone
+                // already on the roster overlapped themselves and the whole
+                // warning read as noise.
                 OverlapsThisMission = g.EventGuests.Any(eg =>
-                    eg.Event.StartDate != null && eg.Event.EndDate != null
+                    eg.EventId != mission.Id
+                    && eg.Event.StartDate != null && eg.Event.EndDate != null
                     && mission.StartDate != null && mission.EndDate != null
                     && eg.Event.StartDate <= mission.EndDate && eg.Event.EndDate >= mission.StartDate),
+                OverlappingMissions = g.EventGuests
+                    .Where(eg => eg.EventId != mission.Id
+                              && eg.Event.StartDate != null && eg.Event.EndDate != null
+                              && mission.StartDate != null && mission.EndDate != null
+                              && eg.Event.StartDate <= mission.EndDate
+                              && eg.Event.EndDate >= mission.StartDate)
+                    .Select(eg => eg.Event.Title)
+                    .ToList(),
 
                 // "On roster" means NOMINATED. A participation can exist without
                 // one — the Delegates screen creates rows directly — and calling

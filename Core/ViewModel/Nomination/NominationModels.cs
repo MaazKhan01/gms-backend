@@ -91,6 +91,13 @@ public class NominationCandidateResponse
     /// <summary>True when one of those overlaps the mission being staffed.</summary>
     public bool OverlapsThisMission { get; set; }
 
+    /// <summary>
+    /// The overlapping missions by name. The warning has to say WHICH mission
+    /// the person is double-booked on — "already on an overlapping mission" is
+    /// not something a coordinator can act on without then going to look it up.
+    /// </summary>
+    public List<string> OverlappingMissions { get; set; } = new();
+
     // ── This mission ─────────────────────────────────────────────────────────
     // The screen lists the whole staff directory, so every row has to say where
     // it stands against the mission being staffed — a directory that did not
