@@ -15,27 +15,49 @@ route to.
 
 ## Railway (current)
 
-Railway auto-detects `Dockerfile` at the repo root, so `railway.json` mainly
-pins the builder and wires the health check. Nothing else to configure at the
-build level.
+Railway auto-detects the `Dockerfile` at the repo root — the branch already
+carries one, whose entrypoint is
+`sh -c "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080} dotnet API.dll"`. So
+`railway.json` only overrides the Pre-Deploy Command; the build needs nothing.
 
 ### Port
 
 **Do not set `PORT` yourself.** Railway injects it and routes the public domain
 to it; a hand-set value that disagrees with what Railway routes to presents as a
-deploy that builds fine and then times out. `Program.cs` binds `0.0.0.0:$PORT`,
-and the `ENV PORT=8080` in the Dockerfile is only the fallback for when nothing
-injects one.
+deploy that builds fine and then times out. The Dockerfile's entrypoint already
+resolves it — `ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080}` — falling back to
+8080 only when nothing injects one. `ASPNETCORE_ENVIRONMENT` is set there too,
+so it does not belong in the variables either.
 
 Generate the public URL under **Settings ▸ Networking ▸ Generate Domain**.
 
+### Migrations are NOT run on deploy
+
+`railway.json` overrides the Pre-Deploy Command with a no-op, and that is
+deliberate. **Nothing in this codebase applies migrations** — there is no
+`Database.Migrate` call anywhere and `DataSeeder` does not exist, only a
+commented-out reference to it in `Program.cs`. The schema is managed by hand.
+
+A pre-deploy `dotnet ef database update` against `olympic-dms` fails with
+`There is already an object named 'AccountRequests'`. That table is created by
+the FIRST migration, so EF starting there means `__EFMigrationsHistory` does not
+record the migrations that actually built the schema — history and schema
+disagree. Re-running migrations cannot fix that; it can only be fixed by
+baselining the history table, which is a deliberate database change, not
+something a deploy should do on its own.
+
+Railway's config-as-code takes precedence over dashboard settings, so this file
+is what decides it. If the `dotnet ef database update` is in a **Custom Start
+Command** rather than Pre-Deploy, this will not catch it — clear it in the
+dashboard instead. Do not override `startCommand` here: the Dockerfile's
+entrypoint already resolves `$PORT`, and replacing it risks a container that
+builds and then never listens.
+
 ### Health check
 
-`railway.json` points at `GET /health`, which is anonymous and does not touch
-the database — a check that fails on a slow query would get the container
-restarted, which fixes nothing and takes the API down with it. The 120s timeout
-is deliberate: a cold .NET container plus Hangfire's startup work against a
-remote SQL Server can take a while on a small instance.
+None is configured. The `/health` endpoint exists only in an uncommitted local
+edit, so pointing Railway at it would fail every deploy on a 404. Add
+`healthcheckPath` to `railway.json` once that endpoint is actually committed.
 
 ### Environment variables
 
