@@ -8,17 +8,17 @@ route to.
 |---|---|
 | `Dockerfile` | Two-stage build — SDK 9.0 compiles, `aspnet:9.0-noble-chiseled` ships. |
 | `.dockerignore` | Keeps Windows `bin/`/`obj/` out of the Linux build context. |
-| `railway.json` | Railway: Dockerfile builder + health check. |
 | `vercel.json` | Vercel: one `container` service, all paths rewritten to it. |
 
 ---
 
 ## Railway (current)
 
-Railway auto-detects the `Dockerfile` at the repo root — the branch already
+Railway auto-detects the `Dockerfile` at the repo root — `development` already
 carries one, whose entrypoint is
-`sh -c "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080} dotnet API.dll"`. So
-`railway.json` only overrides the Pre-Deploy Command; the build needs nothing.
+`sh -c "ASPNETCORE_URLS=http://0.0.0.0:${PORT:-8080} dotnet API.dll"`. There is
+no `railway.json`, and none is needed: the build and start are both correct by
+default.
 
 ### Port
 
@@ -31,33 +31,37 @@ so it does not belong in the variables either.
 
 Generate the public URL under **Settings ▸ Networking ▸ Generate Domain**.
 
-### Migrations are NOT run on deploy
+### Branch matters — the two lineages are not interchangeable
 
-`railway.json` overrides the Pre-Deploy Command with a no-op, and that is
-deliberate. **Nothing in this codebase applies migrations** — there is no
-`Database.Migrate` call anywhere and `DataSeeder` does not exist, only a
-commented-out reference to it in `Program.cs`. The schema is managed by hand.
+**Deploy `development`. Never point this database at `feature/gms-domain`.**
 
-A pre-deploy `dotnet ef database update` against `olympic-dms` fails with
-`There is already an object named 'AccountRequests'`. That table is created by
-the FIRST migration, so EF starting there means `__EFMigrationsHistory` does not
-record the migrations that actually built the schema — history and schema
-disagree. Re-running migrations cannot fix that; it can only be fixed by
-baselining the history table, which is a deliberate database change, not
-something a deploy should do on its own.
+The two branches carry incompatible migration lineages:
 
-Railway's config-as-code takes precedence over dashboard settings, so this file
-is what decides it. If the `dotnet ef database update` is in a **Custom Start
-Command** rather than Pre-Deploy, this will not catch it — clear it in the
-dashboard instead. Do not override `startCommand` here: the Dockerfile's
-entrypoint already resolves `$PORT`, and replacing it risks a container that
-builds and then never listens.
+| Branch | Migrations | Seeder |
+|---|---|---|
+| `development` | 9, starting `20260818170123_first migration` | none — `DataSeeder.cs` does not exist |
+| `feature/gms-domain` | 1, `20260723163615_first migration` | `Program.cs:59` calls it, and it runs `MigrateAsync` |
+
+`olympic-dms` records the `development` set. Booting `feature/gms-domain`
+against it makes EF see its own lone migration as un-applied, run its `Up()`,
+and fail on `There is already an object named 'AccountRequests'` — the symptom
+looks like a broken database, but the database is correct and the branch is
+wrong.
+
+On `development` nothing migrates at all: there is no `Database.Migrate` call
+anywhere, and the `DataSeeder` line in `Program.cs` is commented out. The schema
+is managed deliberately, outside the app. Keep it that way — a deploy is the
+wrong place to change a schema.
+
+If a deploy fails this way again, check the commit SHA in the Railway deploy log
+against `git rev-parse --short origin/development` before looking at the
+database.
 
 ### Health check
 
 None is configured. The `/health` endpoint exists only in an uncommitted local
-edit, so pointing Railway at it would fail every deploy on a 404. Add
-`healthcheckPath` to `railway.json` once that endpoint is actually committed.
+edit, so pointing Railway at one would fail every deploy on a 404. Once that
+endpoint is committed, add a `railway.json` with `healthcheckPath: "/health"`.
 
 ### Environment variables
 

@@ -1,6 +1,0 @@
-{
-  "$schema": "https://railway.com/railway.schema.json",
-  "deploy": {
-    "preDeployCommand": "echo 'Pre-deploy migrations are disabled on purpose - see docs/deploy.md'"
-  }
-}
