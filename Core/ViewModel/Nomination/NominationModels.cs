@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Core.ViewModel.Nomination;
@@ -23,6 +23,11 @@ public class NominationResponse
     public Guid? MissionRoleId { get; set; }
     public string MissionRoleName { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 
     public DateTime? NominatedOn { get; set; }
     public string NominatedByName { get; set; }
@@ -120,6 +125,11 @@ public class NominationCandidateResponse
     public string MissionRoleName { get; set; }
     public string Subgroup { get; set; }
 
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
+
     // Visa and insurance belong to the PARTICIPATION, not the person, so they
     // are null until someone is nominated. That is the honest answer, not a gap.
     public string VisaStatus { get; set; }
@@ -156,12 +166,22 @@ public class CreateNominationRequest
     public Guid PersonId { get; set; }
     public Guid? MissionRoleId { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 }
 
 public class UpdateNominationRequest
 {
     public Guid? MissionRoleId { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 }
 
 /// <summary>
@@ -193,4 +213,9 @@ public class CreateStaffRequest
     public Guid? EventId { get; set; }
     public Guid? MissionRoleId { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 }

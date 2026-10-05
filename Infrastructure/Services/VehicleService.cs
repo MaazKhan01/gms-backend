@@ -48,7 +48,8 @@ public class VehicleService(
     }
 
     public async Task<ApiResponse<List<VehicleResponse>>> GetAvailableAsync(
-        DateTime from, DateTime? to, Guid? eventId = null, Guid? excludeTransportId = null, CancellationToken ct = default)
+        DateTime from, DateTime? to, Guid? eventId = null, Guid? excludeTransportId = null,
+        Guid? excludeGroupId = null, bool includeShared = false, CancellationToken ct = default)
     {
         if (to != null && to <= from)
             return ApiResponse<List<VehicleResponse>>.ErrorResponse("The end of the window must be after its start");
@@ -59,7 +60,7 @@ public class VehicleService(
         if (excludeTransportId is { } transportId && transportId != Guid.Empty)
             excludeId = (await _unitOfWork.Transports.GetByPublicIdAsync(transportId, ct))?.Id;
 
-        var busyIds = await _conflictValidator.GetBusyVehicleIdsAsync(from, to, excludeId, ct);
+        var busyIds = await _conflictValidator.GetBusyVehicleIdsAsync(from, to, excludeId, excludeGroupId, ct);
 
         var data = await ForEvent(_unitOfWork.Vehicles.Query(), eventId)
             // Open cars only. A Fixed car belongs to the one Open driver it is
@@ -67,10 +68,58 @@ public class VehicleService(
             // job, so offering it here would let an admin hand somebody else's
             // dedicated car to a different driver. Booking forms get the pool.
             .Where(x => x.UsageType == VehicleUsageType.Open)
-            .Where(x => !busyIds.Contains(x.Id))
+            // A booked car is normally hidden so it cannot be picked by mistake.
+            // For a GROUP booking it is exactly what you want to pick, so it stays
+            // in the list and is labelled with who is already on it.
+            .Where(x => includeShared || !busyIds.Contains(x.Id))
             .OrderBy(x => x.VehicleNumber)
             .Select(Project)
             .ToListAsync(ct);
+
+        if (includeShared && busyIds.Count > 0)
+        {
+            // One query for the whole list rather than a correlated subquery per
+            // car, same shape as the transfers tab uses for co-passengers.
+            var riders = await _unitOfWork.Transports.QueryNoTracking()
+                .Where(t => t.VehicleId != null && busyIds.Contains(t.VehicleId.Value)
+                         && TransportStatuses.Live.Contains(t.TripStatus)
+                         && t.PickupTime != null
+                         && (excludeId == null || t.Id != excludeId))
+                .Select(t => new
+                {
+                    VehicleId = t.VehicleId.Value,
+                    t.TransportGroupId,
+                    Name = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+                    t.PickupTime,
+                    t.DropoffTime,
+                })
+                .ToListAsync(ct);
+
+            // Narrowed in memory to the same window the busy check used — the
+            // overlap rule lives in the validator, so this only has to match the
+            // rides it already decided were in the way.
+            var windowEnd = to ?? from.AddHours(1);
+            var byVehicle = riders
+                .Where(r => r.PickupTime < windowEnd
+                         && (r.DropoffTime ?? r.PickupTime.Value.AddHours(1)) > from)
+                .GroupBy(r => r.VehicleId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var internalIds = await ForEvent(_unitOfWork.Vehicles.QueryNoTracking(), eventId)
+                .Where(x => busyIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.PublicId })
+                .ToListAsync(ct);
+            var publicToInternal = internalIds.ToDictionary(x => x.PublicId, x => x.Id);
+
+            foreach (var v in data)
+            {
+                if (!publicToInternal.TryGetValue(v.Id, out var internalId)) continue;
+                if (!byVehicle.TryGetValue(internalId, out var onboard)) continue;
+                v.OnboardCount = onboard.Count;
+                v.Onboard = onboard.Select(r => r.Name).OrderBy(n => n).ToList();
+                v.GroupId = onboard.FirstOrDefault(r => r.TransportGroupId != null)?.TransportGroupId;
+            }
+        }
 
         return ApiResponse<List<VehicleResponse>>.SuccessResponse(data);
     }

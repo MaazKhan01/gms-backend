@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,8 +24,14 @@ public interface IVehicleService
     /// attached to a trip automatically when that driver accepts it. `to` may be null
     /// (the policy's default ride duration stands in); pass the transport being edited
     /// as excludeTransportId so its own vehicle stays selectable.</summary>
+    /// <summary>excludeGroupId does the same for a whole group booking, whose own
+    /// rides all hold the shared car.</summary>
+    /// <summary>includeShared keeps cars that are already booked in the window
+    /// IN the list, annotated with who is on them — a group booking joins one
+    /// rather than avoiding it.</summary>
     Task<ApiResponse<List<VehicleResponse>>> GetAvailableAsync(
-        DateTime from, DateTime? to, Guid? eventId = null, Guid? excludeTransportId = null, CancellationToken ct = default);
+        DateTime from, DateTime? to, Guid? eventId = null, Guid? excludeTransportId = null,
+        Guid? excludeGroupId = null, bool includeShared = false, CancellationToken ct = default);
 
     /// <summary>Every booked slot per vehicle — which car is taken when, and with
     /// which driver. Cancelled rides are excluded.</summary>

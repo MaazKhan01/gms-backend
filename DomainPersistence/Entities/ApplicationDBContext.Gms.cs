@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DomainPersistence.Entities;
@@ -828,6 +828,11 @@ public partial class ApplicationDBContext
             t.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
             // The vehicle double-booking check filters on exactly this pair.
             t.HasIndex(x => new { x.VehicleId, x.PickupTime });
+            // Every group read is "the other rides in this group", and the
+            // conflict checks ask it on every save. Filtered so the index covers
+            // only grouped rows — individual bookings are the overwhelming
+            // majority and all share the same null.
+            t.HasIndex(x => x.TransportGroupId).HasFilter("[TransportGroupId] IS NOT NULL");
             t.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 

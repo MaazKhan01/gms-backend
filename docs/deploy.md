@@ -74,9 +74,9 @@ each of these overrides `appsettings.json`.
 | `ConnectionStrings__DefaultConnection` | SQL Server connection string |
 | `Authentication__Jwt__JwtSecretKey` | ≥32 chars — **not** the `dms-local-dev-only…` value that is in git |
 | `Authentication__Jwt__Issuer` | The Railway URL, e.g. `https://dms-api.up.railway.app` |
-| `Authentication__Jwt__Audience` | `https://dms-ashen-three.vercel.app` |
-| `AllowedOrigins` | `https://dms-ashen-three.vercel.app` (comma-separated for more) |
-| `FrontendUrl` | `https://dms-ashen-three.vercel.app` — invitation links are built from this |
+| `Authentication__Jwt__Audience` | `https://dms-frontend-bice.vercel.app` |
+| `AllowedOrigins` | `https://dms-frontend-bice.vercel.app` (comma-separated for more) |
+| `FrontendUrl` | `https://dms-frontend-bice.vercel.app` — invitation links are built from this |
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
 
 Optional, all with working defaults in code: `AzureStorage__BlobContainerName`

@@ -1,4 +1,4 @@
-using Core.Constants;
+﻿using Core.Constants;
 using Core.Constants.Notification;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
@@ -67,7 +67,8 @@ public class TravelService(
     // the booking form's dropdown feed, same rule as available vehicles. Pass the
     // ride being edited as excludeTransportId so its own driver stays listed.
     public async Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(
-        DateTime? from = null, DateTime? to = null, Guid? excludeTransportId = null, CancellationToken ct = default)
+        DateTime? from = null, DateTime? to = null, Guid? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default)
     {
         if (from != null && to != null && to <= from)
             return ApiResponse<List<IdNameDto>>.ErrorResponse("The end of the window must be after its start");
@@ -79,7 +80,7 @@ public class TravelService(
             if (excludeTransportId is { } transportId && transportId != Guid.Empty)
                 excludeId = (await _unitOfWork.Transports.GetByPublicIdAsync(transportId, ct))?.Id;
 
-            busyIds = await _conflictValidator.GetBusyDriverIdsAsync(start, to, excludeId, ct);
+            busyIds = await _conflictValidator.GetBusyDriverIdsAsync(start, to, excludeId, excludeGroupId, ct);
         }
 
         var data = await _unitOfWork.Users.Query()
@@ -215,7 +216,21 @@ public class TravelService(
                 DropoffTime = tr.DropoffTime,
                 ActualPickupTime = tr.ActualPickupTime,
                 ActualDropOffTime = tr.ActualDropOffTime,
+                GroupId = tr.TransportGroupId,
             };
+
+        // Who else is on this ride. Only asked when the ride is actually grouped,
+        // so an individual booking still costs exactly the queries it always did.
+        if (tr?.TransportGroupId is { } group)
+            data.Transport.GroupMembers = await _unitOfWork.Transports.QueryNoTracking()
+                .Where(t => t.TransportGroupId == group && t.EventGuestId != participation.Id)
+                .Select(t => new GroupMemberDto
+                {
+                    EventGuestId = t.EventGuest.PublicId,
+                    Name = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+                })
+                .OrderBy(m => m.Name)
+                .ToListAsync(ct);
 
         return ApiResponse<GuestTravelResponse>.SuccessResponse(data);
     }
@@ -396,8 +411,38 @@ public class TravelService(
                 Dropoff = t.DropoffLocation.Address,
                 PickupTime = t.PickupTime,
                 TripStatus = t.TripStatus,
+                GroupId = t.TransportGroupId,
             })
             .ToListAsync(ct);
+
+        // Co-passengers in ONE follow-up query for the whole page, rather than a
+        // correlated subquery per row. A page is 10–25 rides; this is two round
+        // trips whatever the page size, and it stays two when grouping is rare.
+        var groupIds = data.Where(r => r.GroupId != null).Select(r => r.GroupId.Value).Distinct().ToList();
+        if (groupIds.Count > 0)
+        {
+            var members = await _unitOfWork.Transports.QueryNoTracking()
+                .Where(t => t.TransportGroupId != null && groupIds.Contains(t.TransportGroupId.Value))
+                .Select(t => new
+                {
+                    GroupId = t.TransportGroupId.Value,
+                    EventGuestId = t.EventGuest.PublicId,
+                    Name = (t.EventGuest.Guest.FirstName + " " + t.EventGuest.Guest.LastName).Trim(),
+                })
+                .ToListAsync(ct);
+
+            var byGroup = members.GroupBy(m => m.GroupId).ToDictionary(g => g.Key, g => g.ToList());
+            foreach (var row in data.Where(r => r.GroupId != null))
+            {
+                if (!byGroup.TryGetValue(row.GroupId.Value, out var all)) continue;
+                // Everyone except the delegate this row is about.
+                row.GroupMembers = all
+                    .Where(m => m.EventGuestId != row.EventGuestId)
+                    .Select(m => m.Name)
+                    .OrderBy(n => n)
+                    .ToList();
+            }
+        }
 
         return ApiResponse<PaginatedResponse<EventTransportRow>>.SuccessResponse(
             new PaginatedResponse<EventTransportRow>(data, total, request.PageNumber, request.PageSize));
@@ -757,6 +802,9 @@ public class TravelService(
 
             // Set when this save is what put a (new/different) driver on the trip —
             // notified after SaveChanges so the Transport has its row/PublicId.
+            // A GROUP books one driver for one journey, so this stays a single
+            // entry however many delegates ride along: notifying once per
+            // passenger would be six messages for one job.
             (Transport Transport, int DriverId)? newlyAssigned = null;
 
             if (request.Transport != null)
@@ -782,43 +830,152 @@ public class TravelService(
                     tr = await _unitOfWork.Transports.Query()
                         .FirstOrDefaultAsync(t => t.PublicId == trId && t.EventGuestId == participation.Id, ct);
 
-                var isNewTransport = tr == null;
+                // ── Who this save writes a ride for ──────────────────────────
+                // One row per delegate either way. A group is not a shared row:
+                // readiness, the driver's manifest and a single-person
+                // cancellation are all keyed to one participation, so the group
+                // is a label ACROSS rows rather than a row of its own.
+                var editingGroup = tr?.TransportGroupId != null
+                    && string.Equals(request.Transport.ApplyTo, "group", StringComparison.OrdinalIgnoreCase);
+
+                // "Just this delegate" on a grouped ride takes the row out of the
+                // group rather than refusing the edit.
+                var detaching = tr?.TransportGroupId != null && !editingGroup;
+                var detachedFrom = detaching ? tr.TransportGroupId : null;
+
+                var targets = new List<EventGuest> { participation };
+                Guid? groupId = editingGroup ? tr.TransportGroupId : null;
+
+                if (editingGroup)
+                {
+                    // Siblings are loaded by group id, not from what the client
+                    // sent, so a stale form cannot quietly drop someone out of
+                    // the booking.
+                    var siblings = await _unitOfWork.Transports.Query()
+                        .Include(t => t.EventGuest).ThenInclude(eg => eg.Guest)
+                        .Where(t => t.TransportGroupId == groupId && t.Id != tr.Id)
+                        .ToListAsync(ct);
+                    targets.AddRange(siblings.Select(x => x.EventGuest));
+                }
+                else if (request.Transport.BookForGroupId is { } lookupGroupId && lookupGroupId != Guid.Empty)
+                {
+                    // Book the whole sub-group. Members are read from the Groups
+                    // lookup, scoped to THIS mission — a group is global, but
+                    // belonging to it is per-mission, so "Advance Party" on
+                    // another mission is a different set of people.
+                    var members = await _unitOfWork.EventGuests.Query()
+                        .Include(eg => eg.Guest)
+                        .Where(eg => eg.Group.PublicId == lookupGroupId
+                                  && eg.EventId == participation.EventId
+                                  && eg.Id != participation.Id)
+                        .ToListAsync(ct);
+
+                    // The delegate whose form this is need not already be in the
+                    // group — booking the group for them is a reasonable thing to
+                    // do, and refusing it would mean editing the nomination first.
+                    targets.AddRange(members);
+
+                    if (targets.Count == 1)
+                        return ApiResponse<bool>.ErrorResponse(
+                            "That group has no other delegates on this mission.");
+
+                    // One ride per delegate, tied together. A fresh id per save:
+                    // the same group may travel twice in a day, and those are two
+                    // bookings, not one.
+                    groupId = Guid.NewGuid();
+                }
+
                 var previousDriverId = tr?.DriverId;
 
-                // Double-booking rules — this path had none, so the admin guest
-                // form could quietly overbook a guest, a driver or a car that the
-                // transportation screen would have refused. Editing a ride passes
-                // its own id so it never clashes with itself.
-                var conflict = await CheckTransportConflictsAsync(
-                    participation.Id, driverId, vehicleId, pickupTime.Value, dropoffTime, tr?.Id, ct);
-                if (conflict != null)
-                    return ApiResponse<bool>.ConflictResponse(conflict, "TRANSPORTATION_CONFLICT");
+                foreach (var target in targets)
+                {
+                    // The row this target already holds: the primary's own, or a
+                    // sibling's when editing the group. A delegate newly added to
+                    // a group has none yet.
+                    var row = target.Id == participation.Id
+                        ? tr
+                        : await _unitOfWork.Transports.Query()
+                            .FirstOrDefaultAsync(t => t.EventGuestId == target.Id
+                                && t.TransportGroupId != null && t.TransportGroupId == groupId, ct);
 
-                if (isNewTransport) tr = new Transport { EventGuestId = participation.Id };
+                    var isNew = row == null;
 
-                tr.PickupLocationId = pickupId;
-                tr.DropoffLocationId = dropoffId;
-                tr.VehicleId = vehicleId;
-                tr.DriverId = driverId;
-                // Status follows the driver assignment while the job hasn't started
-                // yet; once the driver has moved it on (arrived / in-progress /
-                // completed) the admin form must not drag it backwards. The actual
-                // times are the driver app's to write, never blanked from here.
-                if (isNewTransport || tr.TripStatus is null
-                    or TransportStatuses.Pending or TransportStatuses.Assigned)
-                    tr.TripStatus = driverId.HasValue ? TransportStatuses.Assigned : TransportStatuses.Pending;
+                    // Double-booking rules. A ride excludes itself, and every ride
+                    // already in this group excludes the rest of it — one van
+                    // carrying six delegates is the booking, not six clashes. The
+                    // GUEST check stays group-blind on purpose: a delegate still
+                    // cannot be in two cars at once.
+                    // Detaching keeps the delegate in the same car as the people
+                    // they are leaving the group with, so the rides they are
+                    // walking away from must still not count against them —
+                    // otherwise "this delegate only" is rejected by its own
+                    // former group-mates. They are in the database under the old
+                    // group id, so excluding by it works where `sharing` cannot.
+                    var exclusionGroupId = groupId ?? detachedFrom;
 
-                tr.ActualPickupTime = request.Transport.ActualPickupTime ?? tr.ActualPickupTime;
-                tr.ActualDropOffTime = request.Transport.ActualDropOffTime ?? tr.ActualDropOffTime;
+                    var conflict = await CheckTransportConflictsAsync(
+                        target.Id, driverId, vehicleId, pickupTime.Value, dropoffTime,
+                        row?.Id, exclusionGroupId,
+                        sharing: groupId != null, ct);
+                    if (conflict != null)
+                    {
+                        // Name the delegate when several are being booked at once —
+                        // "the vehicle is busy" is not actionable when it could be
+                        // about any one of six people.
+                        var who = $"{target.Guest?.FirstName} {target.Guest?.LastName}".Trim();
+                        return ApiResponse<bool>.ConflictResponse(
+                            targets.Count > 1 && who.Length > 0 ? $"{who}: {conflict}" : conflict,
+                            "TRANSPORTATION_CONFLICT");
+                    }
 
-                tr.PickupTime = pickupTime;
-                tr.DropoffTime = dropoffTime;
+                    if (isNew) row = new Transport { EventGuestId = target.Id };
 
-                if (isNewTransport) await _unitOfWork.Transports.AddAsync(tr, ct);
+                    row.PickupLocationId = pickupId;
+                    row.DropoffLocationId = dropoffId;
+                    row.VehicleId = vehicleId;
+                    row.DriverId = driverId;
+                    // Null for an individual booking and for a row being pulled out
+                    // of its group — which is what keeps the feature removable by
+                    // dropping the column.
+                    row.TransportGroupId = detaching && target.Id == participation.Id ? null : groupId;
 
-                // Re-saving the same driver is not an assignment — don't re-notify.
-                if (driverId.HasValue && driverId != previousDriverId)
-                    newlyAssigned = (tr, driverId.Value);
+                    // Status follows the driver assignment while the job hasn't started
+                    // yet; once the driver has moved it on (arrived / in-progress /
+                    // completed) the admin form must not drag it backwards. The actual
+                    // times are the driver app's to write, never blanked from here.
+                    if (isNew || row.TripStatus is null
+                        or TransportStatuses.Pending or TransportStatuses.Assigned)
+                        row.TripStatus = driverId.HasValue ? TransportStatuses.Assigned : TransportStatuses.Pending;
+
+                    // Actual times are per-person facts the driver app writes, so a
+                    // group edit must never copy one passenger's pickup onto the
+                    // others — only the delegate whose form this is carries them.
+                    if (target.Id == participation.Id)
+                    {
+                        row.ActualPickupTime = request.Transport.ActualPickupTime ?? row.ActualPickupTime;
+                        row.ActualDropOffTime = request.Transport.ActualDropOffTime ?? row.ActualDropOffTime;
+                    }
+
+                    row.PickupTime = pickupTime;
+                    row.DropoffTime = dropoffTime;
+
+                    if (isNew) await _unitOfWork.Transports.AddAsync(row, ct);
+
+                    // Re-saving the same driver is not an assignment — don't re-notify.
+                    if (driverId.HasValue && driverId != previousDriverId && newlyAssigned == null)
+                        newlyAssigned = (row, driverId.Value);
+                }
+
+                // One delegate left alone in a group is an individual booking
+                // wearing a group's name — clear it so neither the badge nor the
+                // conflict exemption keeps applying.
+                if (detachedFrom is { } oldGroup)
+                {
+                    var remaining = await _unitOfWork.Transports.Query()
+                        .Where(t => t.TransportGroupId == oldGroup)
+                        .ToListAsync(ct);
+                    if (remaining.Count == 1) remaining[0].TransportGroupId = null;
+                }
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
@@ -843,23 +1000,32 @@ public class TravelService(
     // First conflict message across guest / driver / vehicle, or null if the slot
     // is free. Same validator the transportation screen uses, so both flows
     // enforce one rule.
+    // `sharing` says this ride is deliberately on a shared vehicle — a group
+    // booking. The vehicle and driver checks are then not just excluded for the
+    // group's own rows, they do not apply at all: riders being stamped into the
+    // group in this same save are still in-memory, so a database-side
+    // excludeGroupId could not see them yet.
     private async Task<string> CheckTransportConflictsAsync(
         int eventGuestId, int? driverId, int? vehicleId,
-        DateTime pickupTime, DateTime? dropoffTime, int? excludeTransportId, CancellationToken ct)
+        DateTime pickupTime, DateTime? dropoffTime, int? excludeTransportId,
+        Guid? groupId, bool sharing, CancellationToken ct)
     {
+        // The guest check is NOT group-aware on purpose: a delegate still cannot
+        // be in two cars at once, and being part of a group does not change that.
         var guestConflict = await _conflictValidator.CheckGuestConflictAsync(eventGuestId, pickupTime, excludeTransportId, ct);
         if (guestConflict.HasConflict) return guestConflict.Message;
 
-        if (driverId.HasValue)
+        if (driverId.HasValue && !sharing)
         {
-            var driverConflict = await _conflictValidator.CheckDriverConflictAsync(driverId.Value, pickupTime, excludeTransportId, ct);
+            var driverConflict = await _conflictValidator.CheckDriverConflictAsync(
+                driverId.Value, pickupTime, excludeTransportId, groupId, ct);
             if (driverConflict.HasConflict) return driverConflict.Message;
         }
 
-        if (vehicleId.HasValue)
+        if (vehicleId.HasValue && !sharing)
         {
             var vehicleConflict = await _conflictValidator.CheckVehicleConflictAsync(
-                vehicleId.Value, pickupTime, dropoffTime, excludeTransportId, ct);
+                vehicleId.Value, pickupTime, dropoffTime, excludeTransportId, groupId, ct);
             if (vehicleConflict.HasConflict) return vehicleConflict.Message;
         }
 

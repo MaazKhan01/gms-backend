@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -82,6 +82,7 @@ public class UnitOfWork : IUnitOfWork
         SystemErrorLogs = new GenericRepository<SystemErrorLog>(_context);
 
         Departments = new GenericRepository<Department>(_context);
+        Groups = new GenericRepository<Group>(_context);
         HostInvitations = new GenericRepository<HostInvitation>(_context);
         NominationLetters = new GenericRepository<NominationLetter>(_context);
         NominationLetterVersions = new GenericRepository<NominationLetterVersion>(_context);
@@ -149,6 +150,7 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<SupportConversation> SupportConversations { get; private set; }
     public IGenericRepository<Device> Devices { get; private set; }
     public IGenericRepository<Department> Departments { get; private set; }
+    public IGenericRepository<Group> Groups { get; private set; }
     public IGenericRepository<HostInvitation> HostInvitations { get; private set; }
     public IGenericRepository<NominationLetter> NominationLetters { get; private set; }
     public IGenericRepository<NominationLetterVersion> NominationLetterVersions { get; private set; }

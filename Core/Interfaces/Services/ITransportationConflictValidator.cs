@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,25 +44,32 @@ public interface ITransportationConflictValidator
     Task<ConflictCheckResult> CheckGuestConflictAsync(
         int eventGuestId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default);
 
+    /// <summary><paramref name="excludeGroupId"/> drops the rides already in that
+    /// group booking. One driver serving six delegates in one van is the point of
+    /// a group, not a clash.</summary>
     Task<ConflictCheckResult> CheckDriverConflictAsync(
-        int driverId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default);
+        int driverId, DateTime candidateTime, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default);
 
     /// <summary>Is this vehicle free for [start, end)? `end` may be null for a
     /// ride with no planned drop-off — <see cref="IConflictWindowPolicy.DefaultRideDuration"/>
     /// stands in. Pass the transport being edited as excludeTransportId so it
     /// doesn't clash with itself.</summary>
     Task<ConflictCheckResult> CheckVehicleConflictAsync(
-        int vehicleId, DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default);
+        int vehicleId, DateTime start, DateTime? end, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default);
 
     /// <summary>Internal ids of every vehicle already booked over [start, end) —
     /// what the "available vehicles" dropdown feed subtracts.</summary>
     Task<List<int>> GetBusyVehicleIdsAsync(
-        DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default);
+        DateTime start, DateTime? end, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default);
 
     /// <summary>DriverProfile ids of every driver already assigned a ride over
     /// [start, end) — what the "available drivers" dropdown feed subtracts. This
     /// is the interval rule (same as vehicles), so it hides more than the
     /// point-in-time <see cref="CheckDriverConflictAsync"/> would reject on save.</summary>
     Task<List<int>> GetBusyDriverIdsAsync(
-        DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default);
+        DateTime start, DateTime? end, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default);
 }

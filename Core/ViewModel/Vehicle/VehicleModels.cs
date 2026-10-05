@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using DomainPersistence.Enums;
 
 namespace Core.ViewModel.Vehicle;
@@ -42,6 +42,23 @@ public class VehicleResponse
     public string VehicleNumber { get; set; }
     public string VehicleImage { get; set; }
     public int? Capacity { get; set; }
+
+    // ── Occupancy, only filled in by the availability feed ───────────────────
+    // A car already carrying delegates over the asked-for window is not simply
+    // "busy" any more: it is the thing you join to make a group booking. These
+    // say who is on it so the dropdown can show that rather than hiding the car.
+
+    /// <summary>Delegates already riding this vehicle over the requested window.
+    /// Zero for a free car, and for every call that asks no window.</summary>
+    public int OnboardCount { get; set; }
+
+    /// <summary>Their names, for the dropdown label and its tooltip.</summary>
+    public List<string> Onboard { get; set; } = [];
+
+    /// <summary>The group those rides already form, when they form one. Null
+    /// when the car carries a single ungrouped booking — joining it is what
+    /// turns the two into a group.</summary>
+    public Guid? GroupId { get; set; }
 }
 
 /// <summary>One booked slot on one vehicle — the Fleet › Bookings row. Flat on

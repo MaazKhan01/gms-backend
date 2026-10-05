@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Core.ViewModel.Common;
 
@@ -99,6 +99,52 @@ public class TransportInput
     public DateTime? DropoffTime { get; set; }
     public DateTime? ActualPickupTime { get; set; }
     public DateTime? ActualDropOffTime { get; set; }
+
+    /// <summary>
+    /// A GROUP booking: a row in the Groups lookup. One ride is written for every
+    /// delegate in that group who is on this mission — the same vehicle, driver
+    /// and times — and they are tied together by TransportGroupId.
+    ///
+    /// The group is the delegation sub-group from Nominations, so "book the
+    /// Advance Party a car" is one choice rather than a list of names assembled
+    /// by hand. A group with no members on this mission is refused rather than
+    /// silently booking nobody.
+    ///
+    /// Null is an individual booking, which is every existing caller and every
+    /// existing row.
+    ///
+    /// NOT to be confused with <see cref="GroupId"/> below, which is the
+    /// read-only id tying the resulting Transport ROWS together. This one names
+    /// the people; that one names the booking.
+    /// </summary>
+    public Guid? BookForGroupId { get; set; }
+
+    /// <summary>
+    /// Editing a ride that is already part of a group: "group" applies the
+    /// change to every member, anything else (the default) applies it to this
+    /// delegate alone and takes them OUT of the group. Ignored for a ride that
+    /// has no group.
+    /// </summary>
+    public string ApplyTo { get; set; }
+
+    // ── Read-only on the prefill; ignored on save ────────────────────────────
+
+    /// <summary>Set when the ride being edited belongs to a group. The form
+    /// needs this before it can ask "this delegate or the whole group".</summary>
+    public Guid? GroupId { get; set; }
+
+    /// <summary>The other delegates already on this ride, for the edit form to
+    /// name them. Saving does not read it — membership changes go through
+    /// <see cref="GroupEventGuestIds"/>.</summary>
+    public List<GroupMemberDto> GroupMembers { get; set; } = [];
+}
+
+/// <summary>A delegate already riding in a group booking.</summary>
+public class GroupMemberDto
+{
+    /// <summary>EventGuest.PublicId.</summary>
+    public Guid EventGuestId { get; set; }
+    public string Name { get; set; }
 }
 
 // ---- Get (prefill edit): echoes inputs (public guids) + display names ----
@@ -266,4 +312,14 @@ public class EventTransportRow
     public string Dropoff { get; set; }
     public DateTime? PickupTime { get; set; }
     public string TripStatus { get; set; }
+
+    /// <summary>Set when this ride was booked as part of a group — several
+    /// delegates sharing one vehicle on one journey. Null is an individual
+    /// booking, which is every row that predates grouping.</summary>
+    public Guid? GroupId { get; set; }
+
+    /// <summary>The OTHER delegates on the same ride, by name. Excludes this
+    /// row's own delegate, so the table can read "+ 3 others" without first
+    /// subtracting the person the row is about.</summary>
+    public List<string> GroupMembers { get; set; } = [];
 }

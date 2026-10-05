@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DomainPersistence.Entities;
@@ -92,6 +92,7 @@ public interface IUnitOfWork : IDisposable
 
     // DMS mission domain
     IGenericRepository<Department> Departments { get; }
+    IGenericRepository<Group> Groups { get; }
     IGenericRepository<HostInvitation> HostInvitations { get; }
     IGenericRepository<NominationLetter> NominationLetters { get; }
     IGenericRepository<NominationLetterVersion> NominationLetterVersions { get; }
