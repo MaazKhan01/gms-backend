@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -26,7 +26,7 @@ public class RolesController : Controllers.BaseApiController
     }
 
     [HttpPost]
-    [HasPermission(PermissionCodes.RolesManage)]
+    [HasPermission(PermissionCodes.Roles, AccessLevel.Write)]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleRequest request, CancellationToken ct)
     {
         var result = await _roleService.CreateRoleAsync(request, _currentUser.UserId, ct);
@@ -36,7 +36,7 @@ public class RolesController : Controllers.BaseApiController
     }
 
     [HttpGet("{id:guid}")]
-    [HasPermission(PermissionCodes.RolesView)]
+    [HasPermission(PermissionCodes.Roles)]
     public async Task<IActionResult> GetRoleById(Guid id, CancellationToken ct)
     {
         var result = await _roleService.GetRoleByIdAsync(id, ct);
@@ -44,7 +44,7 @@ public class RolesController : Controllers.BaseApiController
     }
 
     [HttpGet]
-    [HasPermission(PermissionCodes.RolesView)]
+    [HasPermission(PermissionCodes.Roles)]
     public async Task<IActionResult> GetRoles(CancellationToken ct)
     {
         var result = await _roleService.GetAllRolesAsync(ct);
@@ -52,7 +52,7 @@ public class RolesController : Controllers.BaseApiController
     }
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.RolesManage)]
+    [HasPermission(PermissionCodes.Roles, AccessLevel.Write)]
     public async Task<IActionResult> UpdateRole(Guid id, [FromBody] UpdateRoleRequest request, CancellationToken ct)
     {
         var result = await _roleService.UpdateRoleAsync(id, request, _currentUser.UserId, ct);
@@ -60,7 +60,7 @@ public class RolesController : Controllers.BaseApiController
     }
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.RolesManage)]
+    [HasPermission(PermissionCodes.Roles, AccessLevel.Write)]
     public async Task<IActionResult> DeleteRole(Guid id, CancellationToken ct)
     {
         var result = await _roleService.DeleteRoleAsync(id, ct);

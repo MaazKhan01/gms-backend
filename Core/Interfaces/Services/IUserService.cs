@@ -10,7 +10,9 @@ public interface IUserService
 {
     Task<ApiResponse<UserResponse>> CreateUserAsync(CreateUserRequest request, CancellationToken ct = default);
     Task<ApiResponse<UserResponse>> GetUserByIdAsync(Guid id, CancellationToken ct = default);
-    Task<ApiResponse<PaginatedResponse<UserResponse>>> GetUsersAsync(PagedRequest request, CancellationToken ct = default);
+    /// <summary>Lists accounts. <paramref name="audience"/> is a Core.Constants.UserAudiences
+    /// value; null lists both populations together.</summary>
+    Task<ApiResponse<PaginatedResponse<UserResponse>>> GetUsersAsync(PagedRequest request, string audience = null, CancellationToken ct = default);
     Task<ApiResponse<UserResponse>> UpdateUserAsync(Guid id, UpdateUserRequest request, int currentUserId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteUserAsync(Guid id, int currentUserId, CancellationToken ct = default);
     Task<ApiResponse<bool>> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default);

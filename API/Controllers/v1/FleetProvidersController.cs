@@ -30,17 +30,17 @@ public class FleetProvidersController(IFleetProviderService _providers, ICurrent
         => ToResponse(await _providers.GetByIdAsync(eventId, id, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> Create(Guid eventId, [FromBody] CreateFleetProviderRequest request, CancellationToken ct)
         => ToResponse(await _providers.CreateAsync(eventId, request, _currentUser.UserId, ct));
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid eventId, Guid id, [FromBody] UpdateFleetProviderRequest request, CancellationToken ct)
         => ToResponse(await _providers.UpdateAsync(eventId, id, request, _currentUser.UserId, ct));
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid eventId, Guid id, CancellationToken ct)
         => ToResponse(await _providers.DeleteAsync(eventId, id, _currentUser.UserId, ct));
 }

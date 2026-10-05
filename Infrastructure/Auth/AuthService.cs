@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using Core.Authorization;
 using Core.Constants;
 using Core.Interfaces;
 using Core.Interfaces.Repositories;
@@ -38,7 +39,6 @@ public class AuthService(
             .Include(u => u.Role)
                 .ThenInclude(r => r.RolePermissions)
                     .ThenInclude(rp => rp.Permission)
-            .Include(u => u.ModuleGrants)
             .Include(u => u.DriverProfile)
                 .ThenInclude(d => d.Nationality)
             .FirstOrDefaultAsync(u => u.Email == model.Email && u.IsDeleted != true, ct);
@@ -134,7 +134,6 @@ public class AuthService(
                 .Include(u => u.Role)
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
-                .Include(u => u.ModuleGrants)
                 .Include(u => u.DriverProfile)
                     .ThenInclude(d => d.Nationality)
                 .FirstOrDefaultAsync(u => u.Email == email && u.IsDeleted != true, ct);
@@ -333,7 +332,6 @@ public class AuthService(
                 .Include(u => u.Role)
                     .ThenInclude(r => r.RolePermissions)
                         .ThenInclude(rp => rp.Permission)
-                .Include(u => u.ModuleGrants)
                 .Include(u => u.DriverProfile)
                     .ThenInclude(d => d.Nationality)
                 .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsDeleted != true, ct);
@@ -453,19 +451,27 @@ public class AuthService(
         // No Guest.Id claim here (or on the guest token either) — ICurrentGuest
         // resolves Guest.Id from Guests.UserId, gated on role=="guest".
 
-        // Role-based permissions — gate both server [HasPermission] and frontend nav.
-        var addedPerms = new HashSet<string>();
+        // Role access, one claim per code per level. These gate the server's
+        // [HasPermission] and the frontend's buttons; the menu TREE itself comes
+        // from GET /role-access/me, because a flat claim list cannot describe a
+        // hierarchy. Inactive permission rows are skipped so retiring a menu takes
+        // effect on the next token rather than needing the grants cleaned up.
+        //
+        // Write is not expanded into a read claim here — AccessEvaluator already
+        // treats write as satisfying read, in one place, for both carriers.
+        var addedReads = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var addedWrites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (user.Role?.RolePermissions != null)
-            foreach (var rp in user.Role.RolePermissions.Where(rp => rp.Permission != null))
-                if (addedPerms.Add(rp.Permission.Code))
-                    claims.Add(new Claim("permission", rp.Permission.Code));
-
-        // Admin-granted extra module read access (cross-module view only).
-        if (user.ModuleGrants != null)
-            foreach (var grant in user.ModuleGrants.Where(g => g.IsGranted))
-                if (ModuleDefinitions.ViewPermissionBySlug.TryGetValue(grant.Module, out var perm)
-                    && addedPerms.Add(perm))
-                    claims.Add(new Claim("permission", perm));
+        {
+            foreach (var rp in user.Role.RolePermissions
+                         .Where(rp => rp.Permission != null && rp.Permission.IsActive))
+            {
+                if (rp.CanRead && addedReads.Add(rp.Permission.Code))
+                    claims.Add(new Claim(AccessClaims.Read, rp.Permission.Code));
+                if (rp.CanWrite && addedWrites.Add(rp.Permission.Code))
+                    claims.Add(new Claim(AccessClaims.Write, rp.Permission.Code));
+            }
+        }
 
         var token = new JwtSecurityToken(
             issuer: jwtSection["Issuer"],

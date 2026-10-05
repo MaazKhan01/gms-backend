@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using Core.ViewModel.Common;
 using Core.ViewModel.ServiceCatalog;
 
@@ -80,6 +81,12 @@ public class GuestOverviewRow
 
     public DateOnly? ArrivalDate { get; set; }
     public DateOnly? DepartureDate { get; set; }
+
+    // Raw flight times as the SQL projection returns them. DateOnly.FromDateTime
+    // has no SQL translation, so the two fields above are filled from these right
+    // after materialisation. Not part of the API contract.
+    [JsonIgnore] public DateTime? ArrivalTimeRaw { get; set; }
+    [JsonIgnore] public DateTime? DepartureTimeRaw { get; set; }
 
     // Enough for the table to show "3 sessions" / "2 pending" and a
     // flight/hotel/car glyph without loading each guest's full detail.

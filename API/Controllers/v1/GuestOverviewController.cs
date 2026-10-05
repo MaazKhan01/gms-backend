@@ -17,7 +17,7 @@ namespace API.Controllers.v1;
 public class GuestOverviewController(IGuestOverviewService _guestOverviewService) : Controllers.BaseApiController
 {
     [HttpGet]
-    [HasPermission(PermissionCodes.GuestsView)]
+    [HasPermission(PermissionCodes.Guests)]
     public async Task<IActionResult> GetGuestOverview([FromQuery] GuestOverviewPagedRequest request, CancellationToken ct)
         => ToResponse(await _guestOverviewService.GetGuestOverviewAsync(request, ct));
 
@@ -25,7 +25,7 @@ public class GuestOverviewController(IGuestOverviewService _guestOverviewService
     /// (GuestResponse.personId / GuestOverviewRow.id) — this screen spans events,
     /// so it is keyed on the person, not on one participation.</summary>
     [HttpGet("{personId:guid}")]
-    [HasPermission(PermissionCodes.GuestsView)]
+    [HasPermission(PermissionCodes.Guests)]
     public async Task<IActionResult> GetGuestOverviewDetail(Guid personId, CancellationToken ct)
         => ToResponse(await _guestOverviewService.GetGuestOverviewDetailAsync(personId, ct));
 }

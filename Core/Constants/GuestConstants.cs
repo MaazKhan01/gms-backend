@@ -26,12 +26,20 @@ public static class GuestAccreditationStatus
     public const string Revoked   = "revoked";
 }
 
-public static class GuestTier
+/// <summary>Visa document validity on a delegate's participation. These are
+/// validity states, not application-workflow states — a delegate who needs no
+/// visa is handled by waiving the readiness item, not by a status here.
+/// Kept in sync with the literal default in ApplicationDBContext.Gms.cs.</summary>
+public static class VisaStatuses
 {
-    public const string VVIP = "vvip";
-    public const string VIP = "vip";
-    public const string Speaker = "speaker";
-    public const string Delegate = "delegate";
-    public const string Press = "press";
-    public const string Observer = "observer";
+    public const string Pending       = "pending";
+    public const string Active        = "active";
+    public const string ExpiringSoon  = "expiring-soon";
+}
+
+/// <summary>Travel-insurance document validity on a delegate's participation.</summary>
+public static class InsuranceStatuses
+{
+    public const string Active        = "active";
+    public const string ExpiringSoon  = "expiring-soon";
 }

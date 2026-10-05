@@ -44,6 +44,9 @@ public static class NotificationTemplates
     public const string SupportMessageNew = "support_message";
     public const string SupportReplyNew = "support_reply";
     public const string DriverGuestMessage = "driver_guest_message";
+    // On-mission ops — the coordinator's broadcast to the delegation on the
+    // ground. The wording is the coordinator's, so the template is a shell.
+    public const string MissionGatheringNotice = "mission-gathering-notice";
 
     private static readonly Dictionary<string, NotificationTemplate> Catalog = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -105,6 +108,10 @@ public static class NotificationTemplates
             "{preview}",
             RealtimeTopics.SupportMessageNew,
             "/chat/{conversationId}"),
+
+        [MissionGatheringNotice] = new(
+            "Message from your delegation",
+            "{message}"),
     };
 
     // Unknown code → a content object carrying the code as its own title, so a

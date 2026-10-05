@@ -1,3 +1,4 @@
+using Core.Authorization;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -263,7 +264,7 @@ public class NotificationService(
             }
             else if (!string.IsNullOrWhiteSpace(request.PermissionCode))
             {
-                recipientCount = (await _notificationManagerService.SendToPermissionAsync(request.PermissionCode, content, ct)).Count;
+                recipientCount = (await _notificationManagerService.SendToPermissionAsync(request.PermissionCode, AccessLevel.Write, content, ct)).Count;
                 targetType = "Permission";
             }
             else if (request.Broadcast)

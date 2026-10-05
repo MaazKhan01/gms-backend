@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -30,7 +30,6 @@ public class UnitOfWork : IUnitOfWork
         ImportBatches = new GenericRepository<ImportBatch>(_context);
         ImportBatchRows = new GenericRepository<ImportBatchRow>(_context);
         AccountRequests = new GenericRepository<AccountRequest>(_context);
-        UserModuleGrants = new GenericRepository<UserModuleGrant>(_context);
 
         Venues = new GenericRepository<Venue>(_context);
         VenueBoxes = new GenericRepository<VenueBox>(_context);
@@ -81,6 +80,18 @@ public class UnitOfWork : IUnitOfWork
 
         UserLoginLogs = new GenericRepository<UserLoginLog>(_context);
         SystemErrorLogs = new GenericRepository<SystemErrorLog>(_context);
+
+        Departments = new GenericRepository<Department>(_context);
+        HostInvitations = new GenericRepository<HostInvitation>(_context);
+        NominationLetters = new GenericRepository<NominationLetter>(_context);
+        NominationLetterVersions = new GenericRepository<NominationLetterVersion>(_context);
+        NominationLetterHistory = new GenericRepository<NominationLetterHistory>(_context);
+        ReadinessWaivers = new GenericRepository<ReadinessWaiver>(_context);
+        Incidents = new GenericRepository<Incident>(_context);
+        FieldDecisions = new GenericRepository<FieldDecision>(_context);
+        PostMissionReports = new GenericRepository<PostMissionReport>(_context);
+        CombinedReports = new GenericRepository<CombinedReport>(_context);
+        GatheringNotifications = new GenericRepository<GatheringNotification>(_context);
     }
 
     public IGenericRepository<User> Users { get; private set; }
@@ -133,11 +144,22 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<ImportBatchRow> ImportBatchRows { get; private set; }
     public IGenericRepository<Session> Sessions { get; private set; }
     public IGenericRepository<AccountRequest> AccountRequests { get; private set; }
-    public IGenericRepository<UserModuleGrant> UserModuleGrants { get; private set; }
     public IGenericRepository<Notification> Notifications { get; private set; }
     public IGenericRepository<SupportMessage> SupportMessages { get; private set; }
     public IGenericRepository<SupportConversation> SupportConversations { get; private set; }
     public IGenericRepository<Device> Devices { get; private set; }
+    public IGenericRepository<Department> Departments { get; private set; }
+    public IGenericRepository<HostInvitation> HostInvitations { get; private set; }
+    public IGenericRepository<NominationLetter> NominationLetters { get; private set; }
+    public IGenericRepository<NominationLetterVersion> NominationLetterVersions { get; private set; }
+    public IGenericRepository<NominationLetterHistory> NominationLetterHistory { get; private set; }
+    public IGenericRepository<ReadinessWaiver> ReadinessWaivers { get; private set; }
+    public IGenericRepository<Incident> Incidents { get; private set; }
+    public IGenericRepository<FieldDecision> FieldDecisions { get; private set; }
+    public IGenericRepository<PostMissionReport> PostMissionReports { get; private set; }
+    public IGenericRepository<CombinedReport> CombinedReports { get; private set; }
+    public IGenericRepository<GatheringNotification> GatheringNotifications { get; private set; }
+
     public IGenericRepository<UserLoginLog> UserLoginLogs { get; private set; }
     public IGenericRepository<SystemErrorLog> SystemErrorLogs { get; private set; }
 

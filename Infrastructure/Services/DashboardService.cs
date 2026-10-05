@@ -77,8 +77,14 @@ namespace Infrastructure.Services
                         .Where(i => guestIds.Contains(i.EventGuestId)).ToListAsync(ct))
                     .GroupBy(i => i.EventGuestId)
                     .ToDictionary(gr => gr.Key, gr => gr.First());
-                var flightGuestIds = (await _unitOfWork.Flights.Query()
-                    .Where(f => guestIds.Contains(f.EventGuestId)).Select(f => f.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
+                // Travel dates come from the flight bookings — EventGuest no longer
+                // carries its own arrival/departure. Pulled with their times so the
+                // movement chart below can be built from the same fetch.
+                var flights = await _unitOfWork.Flights.Query()
+                    .Where(f => guestIds.Contains(f.EventGuestId))
+                    .Select(f => new { f.EventGuestId, f.ArrivalTime, f.DepartureTime })
+                    .ToListAsync(ct);
+                var flightGuestIds = flights.Select(f => f.EventGuestId).Distinct().ToHashSet();
                 var accommodationGuestIds = (await _unitOfWork.Accommodations.Query()
                     .Where(a => guestIds.Contains(a.EventGuestId)).Select(a => a.EventGuestId).Distinct().ToListAsync(ct)).ToHashSet();
                 var transportGuestIds = (await _unitOfWork.Transports.Query()
@@ -261,23 +267,33 @@ namespace Infrastructure.Services
 
                 // One row per day that has any movement, so the chart carries no
                 // empty leading or trailing tail.
+                // One arrival and one departure per PERSON, not per flight: a return
+                // booking would otherwise count its own two legs as two arrivals.
+                // Earliest landing is the arrival, latest take-off the departure.
                 var movement = new SortedDictionary<DateOnly, DashboardDayCountDto>();
-                foreach (var g in guests)
+                foreach (var gr in flights.GroupBy(f => f.EventGuestId))
                 {
-                    if (g.ArrivalDate.HasValue)
+                    // Min/Max over DateTime? skip nulls and yield null when all are.
+                    var arrival = gr.Min(f => f.ArrivalTime);
+                    var departure = gr.Max(f => f.DepartureTime);
+
+                    if (arrival.HasValue)
                     {
-                        var ad = g.ArrivalDate.Value;
+                        var ad = DateOnly.FromDateTime(arrival.Value);
                         if (!movement.ContainsKey(ad)) movement[ad] = new DashboardDayCountDto { Date = ad };
                         movement[ad].Arrivals++;
                     }
-                    if (g.DepartureDate.HasValue)
+                    if (departure.HasValue)
                     {
-                        var dd = g.DepartureDate.Value;
+                        var dd = DateOnly.FromDateTime(departure.Value);
                         if (!movement.ContainsKey(dd)) movement[dd] = new DashboardDayCountDto { Date = dd };
                         movement[dd].Departures++;
                     }
                 }
                 response.Movements = movement.Values.ToList();
+
+                response.Journey = await BuildJourneyAsync(
+                    ev, guests, flightGuestIds, accommodationGuestIds, transportGuestIds, ct);
 
                 return ApiResponse<GetDashboardResponse>.SuccessResponse(response);
             }
@@ -286,6 +302,195 @@ namespace Infrastructure.Services
                 _logger.LogError(ex, "Error building dashboard for event {EventId}", eventId);
                 return ApiResponse<GetDashboardResponse>.ServerErrorResponse("An error occurred while loading the dashboard.");
             }
+        }
+
+        /// <summary>
+        /// The mission as one sequence. Each step's numbers come from the same
+        /// rows its own screen counts, so the strip and the screen can never
+        /// disagree — the booking sets are passed in rather than re-queried.
+        /// </summary>
+        private async Task<MissionJourneyDto> BuildJourneyAsync(
+            Event ev,
+            List<EventGuest> roster,
+            HashSet<int> withFlight,
+            HashSet<int> withHotel,
+            HashSet<int> withTransport,
+            CancellationToken ct)
+        {
+            var total = roster.Count;
+            int Pct(int n, int of) => of > 0 ? (int)Math.Round(n * 100.0 / of) : 0;
+
+            var journey = new MissionJourneyDto
+            {
+                DelegationCap = ev.DelegationCap,
+                RosterCount = total,
+                HostName = ev.HostName,
+            };
+
+            // ── Phase 1: the mission exists, so this one is done by definition ──
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 1, Code = "events",
+                Title = "Invitation & Mission Creation", TitleAr = "الدعوة وإنشاء المهمة",
+                Percent = 100,
+                Stat = ev.HostInvitationId.HasValue ? "From invitation" : "Direct",
+            });
+
+            // ── Phase 2: roster against the host's cap, HR sign-off as the flag ──
+            var pendingHr = roster.Count(g => g.HrVerificationStatus == HrVerificationStatuses.Pending);
+            var rejectedHr = roster.Count(g => g.HrVerificationStatus == HrVerificationStatuses.Rejected);
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 2, Code = "nominations",
+                Title = "Delegation Assembly", TitleAr = "تشكيل الوفد",
+                // No cap means no target to measure against, so the bar tracks HR
+                // sign-off instead of inventing a denominator.
+                Percent = ev.DelegationCap.HasValue && ev.DelegationCap > 0
+                    ? Math.Min(100, Pct(total, ev.DelegationCap.Value))
+                    : Pct(total - pendingHr - rejectedHr, total),
+                Stat = ev.DelegationCap.HasValue ? $"{total}/{ev.DelegationCap} roster" : $"{total} nominated",
+                Flag = rejectedHr > 0 ? $"{rejectedHr} HR-rejected"
+                     : pendingHr > 0 ? $"{pendingHr} awaiting HR"
+                     : null,
+            });
+
+            // ── Phase 4: the nomination letter's own status is the progress ──────
+            var letter = await _unitOfWork.NominationLetters.QueryNoTracking()
+                .FirstOrDefaultAsync(l => l.EventId == ev.Id, ct);
+            var letterStatus = letter?.Status ?? NominationLetterStatuses.NotGenerated;
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 4, Code = "nomination-letter",
+                Title = "Host Communication", TitleAr = "التواصل مع المضيف",
+                Percent = letterStatus switch
+                {
+                    NominationLetterStatuses.Acknowledged => 100,
+                    NominationLetterStatuses.Sent => 55,
+                    NominationLetterStatuses.ChangesRequested => 55,
+                    NominationLetterStatuses.Draft => 20,
+                    _ => 0,
+                },
+                Stat = letterStatus.Replace('_', ' '),
+                Flag = letterStatus == NominationLetterStatuses.ChangesRequested ? "Changes requested" : null,
+            });
+
+            // ── Phase 5: three bookable slots per delegate ───────────────────────
+            var booked = roster.Count(g => withFlight.Contains(g.Id))
+                       + roster.Count(g => withHotel.Contains(g.Id))
+                       + roster.Count(g => withTransport.Contains(g.Id));
+            var visaOpen = roster.Count(g => g.VisaRequired && g.VisaStatus != VisaStatuses.Active
+                                                            && g.VisaStatus != VisaStatuses.ExpiringSoon);
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 5, Code = "services",
+                Title = "Travel & Logistics", TitleAr = "السفر والخدمات اللوجستية",
+                Percent = Pct(booked, total * 3),
+                Stat = $"{Pct(booked, total * 3)}% booked",
+                Flag = visaOpen > 0 ? $"{visaOpen} visa{(visaOpen == 1 ? "" : "s")} outstanding" : null,
+            });
+
+            // ── Phase 6: the readiness gate, derived the same way Readiness does ─
+            var travelDate = ev.StartDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var waived = (await _unitOfWork.ReadinessWaivers.QueryNoTracking()
+                    .Where(w => roster.Select(r => r.Id).Contains(w.EventGuestId))
+                    .Select(w => new { w.EventGuestId, w.ItemKey })
+                    .ToListAsync(ct))
+                .GroupBy(w => w.EventGuestId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.ItemKey).ToHashSet());
+
+            bool Ready(EventGuest g)
+            {
+                var ok = waived.TryGetValue(g.Id, out var w) ? w : new HashSet<string>();
+                bool Met(string key, bool met) => met || ok.Contains(key);
+                return Met(ReadinessItems.Passport,
+                           !string.IsNullOrWhiteSpace(g.Guest?.PassportNumber)
+                           && g.Guest.PassportExpiry.HasValue && g.Guest.PassportExpiry >= travelDate)
+                    && Met(ReadinessItems.Visa,
+                           !g.VisaRequired || g.VisaStatus == VisaStatuses.Active || g.VisaStatus == VisaStatuses.ExpiringSoon)
+                    && Met(ReadinessItems.Flight, withFlight.Contains(g.Id))
+                    && Met(ReadinessItems.Accommodation, withHotel.Contains(g.Id))
+                    && Met(ReadinessItems.Transport, withTransport.Contains(g.Id));
+            }
+
+            var ready = roster.Count(Ready);
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 6, Code = "readiness",
+                Title = "Pre-Departure Readiness", TitleAr = "الجاهزية قبل السفر",
+                Percent = Pct(ready, total),
+                Stat = $"{ready}/{total} travel ready",
+                Flag = total > 0 && ready < total ? $"{total - ready} not ready" : null,
+            });
+
+            // ── Phase 7: on the ground. Open incidents are the whole signal ──────
+            var incidents = await _unitOfWork.Incidents.QueryNoTracking()
+                .Where(i => i.EventId == ev.Id)
+                .Select(i => i.Status)
+                .ToListAsync(ct);
+            var openIncidents = incidents.Count(s => !IncidentStatuses.IsClosed(s));
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 7, Code = "on-mission-ops",
+                Title = "Active Mission Ops", TitleAr = "عمليات المهمة",
+                Percent = incidents.Count == 0 ? 0 : Pct(incidents.Count - openIncidents, incidents.Count),
+                Stat = incidents.Count == 0 ? "No incidents" : $"{incidents.Count - openIncidents}/{incidents.Count} resolved",
+                Flag = openIncidents > 0 ? $"{openIncidents} open" : null,
+            });
+
+            // ── Phase 9: reports in, then the report out ─────────────────────────
+            //
+            // Two things have to happen and they are not the same size, so the
+            // bar is not a simple ratio: collecting every delegate's report is
+            // most of the work, and the combined report's four sign-offs are the
+            // rest. Weighted 60/40 so the step moves while reports come in
+            // rather than sitting at zero until the last one lands.
+            var reportStatuses = await _unitOfWork.PostMissionReports.QueryNoTracking()
+                .Where(r => roster.Select(x => x.Id).Contains(r.EventGuestId))
+                .Select(r => r.Status)
+                .ToListAsync(ct);
+
+            var reportsIn = reportStatuses.Count(st => st == PostMissionReportStatuses.Submitted
+                                                    || st == PostMissionReportStatuses.Approved);
+
+            var combined = await _unitOfWork.CombinedReports.QueryNoTracking()
+                .Where(c => c.EventId == ev.Id)
+                .Select(c => c.Status)
+                .FirstOrDefaultAsync(ct);
+
+            // How far the combined report itself has got, as a fraction of its
+            // own four steps.
+            var combinedPct = combined switch
+            {
+                CombinedReportStatuses.Draft => 25,
+                CombinedReportStatuses.InReview => 50,
+                CombinedReportStatuses.Approved => 75,
+                CombinedReportStatuses.Published => 100,
+                _ => 0,
+            };
+
+            var closed = ev.Status == MissionStatuses.Closed;
+            var reportsPct = total == 0 ? 0 : Pct(reportsIn, total);
+            var phase9 = closed ? 100 : (int)Math.Round(reportsPct * 0.6 + combinedPct * 0.4);
+
+            var outstanding = Math.Max(0, total - reportsIn);
+            journey.Steps.Add(new MissionJourneyStepDto
+            {
+                Phase = 9, Code = "combined-report",
+                Title = "Reports & Close", TitleAr = "التقارير والإغلاق",
+                Percent = phase9,
+                Stat = closed
+                    ? "Mission closed"
+                    : combined == CombinedReportStatuses.Published
+                        ? "Report published"
+                        : $"{reportsIn}/{total} reports in",
+                // Only worth flagging once the mission is over — before that,
+                // "nobody has reported" is simply the truth and not a problem.
+                Flag = !closed && ev.EndDate.HasValue && ev.EndDate.Value < DateOnly.FromDateTime(DateTime.UtcNow) && outstanding > 0
+                    ? $"{outstanding} report{(outstanding == 1 ? "" : "s")} outstanding"
+                    : null,
+            });
+
+            return journey;
         }
     }
 }

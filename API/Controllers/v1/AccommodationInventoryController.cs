@@ -31,17 +31,17 @@ public class AccommodationInventoryController(
         => ToResponse(await _inventory.GetContractsAsync(eventId, ct));
 
     [HttpPost("contracts")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateContract(Guid eventId, [FromBody] CreateHotelContractRequest request, CancellationToken ct)
         => ToResponse(await _inventory.CreateContractAsync(eventId, request, _currentUser.UserId, ct));
 
     [HttpPut("contracts/{contractId:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> UpdateContract(Guid eventId, Guid contractId, [FromBody] UpdateHotelContractRequest request, CancellationToken ct)
         => ToResponse(await _inventory.UpdateContractAsync(eventId, contractId, request, _currentUser.UserId, ct));
 
     [HttpDelete("contracts/{contractId:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> DeleteContract(Guid eventId, Guid contractId, CancellationToken ct)
         => ToResponse(await _inventory.DeleteContractAsync(eventId, contractId, _currentUser.UserId, ct));
 
@@ -52,12 +52,12 @@ public class AccommodationInventoryController(
         => ToResponse(await _inventory.GetInventoryAsync(eventId, hotelId, ct));
 
     [HttpPost("inventory")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateInventory(Guid eventId, [FromBody] CreateRoomInventoryRequest request, CancellationToken ct)
         => ToResponse(await _inventory.CreateInventoryAsync(eventId, request, _currentUser.UserId, ct));
 
     [HttpPut("inventory/{inventoryId:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> UpdateInventory(Guid eventId, Guid inventoryId, [FromBody] UpdateRoomInventoryRequest request, CancellationToken ct)
         => ToResponse(await _inventory.UpdateInventoryAsync(eventId, inventoryId, request, _currentUser.UserId, ct));
 
@@ -65,12 +65,12 @@ public class AccommodationInventoryController(
     /// grid's editable cells. Splits the block so the other nights keep their
     /// count.</summary>
     [HttpPut("inventory/{inventoryId:guid}/night")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> SetNightRoomCount(Guid eventId, Guid inventoryId, [FromBody] SetNightRoomCountRequest request, CancellationToken ct)
         => ToResponse(await _inventory.SetNightRoomCountAsync(eventId, inventoryId, request, _currentUser.UserId, ct));
 
     [HttpDelete("inventory/{inventoryId:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> DeleteInventory(Guid eventId, Guid inventoryId, CancellationToken ct)
         => ToResponse(await _inventory.DeleteInventoryAsync(eventId, inventoryId, _currentUser.UserId, ct));
 

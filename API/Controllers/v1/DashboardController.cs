@@ -12,7 +12,7 @@ namespace API.Controllers.v1
     public class DashboardController(IDashboardService _dashboardService) : Controllers.BaseApiController
     {
         [HttpGet("{eventId:guid}")]
-        [HasPermission(PermissionCodes.EventsView)]
+        [HasPermission(PermissionCodes.Events)]
         public async Task<IActionResult> GetDashboard(Guid eventId, CancellationToken ct)
         {
             var result = await _dashboardService.GetDashboardAsync(eventId, ct);

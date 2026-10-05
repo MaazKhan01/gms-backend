@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -87,7 +87,7 @@ public class NotificationsController : Controllers.BaseApiController
     // and, separately (guests aren't Users), one/many guests or all guests.
     // See SendNotificationRequest for the six mutually-exclusive targets.
     [HttpPost("send")]
-    [HasPermission(PermissionCodes.NotificationsSend)]
+    [HasPermission(PermissionCodes.Notifications, AccessLevel.Write)]
     public async Task<IActionResult> Send([FromBody] SendNotificationRequest request, CancellationToken ct)
     {
         var result = await _notificationService.SendNotificationAsync(request, ct);

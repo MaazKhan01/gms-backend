@@ -145,7 +145,7 @@ public class GuestService(
             EventVenue = ev?.VenueName,
             EventStartDate = ev?.StartDate,
             EventEndDate = ev?.EndDate,
-            Tier = participation.Tier,
+            Tier = participation.ServiceLevel?.Code,
             Reference = invitation.InvitationToken?.ToString("N")[..8].ToUpperInvariant(),
         };
 
@@ -522,7 +522,7 @@ public class GuestService(
                     FullName = (eg.Guest.FirstName + " " + eg.Guest.LastName).Trim(),
                     Email = eg.Guest.Email,
                     Organization = eg.Organization,
-                    Tier = eg.Tier,
+                    Tier = eg.ServiceLevel != null ? eg.ServiceLevel.Code : null,
                     PhotoUrl = eg.Guest.PhotoUrl,
                 })
                 .ToListAsync(ct);
@@ -589,7 +589,7 @@ public class GuestService(
                         NationalityName = eg.Guest.Nationality != null ? eg.Guest.Nationality.Name : null,
                         NationalityFlag = eg.Guest.Nationality != null ? eg.Guest.Nationality.Flag : null,
                         PhotoUrl = eg.Guest.PhotoUrl,
-                        Tier = eg.Tier,
+                        Tier = eg.ServiceLevel != null ? eg.ServiceLevel.Code : null,
                         ServiceLevelId = eg.ServiceLevel != null ? (Guid?)eg.ServiceLevel.PublicId : null,
                         ServiceLevelName = eg.ServiceLevel != null ? eg.ServiceLevel.Name : null,
                         ServiceLevelColor = eg.ServiceLevel != null ? eg.ServiceLevel.Color : null,
@@ -653,7 +653,7 @@ public class GuestService(
             if (!string.IsNullOrWhiteSpace(request.Tier))
             {
                 var tier = request.Tier.ToLower();
-                query = query.Where(eg => eg.Tier.ToLower() == tier);
+                query = query.Where(eg => eg.ServiceLevel != null && eg.ServiceLevel.Code.ToLower() == tier);
             }
 
             if (request.ServiceLevelId is { } levelPublicId && levelPublicId != Guid.Empty)
@@ -911,21 +911,40 @@ public class GuestService(
             }
 
             // ── Event-level: this participation only ────────────────────────────
+            var detailsError = await ApplyNominationDetailsAsync(guest, participation, request, ct);
+            if (detailsError != null) return ApiResponse<GuestResponse>.NotFoundResponse(detailsError);
+
             participation.GuestType      = request.GuestType ?? participation.GuestType;
+            // Mission role: the one the DMS screens actually read. Resolved
+            // right here rather than through the mapper so an unknown id is an
+            // error the caller sees, not a silently dropped field.
+            if (request.MissionRoleId.HasValue)
+            {
+                if (request.MissionRoleId.Value == Guid.Empty)
+                {
+                    participation.MissionRoleId = null;
+                }
+                else
+                {
+                    var role = await _unitOfWork.Roles.QueryNoTracking()
+                        .FirstOrDefaultAsync(r => r.PublicId == request.MissionRoleId.Value, ct);
+                    if (role == null)
+                        return ApiResponse<GuestResponse>.NotFoundResponse("Mission role not found");
+                    participation.MissionRoleId = role.Id;
+                }
+            }
             participation.Organization   = organization?.Name ?? request.Organization;
             participation.OrganizationId = organization?.Id;
-            // Tier mirrors the level's Code so every legacy string consumer keeps
-            // working; falls back to the raw Tier only when no level is set (CSV).
             participation.ServiceLevelId = serviceLevel?.Id;
-            participation.Tier           = serviceLevel?.Code ?? request.Tier ?? participation.Tier;
+            // Keep the navigation in step with the key — the invitation email sent
+            // further down reads the tier through it.
+            participation.ServiceLevel   = serviceLevel;
             if (serviceLevel != null && request.OverrideServiceLevelRules
-                && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules))
+                && _currentUser.CanWrite(PermissionCodes.ServiceLevels))
             {
                 participation.ServiceLevelRulesOverridden = true;
                 participation.ServiceLevelOverrideReason = request.ServiceLevelOverrideReason?.Trim();
             }
-            participation.ArrivalDate   = request.ArrivalDate;
-            participation.DepartureDate = request.DepartureDate;
             participation.AccreditationRequired = request.AccreditationRequired;
             // Same null-means-leave-alone rule as SessionIds below — a caller that
             // doesn't know about this field can't silently revoke the permissions.
@@ -954,6 +973,11 @@ public class GuestService(
 
             var response = _mapper.Map<GuestResponse>(updated);
             await MergeInvitationAsync(response, participation.Id, ct);
+
+            // A Head of Delegation signs in to the portal; a plain delegate does
+            // not. Their login has to follow the mission role, or the role that
+            // grants access is the one thing that cannot use it.
+            await DelegateAccountRole.SyncAsync(_unitOfWork, guest.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest updated successfully");
         }
         catch (Exception ex)
@@ -1015,30 +1039,43 @@ public class GuestService(
                     "This guest is already on this event.", "GUEST_ALREADY_ON_EVENT");
 
             var overrodeRules = serviceLevel != null && request.OverrideServiceLevelRules
-                                && _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);
+                                && _currentUser.CanWrite(PermissionCodes.ServiceLevels);
 
             var organization = await ResolveOrganizationAsync(request.OrganizationId, ct);
+
+            int? missionRoleId = null;
+            if (request.MissionRoleId.HasValue && request.MissionRoleId.Value != Guid.Empty)
+            {
+                var role = await _unitOfWork.Roles.QueryNoTracking()
+                    .FirstOrDefaultAsync(r => r.PublicId == request.MissionRoleId.Value, ct);
+                if (role == null)
+                    return ApiResponse<GuestResponse>.NotFoundResponse("Mission role not found");
+                missionRoleId = role.Id;
+            }
 
             var participation = new EventGuest
             {
                 GuestId       = guest.Id,
                 EventId       = ev.Id,
                 GuestType     = request.GuestType ?? GuestTypes.Delegate,
+                MissionRoleId = missionRoleId,
                 Organization  = organization?.Name ?? request.Organization,
                 OrganizationId = organization?.Id,
                 ServiceLevelId = serviceLevel?.Id,
-                // Mirrored from the level's code so legacy string consumers work;
-                // CSV import (no level) still writes its raw Tier string.
-                Tier          = serviceLevel?.Code ?? request.Tier,
+                // Set the navigation too, not just the key: the invitation email
+                // sent further down reads the tier through it, and nothing reloads
+                // this entity in between.
+                ServiceLevel  = serviceLevel,
                 ServiceLevelRulesOverridden = overrodeRules,
                 ServiceLevelOverrideReason = overrodeRules ? request.ServiceLevelOverrideReason?.Trim() : null,
-                ArrivalDate   = request.ArrivalDate,
-                DepartureDate = request.DepartureDate,
                 AccreditationRequired = request.AccreditationRequired,
                 AllowedServicesJson = GuestServices.Serialize(request.AllowedServices),
                 CreatedAt     = DateTime.UtcNow,
                 IsDeleted     = false,
             };
+
+            var detailsError = await ApplyNominationDetailsAsync(guest, participation, request, ct);
+            if (detailsError != null) return ApiResponse<GuestResponse>.NotFoundResponse(detailsError);
 
             await _unitOfWork.EventGuests.AddAsync(participation, ct);
             try
@@ -1085,6 +1122,11 @@ public class GuestService(
 
             var response = _mapper.Map<GuestResponse>(created);
             await MergeInvitationAsync(response, participation.Id, ct);
+
+            // A Head of Delegation signs in to the portal; a plain delegate does
+            // not. Their login has to follow the mission role, or the role that
+            // grants access is the one thing that cannot use it.
+            await DelegateAccountRole.SyncAsync(_unitOfWork, guest.Id, ct);
             return ApiResponse<GuestResponse>.SuccessResponse(response, "Guest created successfully");
         }
         catch (Exception ex)
@@ -1214,6 +1256,48 @@ public class GuestService(
     // needs both its internal id (FK) and its Name (kept in sync on the
     // legacy free-text Organization column for every existing string-based
     // consumer — search, CSV export, travel rows, dashboard).
+
+    /// <summary>
+    /// The nomination details the Add Delegate form collects: what HR later
+    /// verifies, captured while the delegate is being entered.
+    ///
+    /// Split deliberately — the first five belong to the PERSON and follow them
+    /// from mission to mission, visa and insurance belong to THIS participation
+    /// because a visa is for one trip. Null leaves a value alone, so a form that
+    /// does not send a field cannot blank it.
+    /// </summary>
+    private async Task<string> ApplyNominationDetailsAsync(
+        DomainPersistence.Entities.Guest person, EventGuest participation,
+        CreateGuestRequest request, CancellationToken ct)
+    {
+        if (request.DepartmentId.HasValue)
+        {
+            if (request.DepartmentId.Value == Guid.Empty)
+            {
+                person.DepartmentId = null;
+            }
+            else
+            {
+                var dept = await _unitOfWork.Departments.GetByPublicIdAsync(request.DepartmentId.Value, ct);
+                if (dept == null) return "Department not found";
+                person.DepartmentId = dept.Id;
+            }
+        }
+
+        if (request.JobTitle != null) person.JobTitle = request.JobTitle.Trim();
+        if (request.EmploymentGrade != null) person.EmploymentGrade = request.EmploymentGrade.Trim();
+        if (request.PassportNumber != null) person.PassportNumber = request.PassportNumber.Trim();
+        if (request.PassportExpiry.HasValue) person.PassportExpiry = request.PassportExpiry;
+
+        if (participation != null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.VisaStatus)) participation.VisaStatus = request.VisaStatus;
+            if (!string.IsNullOrWhiteSpace(request.InsuranceStatus)) participation.InsuranceStatus = request.InsuranceStatus;
+        }
+
+        return null;
+    }
+
     private async Task<Organization> ResolveOrganizationAsync(Guid? publicId, CancellationToken ct)
     {
         if (publicId == null || publicId == Guid.Empty) return null;
@@ -1244,7 +1328,7 @@ public class GuestService(
     /// message when the assignment should be blocked, or null to allow it.
     /// </summary>
     /// <remarks>
-    /// Overridable by design: an authorised user (<see cref="PermissionCodes.ServiceLevelsOverrideRules"/>)
+    /// Overridable by design: an authorised user (write access on Service Levels)
     /// can push through with <c>OverrideServiceLevelRules</c>. The permission is
     /// re-checked here rather than trusted from the request, so a client can't
     /// grant itself the bypass. Overrides are recorded on the guest row for audit.
@@ -1266,7 +1350,7 @@ public class GuestService(
 
         if (violations.Count == 0) return null;
 
-        var canOverride = _currentUser.HasPermission(PermissionCodes.ServiceLevelsOverrideRules);
+        var canOverride = _currentUser.CanWrite(PermissionCodes.ServiceLevels);
         if (request.OverrideServiceLevelRules && canOverride)
         {
             _logger.LogInformation(
@@ -1289,8 +1373,8 @@ public class GuestService(
         GuestRequirableFields.OrganizationId => (r.OrganizationId is { } o && o != Guid.Empty)
                                                 || !string.IsNullOrWhiteSpace(r.Organization),
         GuestRequirableFields.PhotoUrl => !string.IsNullOrWhiteSpace(r.PhotoUrl),
-        GuestRequirableFields.ArrivalDate => r.ArrivalDate.HasValue,
-        GuestRequirableFields.DepartureDate => r.DepartureDate.HasValue,
+        // Unknown keys read as "filled" — a retired requirable field (arrivalDate /
+        // departureDate) left in a Service Level's JSON must not block a save.
         _ => true,
     };
 

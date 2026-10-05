@@ -66,7 +66,7 @@ public class RideMirror(
                     EventGuestId = x.EventGuest.PublicId,
                     GuestId = x.EventGuest.Guest.PublicId,
                     GuestName = (x.EventGuest.Guest.FirstName + " " + x.EventGuest.Guest.LastName).Trim(),
-                    GuestTier = x.EventGuest.Tier,
+                    GuestTier = x.EventGuest.ServiceLevel != null ? x.EventGuest.ServiceLevel.Code : null,
                     GuestPhone = x.EventGuest.Guest.User == null ? null : x.EventGuest.Guest.User.Phone,
                     GuestPhotoUrl = x.EventGuest.Guest.PhotoUrl,
 

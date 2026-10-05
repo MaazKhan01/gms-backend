@@ -29,6 +29,20 @@ public class GuestResponse
     public string Email { get; set; }
     public Guid EventId { get; set; }
     public string GuestType { get; set; }
+    /// <summary>The mission role held on this participation, if any.</summary>
+    public Guid? MissionRoleId { get; set; }
+    public string MissionRoleName { get; set; }
+
+    // Nomination details — see CreateGuestRequest. Returned so the edit form
+    // round-trips what was entered instead of blanking it on every save.
+    public Guid? DepartmentId { get; set; }
+    public string DepartmentName { get; set; }
+    public string JobTitle { get; set; }
+    public string EmploymentGrade { get; set; }
+    public string PassportNumber { get; set; }
+    public DateOnly? PassportExpiry { get; set; }
+    public string VisaStatus { get; set; }
+    public string InsuranceStatus { get; set; }
     public string Organization { get; set; }
     public Guid? OrganizationId { get; set; }
     public Guid? NationalityId { get; set; }

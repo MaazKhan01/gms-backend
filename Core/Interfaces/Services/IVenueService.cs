@@ -20,5 +20,7 @@ namespace Core.Interfaces.Services
         Task<ApiResponse<VenueTypeDto>> CreateVenueTypeAsync(CreateVenueTypeRequest request, int userId, CancellationToken ct);
         Task<ApiResponse<List<ElementTypeDto>>> GetElementTypesAsync(CancellationToken ct);
         Task<ApiResponse<ElementTypeDto>> CreateElementTypeAsync(CreateElementTypeRequest request, int userId, CancellationToken ct);
+        Task<ApiResponse<ElementTypeDto>> UpdateElementTypeAsync(Guid id, UpdateElementTypeRequest request, int userId, CancellationToken ct);
+        Task<ApiResponse<bool>> DeleteElementTypeAsync(Guid id, int userId, CancellationToken ct);
     }
 }

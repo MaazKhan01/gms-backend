@@ -1,13 +1,22 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Core.Authorization;
 
 public class PermissionRequirement : IAuthorizationRequirement
 {
-    public string Permission { get; }
+    /// <summary>Any one of these at <see cref="Level"/> admits the caller.</summary>
+    public IReadOnlyList<string> PermissionCodes { get; }
+    public string PermissionCode => PermissionCodes.FirstOrDefault();
+    public AccessLevel Level { get; }
 
-    public PermissionRequirement(string permission)
+    public PermissionRequirement(string permissionCode, AccessLevel level)
+        : this(new[] { permissionCode }, level) { }
+
+    public PermissionRequirement(IReadOnlyList<string> permissionCodes, AccessLevel level)
     {
-        Permission = permission;
+        PermissionCodes = permissionCodes;
+        Level = level;
     }
 }

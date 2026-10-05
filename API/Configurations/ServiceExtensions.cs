@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Text;
 using System.Threading.RateLimiting;
 using Azure.Storage.Blobs;
@@ -82,9 +82,20 @@ public static class ServiceExtensions
         services.AddScoped<IInvitationTemplateService, InvitationTemplateService>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IAccountRequestService, AccountRequestService>();
-        services.AddScoped<IUserAccessService, UserAccessService>();
         services.AddScoped<IRoleService, RoleService>();
-        services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<IRoleAccessService, RoleAccessService>();
+
+        // DMS mission domain
+        services.AddScoped<IDepartmentService, DepartmentService>();
+        services.AddScoped<IHostInvitationService, HostInvitationService>();
+        services.AddScoped<INominationService, NominationService>();
+        services.AddScoped<INominationLetterService, NominationLetterService>();
+        services.AddScoped<IReadinessService, ReadinessService>();
+        // Phase 9 — delegates' own reports, the combined report, and the close.
+        services.AddScoped<IMissionReportService, MissionReportService>();
+        services.AddScoped<IOnMissionOpsService, OnMissionOpsService>();
+        services.AddScoped<IIncidentService, IncidentService>();
+        services.AddScoped<IFieldDecisionService, FieldDecisionService>();
         services.AddScoped<IBlobService, BlobService>();
         services.AddScoped<IVipAppService, VipAppService>();
         services.AddScoped<ISupportChatService, SupportChatService>();
@@ -133,7 +144,11 @@ public static class ServiceExtensions
         services.AddValidatorsFromAssembly(Assembly.Load("Core"));
 
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
-        services.AddAuthorization(ConfigureAuthorization);
+        // Permission codes are database rows now, so the policy set cannot be
+        // enumerated at startup the way reflecting over PermissionCodes did.
+        // PermissionPolicyProvider builds "perm:{code}:{read|write}" on first use.
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddAuthorization();
 
         // Fix 5: Rate limiting for auth endpoints
         services.AddRateLimiter(options =>
@@ -193,16 +208,4 @@ public static class ServiceExtensions
         return services;
     }
 
-    // Fix 9: Dynamic policy registration — no manual update needed when adding new PermissionCodes
-    private static void ConfigureAuthorization(AuthorizationOptions options)
-    {
-        var codes = typeof(Core.Common.PermissionCodes)
-            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-            .Where(f => f.IsLiteral && !f.IsInitOnly)
-            .Select(f => f.GetValue(null)?.ToString())
-            .Where(v => !string.IsNullOrEmpty(v));
-
-        foreach (var code in codes)
-            options.AddPolicy(code, p => p.Requirements.Add(new PermissionRequirement(code)));
-    }
 }

@@ -1,3 +1,4 @@
+using Core.Authorization;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,7 +28,7 @@ public interface INotificationManagerService
     Task<IReadOnlyList<NotificationResponse>> SendToRoleAsync(string roleCode, NotificationContent content, CancellationToken ct = default);
 
     // Every active user holding the given permission (e.g. "notify all support agents").
-    Task<IReadOnlyList<NotificationResponse>> SendToPermissionAsync(string permissionCode, NotificationContent content, CancellationToken ct = default);
+    Task<IReadOnlyList<NotificationResponse>> SendToPermissionAsync(string permissionCode, AccessLevel level, NotificationContent content, CancellationToken ct = default);
 
     // Every active user in the system.
     Task<IReadOnlyList<NotificationResponse>> BroadcastToAllUsersAsync(NotificationContent content, CancellationToken ct = default);

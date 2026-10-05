@@ -1,3 +1,4 @@
+using Core.Authorization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -100,15 +101,18 @@ public class NotificationManagerService(
         return await PersistAndPushAsync(recipients.Select(r => (r.Id, r.PublicId)), content, ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<NotificationResponse>> SendToPermissionAsync(string permissionCode, NotificationContent content, CancellationToken ct = default)
+    public async Task<IReadOnlyList<NotificationResponse>> SendToPermissionAsync(string permissionCode, AccessLevel level, NotificationContent content, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(permissionCode)) return Array.Empty<NotificationResponse>();
 
-        // Same "every holder of this permission" shape SupportChatService used
-        // to hand-roll for SupportChatManage — now reusable for any permission.
+        // "Everyone who can act on this screen" — e.g. every role with write on
+        // Support Chat gets told a guest replied. Write satisfies read, matching
+        // AccessEvaluator, so the two never disagree about who is addressed.
+        var wantWrite = level == AccessLevel.Write;
         var recipients = await _unitOfWork.Users.Query()
             .Where(u => u.IsActive && u.Role != null &&
-                        u.Role.RolePermissions.Any(rp => rp.Permission.Code == permissionCode))
+                        u.Role.RolePermissions.Any(rp => rp.Permission.Code == permissionCode && rp.Permission.IsActive
+                                                   && (rp.CanWrite || (!wantWrite && rp.CanRead))))
             .Select(u => new { u.Id, u.PublicId })
             .ToListAsync(ct).ConfigureAwait(false);
 

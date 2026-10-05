@@ -27,17 +27,17 @@ public class OrganizationsController(IOrganizationService _organizations, ICurre
         => ToResponse(await _organizations.GetByIdAsync(id, ct));
 
     [HttpPost]
-    [HasPermission(PermissionCodes.OrganizationsManage)]
+    [HasPermission(PermissionCodes.Organizations, AccessLevel.Write)]
     public async Task<IActionResult> Create([FromBody] CreateOrganizationRequest request, CancellationToken ct)
         => ToResponse(await _organizations.CreateAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.OrganizationsManage)]
+    [HasPermission(PermissionCodes.Organizations, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateOrganizationRequest request, CancellationToken ct)
         => ToResponse(await _organizations.UpdateAsync(id, request, _currentUser.UserId, ct));
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.OrganizationsManage)]
+    [HasPermission(PermissionCodes.Organizations, AccessLevel.Write)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         => ToResponse(await _organizations.DeleteAsync(id, _currentUser.UserId, ct));
 }

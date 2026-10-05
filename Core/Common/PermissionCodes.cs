@@ -1,124 +1,115 @@
 namespace Core.Common;
 
+/// <summary>
+/// The Permissions.Code values referenced by <c>[HasPermission]</c> on endpoints.
+/// The database owns the menu TREE (labels, paths, order, parentage, which rows
+/// exist) — this is only a compile-time spelling check for the codes the API
+/// gates on, so a typo is a build error rather than a silent 403. Adding a
+/// permission row that no endpoint gates needs no entry here.
+///
+/// These replaced the old action codes ("Users.Create", "Guests.View"): the model
+/// is now one row per MENU with independent Read/Write flags, so the verb moved
+/// out of the code and onto the attribute — <c>[HasPermission(Users)]</c> for a
+/// read, <c>[HasPermission(Users, AccessLevel.Write)]</c> for anything that changes
+/// something.
+/// </summary>
 public static class PermissionCodes
 {
-    // ── Admin / platform ────────────────────────────────────────────────
-    // User permissions
-    public const string UsersCreate = "Users.Create";
-    public const string UsersView = "Users.View";
-    public const string UsersUpdate = "Users.Update";
-    public const string UsersDelete = "Users.Delete";
+    // ── Section / group rows (no page of their own) ──────────────────────
+    public const string SectionMission = "mission";
+    public const string SectionDelegation = "delegation";
+    public const string SectionHostCommunication = "host-communication";
+    public const string SectionEvent = "event";
+    public const string SectionPreDeparture = "pre-departure";
+    public const string SectionActiveMission = "active-mission";
+    public const string SectionReports = "reports-close";
+    public const string SectionOnsite = "onsite";
+    public const string SectionVenueManagement = "venue-management";
+    public const string SectionFleet = "fleet";
+    public const string SectionAccommodation = "accommodation";
+    public const string SectionAdmin = "admin";
+    public const string SectionUserManagement = "user-management";
 
-    // Role permissions
-    public const string RolesManage = "Roles.Manage";
-    public const string RolesView = "Roles.View";
+    // ── MISSIONS ─────────────────────────────────────────────────────────
+    public const string Dashboard = "dashboard";
+    /// <summary>Invitations logged from host organisations (Phase 1).</summary>
+    public const string ExternalInvitations = "external-invitations";
+    /// <summary>The missions themselves — served by EventsController, since an
+    /// Event IS a mission.</summary>
+    public const string Events = "events";
 
-    // Logs permissions
-    public const string LogsView = "Logs.View";
+    // ── DELEGATION ASSEMBLY ──────────────────────────────────────────────
+    /// <summary>Delegates on a mission. Labelled "Delegates" in the UI; the code
+    /// stays "guests" because that is what the entity and endpoints are called.</summary>
+    public const string Guests = "guests";
+    public const string Nominations = "nominations";
+    public const string HrVerification = "hr-verification";
 
-    // Account requests (self-service sign-up awaiting admin approval)
-    public const string AccountRequestsView = "AccountRequests.View";
-    public const string AccountRequestsManage = "AccountRequests.Manage";
+    // ── HOST COMMUNICATION ───────────────────────────────────────────────
+    public const string NominationLetter = "nomination-letter";
 
-    // Per-user module access grants (admin only)
-    public const string UserAccessManage = "UserAccess.Manage";
+    // ── EVENT ────────────────────────────────────────────────────────────
+    /// <summary>The one Services page: flights, accommodation, transport, visa.</summary>
+    public const string Services = "services";
+    public const string SupportChat = "support-chat";
+    public const string Transportation = "transportation";
 
-    // Lookups (generic reference data — admin managed)
-    public const string LookupsView = "Lookups.View";
-    public const string LookupsManage = "Lookups.Manage";
+    // ── PRE-DEPARTURE ────────────────────────────────────────────────────
+    public const string Readiness = "readiness";
 
-    // Organizations (admin managed; the read endpoint is open to any signed-in
-    // user so every module can populate an organisation dropdown).
-    public const string OrganizationsView = "Organizations.View";
-    public const string OrganizationsManage = "Organizations.Manage";
+    // ── ACTIVE MISSION ───────────────────────────────────────────────────
+    public const string OnMissionOps = "on-mission-ops";
+    public const string Incidents = "incidents";
+    public const string HeadOfDelegation = "head-of-delegation";
 
-    // Per-event service catalog (admin managed). Reads are open to any signed-in
-    // user so the Service Levels builder and guest form can populate dropdowns.
-    public const string ServicesView = "Services.View";
-    public const string ServicesManage = "Services.Manage";
+    // ── REPORTS & CLOSE ──────────────────────────────────────────────────
+    public const string PostMissionReports = "post-mission-reports";
+    public const string CombinedReport = "combined-report";
+    public const string Reports = "reports";
 
-    // Per-event guest grades — replaces the old hardcoded tier list.
-    public const string ServiceLevelsView = "ServiceLevels.View";
-    public const string ServiceLevelsManage = "ServiceLevels.Manage";
-    // Lets a user push a guest onto a level whose rules fail (capacity full, or
-    // required guest fields missing). Deliberately separate from .Manage so
-    // "can edit levels" and "can waive the rules" are grantable independently.
-    public const string ServiceLevelsOverrideRules = "ServiceLevels.OverrideRules";
+    // ── ON-SITE ──────────────────────────────────────────────────────────
+    public const string Accreditation = "accreditation";
+    public const string Seating = "seating";
+    public const string Meetings = "meetings";
+    public const string Protocol = "protocol";
 
-    // ── GMS modules ─────────────────────────────────────────────────────
-    // Each module exposes a `.View` (read-only, no action buttons) plus its
-    // action permissions. Policies register automatically via reflection in
-    // ServiceExtensions.ConfigureAuthorization — adding a constant is enough.
+    // ── VENUE MANAGEMENT ─────────────────────────────────────────────────
+    public const string VenueConfig = "venue-config";
+    public const string Venues = "venues";
 
-    // Events & Sessions
-    public const string EventsView = "Events.View";
-    public const string EventsCreate = "Events.Create";
-    public const string EventsUpdate = "Events.Update";
-    public const string EventsDelete = "Events.Delete";
-    public const string EventsManageStatus = "Events.ManageStatus";
-    public const string EventsManageSessions = "Events.ManageSessions";
-    public const string EventsImport = "Events.Import";
+    // ── FLEET ────────────────────────────────────────────────────────────
+    public const string Vehicles = "vehicles";
+    public const string FleetProviders = "fleet-providers";
+    public const string FleetBookings = "fleet-bookings";
 
-    // Invitations
-    public const string InvitationsView = "Invitations.View";
-    public const string InvitationsManageTemplates = "Invitations.ManageTemplates";
-    public const string InvitationsSend = "Invitations.Send";
+    // ── ACCOMMODATION ────────────────────────────────────────────────────
+    public const string RoomInventory = "room-inventory";
 
-    // Guests
-    public const string GuestsView = "Guests.View";
-    public const string GuestsCreate = "Guests.Create";
-    public const string GuestsUpdate = "Guests.Update";
-    public const string GuestsDelete = "Guests.Delete";
-    public const string GuestsImport = "Guests.Import";
-    public const string GuestsExport = "Guests.Export";
+    // ── ADMIN ────────────────────────────────────────────────────────────
+    public const string TemplateBuilder = "template-builder";
+    public const string GuestOverview = "guest-overview";
+    public const string Organizations = "organizations";
+    public const string ServiceLevels = "service-levels";
+    public const string ManageServices = "manage-services";
+    /// <summary>Parent of the individual lookup screens. A group row with no page
+    /// of its own — each lookup screen owns its own code, so a role can be given
+    /// one reference list without the rest.</summary>
+    public const string Lookups = "lookups";
+    public const string Logs = "logs";
+    /// <summary>Financials endpoints still exist from GMS. DMS's scope excludes the
+    /// finance track, so the seed simply does not create this row — no role can be
+    /// granted it, and the endpoints stay gated rather than silently re-pointed at
+    /// another menu.</summary>
+    public const string Financials = "financials";
+    /// <summary>Admin-triggered sends to other users. Everyone can always read and
+    /// manage their own notifications without this.</summary>
+    public const string Notifications = "notifications";
 
-    // Travel & Logistics
-    public const string TravelView = "Travel.View";
-    public const string TravelManage = "Travel.Manage";
-    public const string TravelSyncHayya = "Travel.SyncHayya";
-
-    // Transportation — driver assignment & guest ride requests
-    public const string TransportationView = "Transportation.View";
-    public const string TransportationManage = "Transportation.Manage";
-    public const string TransportationAssign = "Transportation.Assign";
-
-    // Accreditation
-    public const string AccreditationView = "Accreditation.View";
-    public const string AccreditationIssue = "Accreditation.Issue";
-    public const string AccreditationRevoke = "Accreditation.Revoke";
-
-    // Venue configuration
-    public const string VenueView = "Venue.View";
-    public const string VenueManage = "Venue.Manage";
-
-    // Seating
-    public const string SeatingView = "Seating.View";
-    public const string SeatingAssign = "Seating.Assign";
-
-    // Meetings
-    public const string MeetingsView = "Meetings.View";
-    public const string MeetingsManage = "Meetings.Manage";
-
-    // Protocol
-    public const string ProtocolView = "Protocol.View";
-    public const string ProtocolManage = "Protocol.Manage";
-    public const string ProtocolChecklist = "Protocol.Checklist";
-
-    // Financials
-    public const string FinancialsView = "Financials.View";
-    public const string FinancialsManage = "Financials.Manage";
-
-    // Reports
-    public const string ReportsView = "Reports.View";
-    public const string ReportsGenerate = "Reports.Generate";
-
-    // Dashboards
-    public const string DashboardView = "Dashboard.View";
-
-    // Support chat (guest ↔ admin)
-    public const string SupportChatView = "SupportChat.View";
-    public const string SupportChatManage = "SupportChat.Manage";
-
-    // Notifications (admin-triggered sends to other users — everyone can read/manage their own)
-    public const string NotificationsSend = "Notifications.Send";
+    // ── USER MANAGEMENT ──────────────────────────────────────────────────
+    public const string Users = "users";
+    public const string Roles = "roles";
+    public const string AccountRequests = "account-requests";
+    /// <summary>The Role Access screen itself — who may grant access to others.
+    /// Replaces the old per-user "User Access" module grants.</summary>
+    public const string RoleAccess = "role-access";
 }

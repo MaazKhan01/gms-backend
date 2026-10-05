@@ -10,23 +10,15 @@ namespace Core.Constants;
 /// </summary>
 public static class GuestEnumCatalog
 {
-    public const string Tier                = "GuestTier";
     public const string Type                = "GuestType";
     public const string InvitationStatus    = "GuestInvitationStatus";
     public const string AccreditationStatus = "GuestAccreditationStatus";
+    public const string VisaStatus          = "VisaStatus";
+    public const string InsuranceStatus     = "InsuranceStatus";
 
     public static IReadOnlyDictionary<string, List<LookupEnumOption>> All { get; } =
         new Dictionary<string, List<LookupEnumOption>>
         {
-            [Tier] = new()
-            {
-                new(GuestTier.VVIP,     "VVIP",     "شخصية مهمة جدًا"),
-                new(GuestTier.VIP,      "VIP",      "شخصية مهمة"),
-                new(GuestTier.Speaker,  "Speaker",  "متحدث"),
-                new(GuestTier.Delegate, "Delegate", "مندوب"),
-                new(GuestTier.Press,    "Press",    "صحافة"),
-                new(GuestTier.Observer, "Observer", "مراقب"),
-            },
             [Type] = new()
             {
                 new(GuestTypes.Dignitary, "Dignitary", "شخصية رفيعة"),
@@ -49,6 +41,17 @@ public static class GuestEnumCatalog
                 new(GuestAccreditationStatus.NotIssued, "Not Issued", "غير صادر"),
                 new(GuestAccreditationStatus.Issued,    "Issued",     "صادر"),
                 new(GuestAccreditationStatus.Revoked,   "Revoked",    "ملغى"),
+            },
+            [VisaStatus] = new()
+            {
+                new(VisaStatuses.Pending,      "Pending",       "قيد الانتظار"),
+                new(VisaStatuses.Active,       "Active",        "ساري"),
+                new(VisaStatuses.ExpiringSoon, "Expiring Soon", "ينتهي قريبًا"),
+            },
+            [InsuranceStatus] = new()
+            {
+                new(InsuranceStatuses.Active,       "Active",        "ساري"),
+                new(InsuranceStatuses.ExpiringSoon, "Expiring Soon", "ينتهي قريبًا"),
             },
         };
 }

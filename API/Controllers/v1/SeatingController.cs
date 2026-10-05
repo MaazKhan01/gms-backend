@@ -16,7 +16,7 @@ namespace API.Controllers.v1
     public class SeatingController(ISeatingService _seatingService, ICurrentUser _currentUser) : Controllers.BaseApiController
     {
         [HttpPost]
-        [HasPermission(PermissionCodes.SeatingAssign)]
+        [HasPermission(PermissionCodes.Seating, AccessLevel.Write)]
         public async Task<IActionResult> AssignSeatToGuest([FromBody] RequestSeatAssignDto request, CancellationToken ct=default)
         {
             var result = await _seatingService.AssignSeatToGuestAsync(request, _currentUser.UserId, ct);
@@ -24,7 +24,7 @@ namespace API.Controllers.v1
         }
 
         [HttpDelete("{seatId:guid}")]
-        [HasPermission(PermissionCodes.SeatingAssign)]
+        [HasPermission(PermissionCodes.Seating, AccessLevel.Write)]
         public async Task<IActionResult> UnassignSeat(Guid seatId, [FromQuery] Guid venueBoxId, [FromQuery] Guid eventId, [FromQuery] Guid? sessionId, CancellationToken ct = default)
         {
             var result = await _seatingService.UnassignSeatAsync(seatId, venueBoxId, eventId, sessionId, ct);
@@ -32,7 +32,7 @@ namespace API.Controllers.v1
         }
 
         [HttpGet("box/{venueBoxId:guid}")]
-        [HasPermission(PermissionCodes.SeatingView)]
+        [HasPermission(PermissionCodes.Seating)]
         public async Task<IActionResult> GetSeatAssignments(Guid venueBoxId, [FromQuery] Guid eventId, [FromQuery] Guid? sessionId, CancellationToken ct = default)
         {
             var result = await _seatingService.GetSeatAssignmentsAsync(venueBoxId, eventId, sessionId, ct);
@@ -43,7 +43,7 @@ namespace API.Controllers.v1
         // used by the Guests screen to warn before removing a seated guest.
         // The path id is an EventGuest.PublicId: seating is per event.
         [HttpGet("guest/{eventGuestId:guid}")]
-        [HasPermission(PermissionCodes.SeatingView)]
+        [HasPermission(PermissionCodes.Seating)]
         public async Task<IActionResult> GetGuestSeatAssignments(Guid eventGuestId, CancellationToken ct = default)
         {
             var result = await _seatingService.GetGuestSeatAssignmentsAsync(eventGuestId, ct);

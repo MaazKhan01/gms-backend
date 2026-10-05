@@ -14,11 +14,13 @@ public static class GuestRequirableFields
     public const string NationalityId = "nationalityId";
     public const string OrganizationId = "organizationId";
     public const string PhotoUrl = "photoUrl";
-    public const string ArrivalDate = "arrivalDate";
-    public const string DepartureDate = "departureDate";
 
+    // arrivalDate / departureDate were requirable until travel dates moved onto
+    // the flight records. ParseRequiredFields drops unknown keys, so any
+    // ServiceLevel still carrying them in its JSON degrades to "not required"
+    // rather than failing.
     public static readonly string[] All =
-        { Email, NationalityId, OrganizationId, PhotoUrl, ArrivalDate, DepartureDate };
+        { Email, NationalityId, OrganizationId, PhotoUrl };
 
     /// <summary>Human label for validation messages.</summary>
     public static string Label(string key) => key switch
@@ -27,8 +29,6 @@ public static class GuestRequirableFields
         NationalityId => "Nationality",
         OrganizationId => "Organization",
         PhotoUrl => "Photo",
-        ArrivalDate => "Arrival date",
-        DepartureDate => "Departure date",
         _ => key,
     };
 

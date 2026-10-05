@@ -24,8 +24,17 @@ public static class ServiceFieldTypes
     /// </summary>
     public const string Lookup = "lookup";
 
+    /// <summary>
+    /// An uploaded document — a visa, a ticket, a signed letter. The stored
+    /// value is the blob URL, exactly like every other attachment field in the
+    /// system (Event.AttachmentUrl, HostInvitation.AttachmentUrl): the client
+    /// uploads first and saves the URL it gets back, and BlobSasMiddleware
+    /// re-signs it on read. Nothing about the file itself lives in this column.
+    /// </summary>
+    public const string File = "file";
+
     public static readonly string[] All =
-        { Text, Textarea, Number, Date, DateTime, Time, Select, Checkbox, Lookup };
+        { Text, Textarea, Number, Date, DateTime, Time, Select, Checkbox, Lookup, File };
 
     public static bool IsValid(string t) => All.Contains(t);
 }
@@ -81,6 +90,13 @@ public class ServiceFieldDefinition
 
     /// <summary>date / datetime: must fall inside the guest's event dates.</summary>
     public bool WithinEventDates { get; set; }
+
+    /// <summary>
+    /// file: which file kinds the picker should offer, as an HTML accept string
+    /// (".pdf,.jpg,.png"). A hint for the browser's dialog, not a guarantee —
+    /// the blob layer decides what it will actually store.
+    /// </summary>
+    public string Accept { get; set; }
 }
 
 /// <summary>
@@ -298,6 +314,15 @@ public static class ServiceFormSchema
                     errors.Add($"{label} must be at most {f.MaxLength} characters.");
             }
 
+            // A file field holds the URL the upload returned, never a filename.
+            // Catching that here is what stops a stale client persisting
+            // "visa.pdf", which would render as a broken link forever after.
+            if (f.Type == ServiceFieldTypes.File && !IsWebUrl(raw))
+            {
+                errors.Add($"{label} must be an uploaded file.");
+                continue;
+            }
+
             if (f.Type is ServiceFieldTypes.Date or ServiceFieldTypes.DateTime)
             {
                 if (!TryParseWhen(raw, out var when))
@@ -331,6 +356,10 @@ public static class ServiceFormSchema
 
         return errors;
     }
+
+    private static bool IsWebUrl(string raw) =>
+        Uri.TryCreate(raw?.Trim(), UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
     private static bool TryParseWhen(string raw, out DateTime when) =>
         DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,

@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace DomainPersistence.Entities;
@@ -15,7 +15,6 @@ public partial class ApplicationDBContext
     public virtual DbSet<ImportBatch> ImportBatches { get; set; }
     public virtual DbSet<ImportBatchRow> ImportBatchRows { get; set; }
     public virtual DbSet<AccountRequest> AccountRequests { get; set; }
-    public virtual DbSet<UserModuleGrant> UserModuleGrants { get; set; }
     public virtual DbSet<Guest> Guests { get; set; }
     // Per-event participation — the join every event-scoped child record keys off.
     public virtual DbSet<EventGuest> EventGuests { get; set; }
@@ -150,6 +149,14 @@ public partial class ApplicationDBContext
                 .WithOne(u => u.GuestProfile)
                 .HasForeignKey<Guest>(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // SetNull, not Cascade: retiring a department must never delete the
+            // people who were in it.
+            g.HasOne(x => x.Department)
+                .WithMany(x => x.Guests)
+                .HasForeignKey(x => x.DepartmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+            g.Property(x => x.EmploymentGrade).HasMaxLength(50);
+            g.Property(x => x.PassportNumber).HasMaxLength(50);
             g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
@@ -160,8 +167,14 @@ public partial class ApplicationDBContext
             eg.HasKey(x => x.Id);
             eg.Property(x => x.GuestType).HasMaxLength(50);
             eg.Property(x => x.Organization).HasMaxLength(300);
-            eg.Property(x => x.Tier).HasMaxLength(50);
             eg.Property(x => x.ServiceLevelOverrideReason).HasMaxLength(1000);
+            // Document-validity states, maintained by hand. The allowed values are
+            // Core.Constants.VisaStatuses / InsuranceStatuses — spelled literally
+            // here because DomainPersistence is the base layer and cannot see Core.
+            // The default lives here rather than on the property initializer so rows
+            // inserted outside EF get it too.
+            eg.Property(x => x.VisaStatus).HasMaxLength(30).HasDefaultValue("pending");
+            eg.Property(x => x.InsuranceStatus).HasMaxLength(30);
             eg.Property(x => x.AllowedServicesJson).HasMaxLength(200);
             eg.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             eg.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
@@ -295,7 +308,6 @@ public partial class ApplicationDBContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Title).IsRequired().HasMaxLength(300);
             e.Property(x => x.Type).HasMaxLength(50);
-            e.Property(x => x.Theme).HasMaxLength(300);
             e.Property(x => x.VenueName).HasMaxLength(300);
             e.Property(x => x.Status).HasMaxLength(30);
             e.Property(x => x.AppKey).HasMaxLength(150);
@@ -304,10 +316,7 @@ public partial class ApplicationDBContext
             e.Property(x => x.GuestModel).HasMaxLength(20).HasDefaultValue("flexible");
             // nvarchar(max): may hold a URL or an uploaded base64 data URI.
             e.Property(x => x.ImageUrl).HasColumnType("nvarchar(max)");
-            e.Property(x => x.ThemeAccent).HasMaxLength(20);
-            e.Property(x => x.ThemeSecondary).HasMaxLength(20);
-            e.Property(x => x.LogoDarkUrl).HasColumnType("nvarchar(max)");
-            e.Property(x => x.LogoLightUrl).HasColumnType("nvarchar(max)");
+            e.Property(x => x.AttachmentUrl).HasColumnType("nvarchar(max)");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             e.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
             e.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
@@ -333,19 +342,6 @@ public partial class ApplicationDBContext
                 .HasForeignKey(x => x.VenueId)
                 .OnDelete(DeleteBehavior.Restrict);
             s.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
-        });
-
-        modelBuilder.Entity<UserModuleGrant>(g =>
-        {
-            g.ToTable("UserModuleGrants");
-            g.HasKey(x => x.Id);
-            g.Property(x => x.Module).IsRequired().HasMaxLength(50);
-            g.Property(x => x.GrantedAt).HasDefaultValueSql("(sysutcdatetime())");
-            g.HasIndex(x => new { x.UserId, x.Module }).IsUnique();
-            g.HasOne(x => x.User)
-                .WithMany(x => x.ModuleGrants)
-                .HasForeignKey(x => x.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // â”€â”€ Venue / Seating module â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -386,6 +382,16 @@ public partial class ApplicationDBContext
             et2.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
         });
 
+        modelBuilder.Entity<Department>(d =>
+        {
+            d.ToTable("Departments");
+            d.HasKey(x => x.Id);
+            d.Property(x => x.Name).IsRequired().HasMaxLength(150);
+            d.Property(x => x.NameAr).HasMaxLength(150);
+            d.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            d.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+        });
+
         modelBuilder.Entity<VenueType>(vt =>
         {
             vt.ToTable("VenueTypes");
@@ -406,6 +412,8 @@ public partial class ApplicationDBContext
             et.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             et.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
         });
+
+        ConfigureMissionDomain(modelBuilder);
 
         modelBuilder.Entity<Venue>(v =>
         {

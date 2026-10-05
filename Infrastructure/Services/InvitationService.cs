@@ -93,18 +93,29 @@ namespace Infrastructure.Services
             var ev = participation.Event;
             var level = participation.ServiceLevel;
 
+            // Travel dates live on the flight bookings now, not on the participation.
+            // Earliest landing / latest take-off, so a return booking reads as one
+            // trip rather than two. Null when nothing is booked yet — the RSVP page
+            // already renders that as a blank row.
+            var flightTimes = await _unitOfWork.Flights.QueryNoTracking()
+                .Where(f => f.EventGuestId == participation.Id)
+                .Select(f => new { f.ArrivalTime, f.DepartureTime })
+                .ToListAsync(ct);
+            var arrival = flightTimes.Min(f => f.ArrivalTime);
+            var departure = flightTimes.Max(f => f.DepartureTime);
+
             return new InvitationDetailResponse
             {
                 GuestName = $"{guest.FirstName} {guest.LastName}".Trim(),
                 GuestEmail = guest.Email,
                 GuestPhotoUrl = guest.PhotoUrl,
                 Organization = participation.Organization,
-                Tier = participation.Tier,
+                Tier = level?.Code,
                 ServiceLevelName = level?.Name,
                 ServiceLevelNameAr = level?.NameAr,
                 ServiceLevelColor = level?.Color,
-                ArrivalDate = participation.ArrivalDate,
-                DepartureDate = participation.DepartureDate,
+                ArrivalDate = arrival.HasValue ? DateOnly.FromDateTime(arrival.Value) : null,
+                DepartureDate = departure.HasValue ? DateOnly.FromDateTime(departure.Value) : null,
                 EventTitle = ev?.Title,
                 EventVenue = ev?.VenueName,
                 EventStartDate = ev?.StartDate,

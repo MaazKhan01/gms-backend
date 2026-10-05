@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DomainPersistence.Entities;
@@ -41,7 +41,6 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<AccountRequest> AccountRequests { get; }
 
     // GMS — Per-user module access
-    IGenericRepository<UserModuleGrant> UserModuleGrants { get; }
     //Venue
     IGenericRepository<Venue> Venues { get; }
     IGenericRepository<VenueBox> VenueBoxes { get; }
@@ -90,6 +89,19 @@ public interface IUnitOfWork : IDisposable
     // Audit
     IGenericRepository<UserLoginLog> UserLoginLogs { get; }
     IGenericRepository<SystemErrorLog> SystemErrorLogs { get; }
+
+    // DMS mission domain
+    IGenericRepository<Department> Departments { get; }
+    IGenericRepository<HostInvitation> HostInvitations { get; }
+    IGenericRepository<NominationLetter> NominationLetters { get; }
+    IGenericRepository<NominationLetterVersion> NominationLetterVersions { get; }
+    IGenericRepository<NominationLetterHistory> NominationLetterHistory { get; }
+    IGenericRepository<ReadinessWaiver> ReadinessWaivers { get; }
+    IGenericRepository<Incident> Incidents { get; }
+    IGenericRepository<FieldDecision> FieldDecisions { get; }
+    IGenericRepository<PostMissionReport> PostMissionReports { get; }
+    IGenericRepository<CombinedReport> CombinedReports { get; }
+    IGenericRepository<GatheringNotification> GatheringNotifications { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync();

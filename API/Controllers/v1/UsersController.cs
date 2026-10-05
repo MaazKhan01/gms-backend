@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -19,7 +19,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
 {
 
     [HttpPost]
-    [HasPermission(PermissionCodes.UsersCreate)]
+    [HasPermission(PermissionCodes.Users, AccessLevel.Write)]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request, CancellationToken ct)
     {
         var result = await _userService.CreateUserAsync(request, ct);
@@ -29,7 +29,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     }
 
     [HttpGet("{id:guid}")]
-    [HasPermission(PermissionCodes.UsersView)]
+    [HasPermission(PermissionCodes.Users)]
     public async Task<IActionResult> GetUserById(Guid id, CancellationToken ct)
     {
         var result = await _userService.GetUserByIdAsync(id, ct);
@@ -37,20 +37,23 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     }
 
     [HttpGet]
-    [HasPermission(PermissionCodes.UsersView)]
+    [HasPermission(PermissionCodes.Users)]
+    /// <summary><paramref name="audience"/>: platform | delegates. Omitted,
+    /// both populations are listed together.</summary>
     public async Task<IActionResult> GetUsers(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 10,
         [FromQuery] string search = null,
+        [FromQuery] string audience = null,
         CancellationToken ct = default)
     {
         var result = await _userService.GetUsersAsync(
-            new PagedRequest { PageNumber = pageNumber, PageSize = pageSize, SearchTerm = search }, ct);
+            new PagedRequest { PageNumber = pageNumber, PageSize = pageSize, SearchTerm = search }, audience, ct);
         return ToResponse(result);
     }
 
     [HttpPut("{id:guid}")]
-    [HasPermission(PermissionCodes.UsersUpdate)]
+    [HasPermission(PermissionCodes.Users, AccessLevel.Write)]
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserRequest request, CancellationToken ct)
     {
         var result = await _userService.UpdateUserAsync(id, request, _currentUser.UserId, ct);
@@ -58,7 +61,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     }
 
     [HttpDelete("{id:guid}")]
-    [HasPermission(PermissionCodes.UsersDelete)]
+    [HasPermission(PermissionCodes.Users, AccessLevel.Write)]
     public async Task<IActionResult> DeleteUser(Guid id, CancellationToken ct)
     {
         var result = await _userService.DeleteUserAsync(id, _currentUser.UserId, ct);
@@ -68,7 +71,10 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     [HttpPost("{id:guid}/change-password")]
     public async Task<IActionResult> ChangePassword(Guid id, [FromBody] ChangePasswordRequest request, CancellationToken ct)
     {
-        if (id != _currentUser.UserPublicId && !User.HasClaim("permission", PermissionCodes.UsersUpdate))
+        // Anyone may change their OWN password; changing someone else's needs
+        // write on Users. Goes through ICurrentUser so this and [HasPermission]
+        // share one evaluator rather than hand-reading a claim.
+        if (id != _currentUser.UserPublicId && !_currentUser.CanWrite(PermissionCodes.Users))
             return Forbid();
 
         var result = await _userService.ChangePasswordAsync(id, request, ct);
@@ -77,7 +83,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
 
     // ── Admin-initiated invites ──────────────────────────────────────────────
     [HttpPost("invite")]
-    [HasPermission(PermissionCodes.UsersCreate)]
+    [HasPermission(PermissionCodes.Users, AccessLevel.Write)]
     public async Task<IActionResult> InviteUser([FromBody] InviteUserRequest request, CancellationToken ct)
     {
         var result = await _userService.InviteUserAsync(request, _currentUser.UserId, ct);
@@ -85,7 +91,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     }
 
     [HttpGet("pending")]
-    [HasPermission(PermissionCodes.UsersView)]
+    [HasPermission(PermissionCodes.Users)]
     public async Task<IActionResult> GetPendingUsers(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 10,
@@ -98,7 +104,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     }
 
     [HttpPost("{id:guid}/resend-invite")]
-    [HasPermission(PermissionCodes.UsersCreate)]
+    [HasPermission(PermissionCodes.Users, AccessLevel.Write)]
     public async Task<IActionResult> ResendInvite(Guid id, CancellationToken ct)
     {
         var result = await _userService.ResendInviteAsync(id, ct);
@@ -106,7 +112,7 @@ public class UsersController(IUserService _userService, ICurrentUser _currentUse
     }
 
     [HttpPost("{id:guid}/admin-set-password")]
-    [HasPermission(PermissionCodes.UsersUpdate)]
+    [HasPermission(PermissionCodes.Users, AccessLevel.Write)]
     public async Task<IActionResult> AdminSetPassword(Guid id, [FromBody] AdminSetPasswordRequest request, CancellationToken ct)
     {
         var result = await _userService.AdminSetPasswordAsync(id, request, ct);

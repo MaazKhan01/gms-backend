@@ -6,7 +6,6 @@ public class CreateEventRequest
 {
     public string Title { get; set; }
     public string Type { get; set; }
-    public string Theme { get; set; }
     public string VenueName { get; set; }
     public Guid? VenueId { get; set; }
     public DateOnly? StartDate { get; set; }
@@ -16,10 +15,24 @@ public class CreateEventRequest
     /// the unrestricted pre-service-level flow.</summary>
     public string GuestModel { get; set; }
     public string ImageUrl { get; set; }
-    public string ThemeAccent { get; set; }
-    public string ThemeSecondary { get; set; }
-    public string LogoDarkUrl { get; set; }
-    public string LogoLightUrl { get; set; }
+    public string AttachmentUrl { get; set; }
+
+    // ── Mission fields ───────────────────────────────────────────────────
+    /// <summary>A Locations row — where the delegation travels to.</summary>
+    public Guid? DestinationId { get; set; }
+    /// <summary>Headcount cap the host set. Enforced when nominating.</summary>
+    public int? DelegationCap { get; set; }
+    /// <summary>Core.Constants.DestinationTiers — regional / international_a|b|c.</summary>
+    public string DestinationTier { get; set; }
+    /// <summary>The budget line the mission is charged to. Free text — finance
+    /// lives outside DMS.</summary>
+    public string CostCenter { get; set; }
+    /// <summary>Core.Constants.FundingModels — org_paid / hosted / mixed.</summary>
+    public string FundingModel { get; set; }
+    /// <summary>An Organizations row. The name is copied from it, so
+    /// <c>hostName</c> is never sent by the client.</summary>
+    public Guid? HostOrganizationId { get; set; }
+    public string HostEmail { get; set; }
 }
 
 public class UpdateEventRequest
@@ -29,17 +42,28 @@ public class UpdateEventRequest
     public string GuestModel { get; set; }
     public string Title { get; set; }
     public string Type { get; set; }
-    public string Theme { get; set; }
     public string VenueName { get; set; }
     public Guid? VenueId { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public string Status { get; set; }
     public string ImageUrl { get; set; }
-    public string ThemeAccent { get; set; }
-    public string ThemeSecondary { get; set; }
-    public string LogoDarkUrl { get; set; }
-    public string LogoLightUrl { get; set; }
+    public string AttachmentUrl { get; set; }
+
+    // ── Mission fields. Null leaves the current value alone. ─────────────
+    public Guid? DestinationId { get; set; }
+    public int? DelegationCap { get; set; }
+    /// <summary>Core.Constants.DestinationTiers — regional / international_a|b|c.</summary>
+    public string DestinationTier { get; set; }
+    /// <summary>The budget line the mission is charged to. Free text — finance
+    /// lives outside DMS.</summary>
+    public string CostCenter { get; set; }
+    /// <summary>Core.Constants.FundingModels — org_paid / hosted / mixed.</summary>
+    public string FundingModel { get; set; }
+    /// <summary>An Organizations row. The name is copied from it, so
+    /// <c>hostName</c> is never sent by the client.</summary>
+    public Guid? HostOrganizationId { get; set; }
+    public string HostEmail { get; set; }
 }
 
 public class UpdateEventStatusRequest

@@ -20,9 +20,13 @@ public interface ICurrentUser
     void RequireAuthentication();
 
     /// <summary>True when the caller's token carries this permission code. Reads
-    /// the same "permission" claims the <c>[HasPermission]</c> policy handler
-    /// checks, so attribute-gated and in-service checks can never disagree.
-    /// For rules that live INSIDE a request body (e.g. a guest save that also
-    /// asks to waive a Service Level rule) rather than on the endpoint itself.</summary>
-    bool HasPermission(string permissionCode);
+    /// the same claims the <c>[HasPermission]</c> policy handler checks, so
+    /// attribute-gated and in-service decisions can never disagree.</summary>
+    bool CanRead(string permissionCode);
+
+    /// <summary>True when the caller's role may WRITE this permission. Holding
+    /// read grants nothing here. For rules that live INSIDE a request body (e.g. a
+    /// guest save that also asks to waive a Service Level rule) rather than on
+    /// the endpoint itself.</summary>
+    bool CanWrite(string permissionCode);
 }

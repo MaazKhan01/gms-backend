@@ -84,17 +84,17 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
 
     // ── Manage the wizard dropdown options ──────────────────────────────────
     [HttpPost("flight-classes")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateFlightClass([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateFlightClassAsync(request, _currentUser.UserId, ct));
 
     [HttpPost("room-types")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateRoomType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateRoomTypeAsync(request, _currentUser.UserId, ct));
 
     [HttpPost("hotels")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateHotel([FromBody] CreateHotelRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateHotelAsync(request, _currentUser.UserId, ct));
 
@@ -102,27 +102,34 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     // address and image, and rows created before the address was required have to
     // be fixable without a DB trip.
     [HttpPut("hotels/{id:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> UpdateHotel(Guid id, [FromBody] CreateHotelRequest request, CancellationToken ct)
         => ToResponse(await _travel.UpdateHotelAsync(id, request, _currentUser.UserId, ct));
 
     [HttpPost("vehicle-types")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateVehicleType([FromBody] CreateNamedLookupRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateVehicleTypeAsync(request, _currentUser.UserId, ct));
 
     [HttpPost("airports")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> CreateAirport([FromBody] CreateAirportRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateAirportAsync(request, _currentUser.UserId, ct));
 
+    // The one WRITE in this group, and any-of by necessity: locations are created
+    // on the fly by whichever module needs a place that does not exist yet — a
+    // mission's destination, a venue, a hotel, a pickup point. Gating it on
+    // Services alone blocked all of those, which is why it was commented out.
+    // Still a gate: a role with write on none of these cannot create locations.
     [HttpPost("locations")]
-    //[HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(AccessLevel.Write,
+        PermissionCodes.Lookups, PermissionCodes.Events, PermissionCodes.Services,
+        PermissionCodes.Transportation, PermissionCodes.VenueConfig, PermissionCodes.Venues)]
     public async Task<IActionResult> CreateLocation([FromBody] LocationRequest request, CancellationToken ct)
         => ToResponse(await _travel.CreateLocationAsync(request, _currentUser.UserId, ct));
 
     [HttpPut("locations/{id:guid}")]
-    [HasPermission(PermissionCodes.TravelManage)]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
     public async Task<IActionResult> UpdateLocation(Guid id, [FromBody] LocationRequest request, CancellationToken ct)
         => ToResponse(await _travel.UpdateLocationAsync(id, request, _currentUser.UserId, ct));
 }

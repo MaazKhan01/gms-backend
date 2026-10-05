@@ -9,5 +9,7 @@ public class UpdateRoleRequest
     public string Description { get; set; }
     // Null = leave unchanged.
     public bool? PortalAccess { get; set; }
+    /// <summary>Null = leave unchanged. See CreateRoleRequest.</summary>
+    public bool? IsDelegateRole { get; set; }
     public List<Guid> PermissionIds { get; set; }
 }
