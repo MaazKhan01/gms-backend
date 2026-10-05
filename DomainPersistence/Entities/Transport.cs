@@ -1,3 +1,5 @@
+﻿using System;
+
 namespace DomainPersistence.Entities;
 
 /// <summary>A guest's ground transport.</summary>
@@ -16,6 +18,21 @@ public class Transport : Entity
     public DateTime? ActualDropOffTime { get; set; }
 
     public string Notes { get; set; }
+
+    /// <summary>
+    /// Ties this ride to the other rides booked with it on one vehicle.
+    ///
+    /// A group booking is not one row shared by several delegates — it is one
+    /// row PER delegate, because everything downstream (readiness, the roster,
+    /// the driver's manifest, a per-person cancellation) is keyed to a single
+    /// participation. This column is what says those rows are the same journey.
+    ///
+    /// Null means an individual booking, which is every row that existed before
+    /// grouping and every row booked on its own since. Nothing reads it as
+    /// anything other than "no group", so the feature is removable by dropping
+    /// the column.
+    /// </summary>
+    public Guid? TransportGroupId { get; set; }
 
     // "scheduled" (admin-created) | "on-demand" (guest-requested from the VIP app,
     // lands as TripStatus "new" until a driver accepts it).

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text;
 using System.Threading.RateLimiting;
 using Azure.Storage.Blobs;
@@ -87,6 +87,7 @@ public static class ServiceExtensions
 
         // DMS mission domain
         services.AddScoped<IDepartmentService, DepartmentService>();
+        services.AddScoped<IGroupService, GroupService>();
         services.AddScoped<IHostInvitationService, HostInvitationService>();
         services.AddScoped<INominationService, NominationService>();
         services.AddScoped<INominationLetterService, NominationLetterService>();

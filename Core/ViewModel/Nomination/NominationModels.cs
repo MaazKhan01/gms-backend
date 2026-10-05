@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Core.ViewModel.Nomination;
@@ -23,6 +23,11 @@ public class NominationResponse
     public Guid? MissionRoleId { get; set; }
     public string MissionRoleName { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 
     public DateTime? NominatedOn { get; set; }
     public string NominatedByName { get; set; }
@@ -91,6 +96,13 @@ public class NominationCandidateResponse
     /// <summary>True when one of those overlaps the mission being staffed.</summary>
     public bool OverlapsThisMission { get; set; }
 
+    /// <summary>
+    /// The overlapping missions by name. The warning has to say WHICH mission
+    /// the person is double-booked on — "already on an overlapping mission" is
+    /// not something a coordinator can act on without then going to look it up.
+    /// </summary>
+    public List<string> OverlappingMissions { get; set; } = new();
+
     // ── This mission ─────────────────────────────────────────────────────────
     // The screen lists the whole staff directory, so every row has to say where
     // it stands against the mission being staffed — a directory that did not
@@ -107,8 +119,16 @@ public class NominationCandidateResponse
     /// <summary>The participation, when they are on it. What edit and remove take.</summary>
     public Guid? ParticipationId { get; set; }
 
+    /// <summary>The role's id, not just its label — the nominate form preselects
+    /// it, and a name cannot be fed back to a dropdown keyed by id.</summary>
+    public Guid? MissionRoleId { get; set; }
     public string MissionRoleName { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 
     // Visa and insurance belong to the PARTICIPATION, not the person, so they
     // are null until someone is nominated. That is the honest answer, not a gap.
@@ -146,12 +166,22 @@ public class CreateNominationRequest
     public Guid PersonId { get; set; }
     public Guid? MissionRoleId { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 }
 
 public class UpdateNominationRequest
 {
     public Guid? MissionRoleId { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 }
 
 /// <summary>
@@ -183,4 +213,9 @@ public class CreateStaffRequest
     public Guid? EventId { get; set; }
     public Guid? MissionRoleId { get; set; }
     public string Subgroup { get; set; }
+
+    /// <summary>The Groups lookup row this delegate belongs to on this mission.
+    /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
+    /// on save so the roster screens that still group by the string follow.</summary>
+    public Guid? GroupId { get; set; }
 }

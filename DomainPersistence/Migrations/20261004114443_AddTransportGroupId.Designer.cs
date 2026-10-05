@@ -4,6 +4,7 @@ using DomainPersistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DomainPersistence.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20261004114443_AddTransportGroupId")]
+    partial class AddTransportGroupId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -916,9 +919,6 @@ namespace DomainPersistence.Migrations
                     b.Property<int>("EventId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("GroupId")
-                        .HasColumnType("int");
-
                     b.Property<int>("GuestId")
                         .HasColumnType("int");
 
@@ -1005,8 +1005,6 @@ namespace DomainPersistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GroupId");
-
                     b.HasIndex("HrVerifiedBy");
 
                     b.HasIndex("MissionRoleId");
@@ -1019,8 +1017,6 @@ namespace DomainPersistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("ServiceLevelId");
-
-                    b.HasIndex("EventId", "GroupId");
 
                     b.HasIndex("EventId", "Subgroup");
 
@@ -1560,61 +1556,6 @@ namespace DomainPersistence.Migrations
                     b.HasIndex("SentBy");
 
                     b.ToTable("GatheringNotifications", (string)null);
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.Group", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("(sysutcdatetime())");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<bool?>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValueSql("((0))");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("(newid())");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasFilter("[IsDeleted] = 0");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique();
-
-                    b.ToTable("Groups", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Guest", b =>
@@ -5239,11 +5180,6 @@ namespace DomainPersistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("DomainPersistence.Entities.Group", "Group")
-                        .WithMany("EventGuests")
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("DomainPersistence.Entities.Guest", "Guest")
                         .WithMany("EventGuests")
                         .HasForeignKey("GuestId")
@@ -5276,8 +5212,6 @@ namespace DomainPersistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Event");
-
-                    b.Navigation("Group");
 
                     b.Navigation("Guest");
 
@@ -6136,11 +6070,6 @@ namespace DomainPersistence.Migrations
             modelBuilder.Entity("DomainPersistence.Entities.Flight", b =>
                 {
                     b.Navigation("Legs");
-                });
-
-            modelBuilder.Entity("DomainPersistence.Entities.Group", b =>
-                {
-                    b.Navigation("EventGuests");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.Guest", b =>

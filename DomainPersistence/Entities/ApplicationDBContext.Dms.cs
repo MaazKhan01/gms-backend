@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 
 namespace DomainPersistence.Entities;
 
@@ -117,9 +117,32 @@ public partial class ApplicationDBContext
                 .HasForeignKey(x => x.HrVerifiedBy)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // RESTRICT: a group somebody is nominated into must not vanish out
+            // from under the roster. Renaming it is the supported edit.
+            eg.HasOne(x => x.Group)
+                .WithMany(x => x.EventGuests)
+                .HasForeignKey(x => x.GroupId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // The roster screens all filter "who is on this mission, in this
             // subgroup" — worth an index once a mission carries real numbers.
             eg.HasIndex(x => new { x.EventId, x.Subgroup });
+            // Same question asked through the FK, which is what the transport
+            // group booking resolves members by.
+            eg.HasIndex(x => new { x.EventId, x.GroupId });
+        });
+
+        modelBuilder.Entity<Group>(g =>
+        {
+            g.ToTable("Groups");
+            g.HasKey(x => x.Id);
+            g.Property(x => x.Name).IsRequired().HasMaxLength(100);
+            g.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            g.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+            // Two groups with one name would make the dropdown unusable, and the
+            // backfill below collapses existing text on exactly this key.
+            g.HasIndex(x => x.Name).IsUnique().HasFilter("[IsDeleted] = 0");
+            g.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
         modelBuilder.Entity<Guest>(g =>

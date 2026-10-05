@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Authorization;
@@ -31,10 +31,14 @@ public class VehiclesController(IVehicleService _vehicles, ICurrentUser _current
     // already-taken car can't be picked in the first place. The server still
     // rejects a clashing save; this only keeps the UI honest.
     [HttpGet("available")]
+    // excludeGroupId: a group booking's own rides all hold the shared car, so
+    // editing the group must not report that car as taken by itself.
     public async Task<IActionResult> GetAvailable(
         [FromQuery] DateTime from, [FromQuery] DateTime? to,
-        [FromQuery] Guid? eventId, [FromQuery] Guid? excludeTransportId, CancellationToken ct)
-        => ToResponse(await _vehicles.GetAvailableAsync(from, to, eventId, excludeTransportId, ct));
+        [FromQuery] Guid? eventId, [FromQuery] Guid? excludeTransportId,
+        [FromQuery] Guid? excludeGroupId, [FromQuery] bool includeShared, CancellationToken ct)
+        => ToResponse(await _vehicles.GetAvailableAsync(
+            from, to, eventId, excludeTransportId, excludeGroupId, includeShared, ct));
 
     // Fleet › Bookings: which vehicle is booked when, and with which driver.
     [HttpGet("bookings")]

@@ -265,6 +265,11 @@ public class HostInvitationService(
             // provenance conversion exists to record.
             HostOrganizationId = invitation.HostOrganizationRef?.PublicId,
             HostEmail = invitation.HostEmail,
+            // Chosen on the conversion form. Falls back to the invitation's own
+            // attachment — the host's letter is a reasonable default for the
+            // mission's document when nothing else was picked.
+            ImageUrl = request?.ImageUrl,
+            AttachmentUrl = request?.AttachmentUrl ?? invitation.AttachmentUrl,
         };
 
         await _unitOfWork.BeginTransactionAsync();

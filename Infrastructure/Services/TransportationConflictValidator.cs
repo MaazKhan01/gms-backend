@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -46,7 +46,8 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
     }
 
     public async Task<ConflictCheckResult> CheckDriverConflictAsync(
-        int driverId, DateTime candidateTime, int? excludeTransportId = null, CancellationToken ct = default)
+        int driverId, DateTime candidateTime, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default)
     {
         var dayStart = candidateTime.Date;
         var dayEnd = dayStart.AddDays(1);
@@ -55,7 +56,10 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
             .Where(t => t.DriverId == driverId
                 && TransportStatuses.Live.Contains(t.TripStatus)
                 && t.PickupTime >= dayStart && t.PickupTime < dayEnd
-                && (excludeTransportId == null || t.Id != excludeTransportId))
+                && (excludeTransportId == null || t.Id != excludeTransportId)
+                // The rest of this group booking is the same journey, so the
+                // driver is not double-booked by it.
+                && (excludeGroupId == null || t.TransportGroupId != excludeGroupId))
             .Select(t => t.PickupTime.Value)
             .ToListAsync(ct);
 
@@ -63,9 +67,10 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
     }
 
     public async Task<ConflictCheckResult> CheckVehicleConflictAsync(
-        int vehicleId, DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default)
+        int vehicleId, DateTime start, DateTime? end, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default)
     {
-        var clash = await BookedVehicles(start, end, excludeTransportId)
+        var clash = await BookedVehicles(start, end, excludeTransportId, excludeGroupId)
             .Where(t => t.VehicleId == vehicleId)
             .OrderBy(t => t.PickupTime)
             .Select(t => new { From = t.PickupTime.Value, t.DropoffTime, t.Vehicle.VehicleNumber })
@@ -80,27 +85,31 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
     }
 
     public async Task<List<int>> GetBusyVehicleIdsAsync(
-        DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default)
-        => await BookedVehicles(start, end, excludeTransportId)
+        DateTime start, DateTime? end, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default)
+        => await BookedVehicles(start, end, excludeTransportId, excludeGroupId)
             .Select(t => t.VehicleId.Value)
             .Distinct()
             .ToListAsync(ct);
 
     public async Task<List<int>> GetBusyDriverIdsAsync(
-        DateTime start, DateTime? end, int? excludeTransportId = null, CancellationToken ct = default)
-        => await Overlapping(start, end, excludeTransportId)
+        DateTime start, DateTime? end, int? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default)
+        => await Overlapping(start, end, excludeTransportId, excludeGroupId)
             .Where(t => t.DriverId != null)
             .Select(t => t.DriverId.Value)
             .Distinct()
             .ToListAsync(ct);
 
-    private IQueryable<Transport> BookedVehicles(DateTime start, DateTime? end, int? excludeTransportId)
-        => Overlapping(start, end, excludeTransportId).Where(t => t.VehicleId != null);
+    private IQueryable<Transport> BookedVehicles(
+        DateTime start, DateTime? end, int? excludeTransportId, Guid? excludeGroupId = null)
+        => Overlapping(start, end, excludeTransportId, excludeGroupId).Where(t => t.VehicleId != null);
 
     // Every open ride whose window overlaps [start, end) — the one predicate the
     // single-vehicle check and both availability feeds run on, so they can never
     // disagree about what "busy" means.
-    private IQueryable<Transport> Overlapping(DateTime start, DateTime? end, int? excludeTransportId)
+    private IQueryable<Transport> Overlapping(
+        DateTime start, DateTime? end, int? excludeTransportId, Guid? excludeGroupId = null)
     {
         var from = start - _windowPolicy.BufferBefore;
         var to = (end ?? start + _windowPolicy.DefaultRideDuration) + _windowPolicy.BufferAfter;
@@ -111,6 +120,9 @@ public class TransportationConflictValidator(IUnitOfWork _unitOfWork, IConflictW
             .Where(t => TransportStatuses.Live.Contains(t.TripStatus)
                 && t.PickupTime != null
                 && (excludeTransportId == null || t.Id != excludeTransportId)
+                // Rides in the group being saved are this same journey — they
+                // must not count as occupying the car they are riding in.
+                && (excludeGroupId == null || t.TransportGroupId != excludeGroupId)
                 // Half-open overlap: back-to-back rides (10:00–10:30, 10:30–11:00)
                 // don't collide — add BufferAfter if turnaround time is needed.
                 && t.PickupTime < to

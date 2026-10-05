@@ -1,4 +1,4 @@
-using Core.ViewModel.Common;
+﻿using Core.ViewModel.Common;
 using Core.ViewModel.Travel;
 
 namespace Core.Interfaces.Services;
@@ -12,8 +12,11 @@ public interface ITravelService
     Task<ApiResponse<List<IdNameDto>>> GetVehicleTypesAsync(CancellationToken ct = default);
     // from/to narrow the list to drivers free over that window (the booking form's
     // dropdown); omit them for the full fixed-driver roster.
+    // excludeGroupId does the same for a group booking: the shared driver must
+    // stay selectable while its own rides are being edited.
     Task<ApiResponse<List<IdNameDto>>> GetDriversAsync(
-        DateTime? from = null, DateTime? to = null, Guid? excludeTransportId = null, CancellationToken ct = default);
+        DateTime? from = null, DateTime? to = null, Guid? excludeTransportId = null,
+        Guid? excludeGroupId = null, CancellationToken ct = default);
     Task<ApiResponse<List<AirportDto>>> GetAirportsAsync(CancellationToken ct = default);
     // bookingId narrows the prefill to one specific Flight/Accommodation/Transport
     // (Services' per-booking Edit); omit it for the wizard's "most recent of each".

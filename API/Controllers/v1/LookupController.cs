@@ -1,4 +1,4 @@
-using Core.Authorization;
+﻿using Core.Authorization;
 using System.Collections.Generic;
 using Core.ViewModel.Common;
 using Core.Constants;
@@ -73,10 +73,13 @@ public class LookupController(ILookupService _lookupService, ITravelService _tra
     // Pass from (+ optional to) to get only drivers free over that window — the
     // booking form's dropdown feed, so an already-assigned driver can't be picked.
     [HttpGet("drivers")]
+    // excludeGroupId does the same for a group booking being edited: its own
+    // rides all hold the shared driver, so without this the driver disappears
+    // from the dropdown the moment you reopen the booking.
     public async Task<IActionResult> GetDrivers(
         [FromQuery] DateTime? from, [FromQuery] DateTime? to,
-        [FromQuery] Guid? excludeTransportId, CancellationToken ct)
-        => ToResponse(await _travel.GetDriversAsync(from, to, excludeTransportId, ct));
+        [FromQuery] Guid? excludeTransportId, [FromQuery] Guid? excludeGroupId, CancellationToken ct)
+        => ToResponse(await _travel.GetDriversAsync(from, to, excludeTransportId, excludeGroupId, ct));
 
     [HttpGet("airports")]
     public async Task<IActionResult> GetAirports(CancellationToken ct)

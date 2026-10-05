@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -130,13 +130,26 @@ public class NominationService(
                 // so rather than leaving a familiar name looking like a leak
                 // from another mission's roster.
                 CurrentMissions = g.EventGuests
-                    .Where(eg => eg.Event.EndDate == null || eg.Event.EndDate >= today)
+                    .Where(eg => eg.EventId != mission.Id
+                              && (eg.Event.EndDate == null || eg.Event.EndDate >= today))
                     .Select(eg => eg.Event.Title)
                     .ToList(),
+                // Deliberately excludes THIS mission: without that, everyone
+                // already on the roster overlapped themselves and the whole
+                // warning read as noise.
                 OverlapsThisMission = g.EventGuests.Any(eg =>
-                    eg.Event.StartDate != null && eg.Event.EndDate != null
+                    eg.EventId != mission.Id
+                    && eg.Event.StartDate != null && eg.Event.EndDate != null
                     && mission.StartDate != null && mission.EndDate != null
                     && eg.Event.StartDate <= mission.EndDate && eg.Event.EndDate >= mission.StartDate),
+                OverlappingMissions = g.EventGuests
+                    .Where(eg => eg.EventId != mission.Id
+                              && eg.Event.StartDate != null && eg.Event.EndDate != null
+                              && mission.StartDate != null && mission.EndDate != null
+                              && eg.Event.StartDate <= mission.EndDate
+                              && eg.Event.EndDate >= mission.StartDate)
+                    .Select(eg => eg.Event.Title)
+                    .ToList(),
 
                 // "On roster" means NOMINATED. A participation can exist without
                 // one — the Delegates screen creates rows directly — and calling
@@ -150,9 +163,15 @@ public class NominationService(
                 ParticipationId = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => (Guid?)eg.PublicId).FirstOrDefault(),
+                MissionRoleId = g.EventGuests
+                    .Where(eg => eg.EventId == mission.Id && eg.MissionRole != null)
+                    .Select(eg => (Guid?)eg.MissionRole.PublicId).FirstOrDefault(),
                 MissionRoleName = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => eg.MissionRole.Name).FirstOrDefault(),
+                GroupId = g.EventGuests
+                    .Where(eg => eg.EventId == mission.Id)
+                    .Select(eg => eg.Group != null ? (Guid?)eg.Group.PublicId : null).FirstOrDefault(),
                 Subgroup = g.EventGuests
                     .Where(eg => eg.EventId == mission.Id)
                     .Select(eg => eg.Subgroup).FirstOrDefault(),
@@ -302,7 +321,7 @@ public class NominationService(
             EventId = request.EventId.Value,
             PersonId = person.PublicId,
             MissionRoleId = request.MissionRoleId,
-            Subgroup = request.Subgroup,
+            GroupId = request.GroupId,
         }, userId, ct);
 
         // The person is in the directory either way — that insert already
@@ -383,13 +402,18 @@ public class NominationService(
             return await GetOneAsync(existing.PublicId, mission, ct);
         }
 
+        var group = await ResolveGroupAsync(request.GroupId, ct);
+        if (group.Invalid) return ApiResponse<NominationResponse>.ErrorResponse("Invalid group");
+
         var participation = new EventGuest
         {
             GuestId = person.Id,
             EventId = mission.Id,
             GuestType = GuestTypes.Delegate,
             MissionRoleId = roleCheck.RoleId,
-            Subgroup = string.IsNullOrWhiteSpace(request.Subgroup) ? null : request.Subgroup.Trim(),
+            GroupId = group.Id,
+            // Mirrored, not typed: see ResolveGroupAsync.
+            Subgroup = group.Name,
             NominatedOn = DateTime.UtcNow,
             NominatedBy = userId == 0 ? null : userId,
             HrVerificationStatus = HrVerificationStatuses.Pending,
@@ -433,7 +457,11 @@ public class NominationService(
         if (roleCheck.Error != null) return roleCheck.Error.As<NominationResponse>();
 
         if (request.MissionRoleId.HasValue) participation.MissionRoleId = roleCheck.RoleId;
-        participation.Subgroup = string.IsNullOrWhiteSpace(request.Subgroup) ? null : request.Subgroup.Trim();
+
+        var group = await ResolveGroupAsync(request.GroupId, ct);
+        if (group.Invalid) return ApiResponse<NominationResponse>.ErrorResponse("Invalid group");
+        participation.GroupId = group.Id;
+        participation.Subgroup = group.Name;
         participation.SetUpdateAudit(userId);
 
         _unitOfWork.EventGuests.Update(participation);
@@ -673,6 +701,7 @@ public class NominationService(
                 DepartmentName = eg.Guest.Department != null ? eg.Guest.Department.Name : null,
                 MissionRoleId = eg.MissionRole != null ? (Guid?)eg.MissionRole.PublicId : null,
                 MissionRoleName = eg.MissionRole != null ? eg.MissionRole.Name : null,
+                GroupId = eg.Group != null ? (Guid?)eg.Group.PublicId : null,
                 Subgroup = eg.Subgroup,
                 NominatedOn = eg.NominatedOn,
                 NominatedByName = eg.NominatedByUser != null
@@ -738,6 +767,25 @@ public class NominationService(
             row.Flags.OverlappingMission = true;
             row.Flags.OverlappingMissions = byPerson[row.PersonId];
         }
+    }
+
+    /// <summary>
+    /// Turns a Groups public id into (internal id, name). The name is what gets
+    /// mirrored onto EventGuest.Subgroup — Readiness, On-Mission Ops and
+    /// Incidents all group by that string, so it has to stay in step with the
+    /// lookup rather than being typed in a second time.
+    ///
+    /// Returns (null, null) for no group, which is how a delegate is ungrouped.
+    /// </summary>
+    private async Task<(int? Id, string Name, bool Invalid)> ResolveGroupAsync(
+        Guid? groupId, CancellationToken ct)
+    {
+        if (groupId is not { } gid || gid == Guid.Empty) return (null, null, false);
+
+        var group = await _unitOfWork.Groups.QueryNoTracking()
+            .FirstOrDefaultAsync(g => g.PublicId == gid, ct);
+
+        return group == null ? (null, null, true) : (group.Id, group.Name, false);
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex)

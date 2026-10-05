@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,6 +22,7 @@ public partial class ApplicationDBContext : DbContext
     // Venue reference data
     public virtual DbSet<VenueType> VenueTypes { get; set; }
     public virtual DbSet<Department> Departments { get; set; }
+    public virtual DbSet<Group> Groups { get; set; }
 
     // mission domain
     public virtual DbSet<HostInvitation> HostInvitations { get; set; }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace DomainPersistence.Entities;
@@ -33,6 +33,20 @@ public class EventGuest : Entity
     public int? MissionRoleId { get; set; }
 
     public string Subgroup { get; set; }
+
+    /// <summary>
+    /// The sub-group this delegate belongs to on this mission, as a row in the
+    /// Groups lookup. Null means ungrouped.
+    ///
+    /// <see cref="Subgroup"/> above is kept and MIRRORED from the group's name on
+    /// every save — the same arrangement Guest.Tier has with ServiceLevel.Code.
+    /// Readiness, On-Mission Ops and Incidents all read the string and group by
+    /// it; rewriting them to join a table was a much larger change than the one
+    /// being asked for, and the mirror keeps them correct meanwhile.
+    /// </summary>
+    public int? GroupId { get; set; }
+
+    public virtual Group Group { get; set; }
 
     public DateTime? NominatedOn { get; set; }
     public int? NominatedBy { get; set; }
