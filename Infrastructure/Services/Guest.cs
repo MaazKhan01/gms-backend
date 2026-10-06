@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using Core.Common;
 using Core.Common.Interfaces;
 using Core.Constants;
@@ -81,6 +81,7 @@ public class GuestService(
             .Include(eg => eg.Event)
             .Include(eg => eg.OrganizationRef)
             .Include(eg => eg.ServiceLevel)
+            .Include(eg => eg.Group)
             .Include(eg => eg.GuestSessions).ThenInclude(gs => gs.Session);
 
     // Upserts the participation's Invitation row (one per EventGuest) with a
@@ -855,6 +856,7 @@ public class GuestService(
                 .Include(eg => eg.Guest).ThenInclude(g => g.Nationality)
                 .Include(eg => eg.OrganizationRef)
                 .Include(eg => eg.ServiceLevel)
+                .Include(eg => eg.Group)
                 .Include(eg => eg.Event)
                 .FirstOrDefaultAsync(eg => eg.PublicId == request.Id.Value, ct);
 

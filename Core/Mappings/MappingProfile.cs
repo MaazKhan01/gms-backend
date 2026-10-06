@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using Core.Constants;
 using Core.ViewModel.AccountRequest;
 using Core.ViewModel.Event;
@@ -117,6 +117,8 @@ public class MappingProfile : Profile
                 opt => opt.MapFrom(src => src.MissionRole != null ? (Guid?)src.MissionRole.PublicId : null))
             .ForMember(dest => dest.MissionRoleName,
                 opt => opt.MapFrom(src => src.MissionRole != null ? src.MissionRole.Name : null))
+            .ForMember(dest => dest.GroupId,
+                opt => opt.MapFrom(src => src.Group != null ? (Guid?)src.Group.PublicId : null))
             // Nomination details. The first five live on the PERSON and follow
             // them between missions; visa and insurance are on the participation
             // and map by convention.

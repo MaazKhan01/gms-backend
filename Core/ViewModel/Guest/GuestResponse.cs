@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Core.ViewModel.Guest;
@@ -54,6 +54,7 @@ public class GuestResponse
     /// unchanged — new code should prefer ServiceLevelName/ServiceLevelColor.</summary>
     public string Tier { get; set; }
     public Guid? ServiceLevelId { get; set; }
+    public Guid? GroupId { get; set; }
     public string ServiceLevelName { get; set; }
     public string ServiceLevelNameAr { get; set; }
     public string ServiceLevelColor { get; set; }
