@@ -38,6 +38,10 @@ public interface ITravelService
     Task<ApiResponse<bool>> DeleteAccommodationAsync(Guid id, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteTransportAsync(Guid id, CancellationToken ct = default);
 
+    // Delegate-app booking change requests, as the coordinator sees them.
+    Task<ApiResponse<List<Core.ViewModel.DelegateApp.ChangeRequestResponse>>> GetChangeRequestsAsync(Guid eventId, string status, CancellationToken ct = default);
+    Task<ApiResponse<Core.ViewModel.DelegateApp.ChangeRequestResponse>> ResolveChangeRequestAsync(Guid id, Core.ViewModel.DelegateApp.ResolveChangeRequest request, int userId, CancellationToken ct = default);
+
     // Create wizard-dropdown lookup records.
     Task<ApiResponse<IdNameDto>> CreateFlightClassAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<IdNameDto>> CreateRoomTypeAsync(CreateNamedLookupRequest request, int userId, CancellationToken ct = default);

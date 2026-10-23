@@ -29,6 +29,7 @@ public interface INominationService
     /// </summary>
     Task<ApiResponse<NominationResponse>> CreateStaffAsync(CreateStaffRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<NominationResponse>> UpdateAsync(Guid id, UpdateNominationRequest request, int userId, CancellationToken ct = default);
+    Task<ApiResponse<NominationAppFieldsResponse>> GetAppFieldsAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>Removes someone from the roster. Refused once they have bookings.</summary>
     Task<ApiResponse<bool>> RemoveAsync(Guid id, int userId, CancellationToken ct = default);

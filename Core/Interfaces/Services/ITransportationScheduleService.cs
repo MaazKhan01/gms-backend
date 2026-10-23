@@ -9,7 +9,7 @@ namespace Core.Interfaces.Services;
 
 // Admin side of the transportation module — pre-scheduled rides and the
 // eligible-driver pool per participation. Guest on-demand requests go through
-// IVipAppService.RequestTransportAsync ("new" status, claimed by a driver).
+// IDelegateAppService.RequestTransportAsync ("new" status, claimed by a driver).
 //
 // Every guest id here is an EventGuest.PublicId: transport is event-scoped, and
 // the participation is where a ride's event comes from.

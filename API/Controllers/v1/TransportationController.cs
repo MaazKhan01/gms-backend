@@ -14,8 +14,8 @@ namespace API.Controllers.v1;
 
 // Admin side of the transportation module — pre-scheduled rides and the
 // eligible-driver pool per guest. Guest on-demand requests are POST
-// api/v1/vip-app/transport-requests (they land as a Transport with status
-// "new"); drivers see and claim them on TransportAppController.
+// api/v1/delegate-app/transport-requests (they land as a Transport with status
+// "new"); no driver app claims them anymore (TransportApp removed).
 [Route("api/v1/transportation")]
 [Authorize]
 [ApiVersion("1.0")]

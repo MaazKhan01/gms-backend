@@ -21,6 +21,12 @@ public class Flight : Entity
     /// re-signs it on every read.</summary>
     public string ImageUrl { get; set; }
 
+    // Booking record shown on the delegate app's Flights screen.
+    public string Airline { get; set; }
+    /// <summary>Booking reference (PNR), e.g. "K7Q2ZM".</summary>
+    public string Pnr { get; set; }
+    public string ETicketNumber { get; set; }
+
     public virtual EventGuest EventGuest { get; set; }
     public virtual FlightClass FlightClass { get; set; }
     public virtual ICollection<FlightLeg> Legs { get; set; } = new List<FlightLeg>();

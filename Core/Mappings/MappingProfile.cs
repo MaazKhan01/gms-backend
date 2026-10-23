@@ -57,6 +57,8 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.DestinationAddress, opt => opt.MapFrom(src => src.Destination != null ? src.Destination.Address : null))
             .ForMember(dest => dest.HostInvitationId, opt => opt.MapFrom(src => src.HostInvitation != null ? (Guid?)src.HostInvitation.PublicId : null))
             .ForMember(dest => dest.HostOrganizationId, opt => opt.MapFrom(src => src.HostOrganization != null ? (Guid?)src.HostOrganization.PublicId : null))
+            .ForMember(dest => dest.CoordinatorUserId, opt => opt.MapFrom(src => src.Coordinator != null ? (Guid?)src.Coordinator.PublicId : null))
+            .ForMember(dest => dest.CoordinatorName, opt => opt.MapFrom(src => src.Coordinator != null ? (src.Coordinator.FirstName + " " + src.Coordinator.LastName).Trim() : null))
             // Derived from EndDate, never stored — see EventResponse.IsCompleted.
             .ForMember(dest => dest.IsCompleted,
                 opt => opt.MapFrom(src => src.EndDate != null && src.EndDate < DateOnly.FromDateTime(DateTime.UtcNow)));
@@ -75,7 +77,8 @@ public class MappingProfile : Profile
             // "Error mapping types" on the Map call itself.
             .ForMember(dest => dest.VenueId, opt => opt.Ignore())
             .ForMember(dest => dest.DestinationId, opt => opt.Ignore())
-            .ForMember(dest => dest.HostOrganizationId, opt => opt.Ignore());
+            .ForMember(dest => dest.HostOrganizationId, opt => opt.Ignore())
+            .ForMember(dest => dest.CoordinatorUserId, opt => opt.Ignore());
         CreateMap<CreateSessionRequest, Session>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.Event, opt => opt.Ignore())

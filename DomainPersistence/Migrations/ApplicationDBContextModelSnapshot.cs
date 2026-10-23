@@ -30,11 +30,25 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("BoardBasis")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
                     b.Property<DateOnly?>("CheckIn")
                         .HasColumnType("date");
 
+                    b.Property<TimeOnly?>("CheckInTime")
+                        .HasColumnType("time");
+
                     b.Property<DateOnly?>("CheckOut")
                         .HasColumnType("date");
+
+                    b.Property<TimeOnly?>("CheckOutTime")
+                        .HasColumnType("time");
+
+                    b.Property<string>("ConfirmationNumber")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -72,6 +86,10 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("RoomNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<int?>("RoomTypeId")
                         .HasColumnType("int");
@@ -376,6 +394,115 @@ namespace DomainPersistence.Migrations
                         .IsUnique();
 
                     b.ToTable("AirportData", (string)null);
+                });
+
+            modelBuilder.Entity("DomainPersistence.Entities.BookingChangeRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AccommodationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BookingKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EventGuestId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FlightId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FromAirportId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("HotelId")
+                        .HasColumnType("int");
+
+                    b.Property<bool?>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValueSql("((0))");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ResolvedBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("requested");
+
+                    b.Property<int?>("ToAirportId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccommodationId");
+
+                    b.HasIndex("FlightId");
+
+                    b.HasIndex("FromAirportId");
+
+                    b.HasIndex("HotelId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("ResolvedBy");
+
+                    b.HasIndex("ToAirportId");
+
+                    b.HasIndex("EventGuestId", "Status");
+
+                    b.ToTable("BookingChangeRequests", (string)null);
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.CombinedReport", b =>
@@ -771,6 +898,16 @@ namespace DomainPersistence.Migrations
                     b.Property<string>("AttachmentUrl")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CoordinatorUserId")
+                        .HasColumnType("int");
+
                     b.Property<string>("CostCenter")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -870,6 +1007,8 @@ namespace DomainPersistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CoordinatorUserId");
+
                     b.HasIndex("DestinationId");
 
                     b.HasIndex("HostInvitationId");
@@ -892,8 +1031,24 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AccreditationCategory")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("AccreditationCategoryLabel")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("AccreditationNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<bool>("AccreditationRequired")
                         .HasColumnType("bit");
+
+                    b.Property<string>("AccreditationZonesJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("AllowedServicesJson")
                         .HasMaxLength(200)
@@ -967,6 +1122,18 @@ namespace DomainPersistence.Migrations
                     b.Property<int?>("OrganizationId")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("PerDiemAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("PerDiemCurrency")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("PerDiemStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
@@ -981,6 +1148,13 @@ namespace DomainPersistence.Migrations
 
                     b.Property<bool>("ServiceLevelRulesOverridden")
                         .HasColumnType("bit");
+
+                    b.Property<decimal?>("SettlementAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime?>("SettlementPaidOn")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Subgroup")
                         .HasMaxLength(100)
@@ -1292,6 +1466,10 @@ namespace DomainPersistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Airline")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime?>("ArrivalTime")
                         .HasColumnType("datetime2");
 
@@ -1312,6 +1490,10 @@ namespace DomainPersistence.Migrations
                     b.Property<DateTime?>("DepartureTime")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ETicketNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<int>("EventGuestId")
                         .HasColumnType("int");
 
@@ -1329,6 +1511,10 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValueSql("((0))");
+
+                    b.Property<string>("Pnr")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
@@ -1417,6 +1603,13 @@ namespace DomainPersistence.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BaggageAllowance")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<DateTime?>("BoardingTime")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -2531,6 +2724,95 @@ namespace DomainPersistence.Migrations
                     b.ToTable("Meetings", (string)null);
                 });
 
+            modelBuilder.Entity("DomainPersistence.Entities.MissionJournalEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Body")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(sysutcdatetime())");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("EntryDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("EventGuestId")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IncludedInReport")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValueSql("((0))");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<int?>("SessionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("shared");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("EventGuestId", "EntryDate");
+
+                    b.ToTable("MissionJournalEntries", (string)null);
+                });
+
             modelBuilder.Entity("DomainPersistence.Entities.Nationality", b =>
                 {
                     b.Property<int>("Id")
@@ -3123,6 +3405,10 @@ namespace DomainPersistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValueSql("((0))");
+
+                    b.Property<string>("KeyOutcomes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<DateTime?>("LastNudgeOn")
                         .HasColumnType("datetime2");
@@ -5140,6 +5426,59 @@ namespace DomainPersistence.Migrations
                     b.Navigation("Location");
                 });
 
+            modelBuilder.Entity("DomainPersistence.Entities.BookingChangeRequest", b =>
+                {
+                    b.HasOne("DomainPersistence.Entities.Accommodation", "Accommodation")
+                        .WithMany()
+                        .HasForeignKey("AccommodationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("DomainPersistence.Entities.EventGuest", "EventGuest")
+                        .WithMany()
+                        .HasForeignKey("EventGuestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DomainPersistence.Entities.Flight", "Flight")
+                        .WithMany()
+                        .HasForeignKey("FlightId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("DomainPersistence.Entities.AirportData", "FromAirport")
+                        .WithMany()
+                        .HasForeignKey("FromAirportId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("DomainPersistence.Entities.AccommodationHotel", "Hotel")
+                        .WithMany()
+                        .HasForeignKey("HotelId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("DomainPersistence.Entities.User", "ResolvedByUser")
+                        .WithMany()
+                        .HasForeignKey("ResolvedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DomainPersistence.Entities.AirportData", "ToAirport")
+                        .WithMany()
+                        .HasForeignKey("ToAirportId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Accommodation");
+
+                    b.Navigation("EventGuest");
+
+                    b.Navigation("Flight");
+
+                    b.Navigation("FromAirport");
+
+                    b.Navigation("Hotel");
+
+                    b.Navigation("ResolvedByUser");
+
+                    b.Navigation("ToAirport");
+                });
+
             modelBuilder.Entity("DomainPersistence.Entities.CombinedReport", b =>
                 {
                     b.HasOne("DomainPersistence.Entities.User", "ApprovedByUser")
@@ -5203,6 +5542,11 @@ namespace DomainPersistence.Migrations
 
             modelBuilder.Entity("DomainPersistence.Entities.Event", b =>
                 {
+                    b.HasOne("DomainPersistence.Entities.User", "Coordinator")
+                        .WithMany()
+                        .HasForeignKey("CoordinatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("DomainPersistence.Entities.Location", "Destination")
                         .WithMany()
                         .HasForeignKey("DestinationId")
@@ -5221,6 +5565,8 @@ namespace DomainPersistence.Migrations
                     b.HasOne("DomainPersistence.Entities.Venue", "Venue")
                         .WithMany()
                         .HasForeignKey("VenueId");
+
+                    b.Navigation("Coordinator");
 
                     b.Navigation("Destination");
 
@@ -5605,6 +5951,24 @@ namespace DomainPersistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("DomainPersistence.Entities.MissionJournalEntry", b =>
+                {
+                    b.HasOne("DomainPersistence.Entities.EventGuest", "EventGuest")
+                        .WithMany()
+                        .HasForeignKey("EventGuestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DomainPersistence.Entities.Session", "Session")
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("EventGuest");
+
+                    b.Navigation("Session");
                 });
 
             modelBuilder.Entity("DomainPersistence.Entities.NominationLetter", b =>

@@ -6,7 +6,7 @@ namespace Core.ViewModel.SupportChat;
 // ============================================================================
 // Support Chat — admin-facing conversation management DTOs. Per-message DTOs
 // (SupportMessageResponse / SendSupportMessageRequest) are reused as-is from
-// Core.ViewModel.VipApp — guest and admin exchange the exact same message shape.
+// Core.ViewModel.DelegateApp — guest and admin exchange the exact same message shape.
 // ============================================================================
 
 public class SupportConversationSummaryResponse

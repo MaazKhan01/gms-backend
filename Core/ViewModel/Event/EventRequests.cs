@@ -33,6 +33,8 @@ public class CreateEventRequest
     /// <c>hostName</c> is never sent by the client.</summary>
     public Guid? HostOrganizationId { get; set; }
     public string HostEmail { get; set; }
+    /// <summary>A portal User (Users.PublicId) — GET events/coordinators.</summary>
+    public Guid? CoordinatorUserId { get; set; }
 }
 
 public class UpdateEventRequest
@@ -64,11 +66,17 @@ public class UpdateEventRequest
     /// <c>hostName</c> is never sent by the client.</summary>
     public Guid? HostOrganizationId { get; set; }
     public string HostEmail { get; set; }
+
+    /// <summary>A portal User (Users.PublicId) — the coordinator delegates call
+    /// from the app. Null leaves it alone; Guid.Empty clears it.</summary>
+    public Guid? CoordinatorUserId { get; set; }
 }
 
 public class UpdateEventStatusRequest
 {
     public string Status { get; set; }
+    /// <summary>Why — kept when the status is "cancelled" and shown to delegates.</summary>
+    public string Reason { get; set; }
 }
 
 public class CreateSessionRequest

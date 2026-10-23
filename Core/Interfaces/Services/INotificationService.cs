@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Core.ViewModel.Common;
 using Core.ViewModel.Noification;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 
 namespace Core.Interfaces.Services;
 
@@ -27,7 +27,7 @@ public interface INotificationService
     // ---- Guest-facing (VIP app, OTP login) — guestId passed in by the caller,
     // resolved from ICurrentGuest. Guests aren't Users (see GuestNotification),
     // so this is a distinct set of methods, not an overload of the above.
-    // Moved here from IVipAppService — same precedent as support chat, which
+    // Moved here from IDelegateAppService — same precedent as support chat, which
     // now lives entirely on ISupportChatService/SupportChatController.
     Task<ApiResponse<List<GuestNotificationResponse>>> GetGuestNotificationsAsync(int guestId, PagedRequest request, CancellationToken ct = default);
     Task<ApiResponse<int>> GetGuestUnreadCountAsync(int guestId, CancellationToken ct = default);

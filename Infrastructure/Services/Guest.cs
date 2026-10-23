@@ -36,7 +36,7 @@ public class GuestService(
 
     // Auto-provisions the User row every Guest is 1:1 with (see Guest.UserId
     // remarks) — RoleId -> the "guest" role (PortalAccess=false, no permissions),
-    // PasswordHash left null (OTP via CurrentGuest/VipAppService remains the only
+    // PasswordHash left null (OTP via CurrentGuest/DelegateAppService remains the only
     // way in). Email AND UserName are both set to the guest's email: Guests.Email
     // is unique among active rows now, so the two filtered-unique indexes on Users
     // agree with it rather than fighting it, and every lookup that goes through

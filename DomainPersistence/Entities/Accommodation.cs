@@ -22,6 +22,15 @@ public class Accommodation : Entity
     public DateOnly? CheckIn { get; set; }
     public DateOnly? CheckOut { get; set; }
     public string ImageUrl { get; set; }
+
+    // Stay details shown on the delegate app's Stays screen.
+    public string RoomNumber { get; set; }
+    /// <summary>Hotel confirmation number, e.g. "HTL-SF27-0482".</summary>
+    public string ConfirmationNumber { get; set; }
+    /// <summary>Free text, e.g. "Breakfast &amp; dinner".</summary>
+    public string BoardBasis { get; set; }
+    public TimeOnly? CheckInTime { get; set; }
+    public TimeOnly? CheckOutTime { get; set; }
     public virtual EventGuest EventGuest { get; set; }
     public virtual EventHotelContract Contract { get; set; }
     public virtual AccommodationRoomType RoomType { get; set; }

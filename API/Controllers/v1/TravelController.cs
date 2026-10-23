@@ -1,3 +1,5 @@
+using Core.Authorization;
+using Core.Common;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
@@ -60,4 +62,18 @@ public class TravelController(ITravelService _travel, ICurrentUser _currentUser)
     [HttpDelete("transport/{id:guid}")]
     public async Task<IActionResult> DeleteTransport(Guid id, CancellationToken ct)
         => ToResponse(await _travel.DeleteTransportAsync(id, ct));
+
+    // ── Delegate-app change requests ("request a change" on a flight/stay) ──
+    // status optional: requested / done / declined.
+    [HttpGet("event/{eventId:guid}/change-requests")]
+    [HasPermission(PermissionCodes.Services)]
+    public async Task<IActionResult> GetChangeRequests(Guid eventId, [FromQuery] string status, CancellationToken ct)
+        => ToResponse(await _travel.GetChangeRequestsAsync(eventId, status, ct));
+
+    // Close it out after rebooking through the normal travel form (or declining).
+    // The delegate gets a notification either way.
+    [HttpPut("change-requests/{id:guid}")]
+    [HasPermission(PermissionCodes.Services, AccessLevel.Write)]
+    public async Task<IActionResult> ResolveChangeRequest(Guid id, [FromBody] Core.ViewModel.DelegateApp.ResolveChangeRequest request, CancellationToken ct)
+        => ToResponse(await _travel.ResolveChangeRequestAsync(id, request, _currentUser.UserId, ct));
 }

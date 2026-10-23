@@ -42,6 +42,12 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     public async Task<IActionResult> GetEventById(Guid id, CancellationToken ct)
         => ToResponse(await _eventService.GetEventByIdAsync(id, ct));
 
+    // Picker for the mission's coordinator (the delegate app's emergency contact).
+    [HttpGet("coordinators")]
+    [HasPermission(PermissionCodes.Events)]
+    public async Task<IActionResult> GetCoordinators(CancellationToken ct)
+        => ToResponse(await _eventService.GetCoordinatorOptionsAsync(ct));
+
     [HttpGet("types")]
     public async Task<IActionResult> GetEventTypes(CancellationToken ct)
         => ToResponse(await _eventService.GetEventTypesAsync(ct));
@@ -98,7 +104,7 @@ public class EventsController(IEventService _eventService, IImportBatchService _
     [HttpPut("{id:guid}/status")]
     [HasPermission(PermissionCodes.Events, AccessLevel.Write)]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateEventStatusRequest request, CancellationToken ct)
-        => ToResponse(await _eventService.UpdateStatusAsync(id, request.Status, _currentUser.UserId, ct));
+        => ToResponse(await _eventService.UpdateStatusAsync(id, request.Status, _currentUser.UserId, ct, request.Reason));
 
     [HttpDelete("{id:guid}")]
     [HasPermission(PermissionCodes.Events, AccessLevel.Write)]

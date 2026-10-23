@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -93,6 +93,8 @@ public class UnitOfWork : IUnitOfWork
         PostMissionReports = new GenericRepository<PostMissionReport>(_context);
         CombinedReports = new GenericRepository<CombinedReport>(_context);
         GatheringNotifications = new GenericRepository<GatheringNotification>(_context);
+        MissionJournalEntries = new GenericRepository<MissionJournalEntry>(_context);
+        BookingChangeRequests = new GenericRepository<BookingChangeRequest>(_context);
     }
 
     public IGenericRepository<User> Users { get; private set; }
@@ -161,6 +163,8 @@ public class UnitOfWork : IUnitOfWork
     public IGenericRepository<PostMissionReport> PostMissionReports { get; private set; }
     public IGenericRepository<CombinedReport> CombinedReports { get; private set; }
     public IGenericRepository<GatheringNotification> GatheringNotifications { get; private set; }
+    public IGenericRepository<MissionJournalEntry> MissionJournalEntries { get; private set; }
+    public IGenericRepository<BookingChangeRequest> BookingChangeRequests { get; private set; }
 
     public IGenericRepository<UserLoginLog> UserLoginLogs { get; private set; }
     public IGenericRepository<SystemErrorLog> SystemErrorLogs { get; private set; }

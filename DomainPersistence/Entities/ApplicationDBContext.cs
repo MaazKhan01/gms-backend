@@ -35,6 +35,8 @@ public partial class ApplicationDBContext : DbContext
     public virtual DbSet<PostMissionReport> PostMissionReports { get; set; }
     public virtual DbSet<CombinedReport> CombinedReports { get; set; }
     public virtual DbSet<GatheringNotification> GatheringNotifications { get; set; }
+    public virtual DbSet<MissionJournalEntry> MissionJournalEntries { get; set; }
+    public virtual DbSet<BookingChangeRequest> BookingChangeRequests { get; set; }
     public virtual DbSet<ElementType> ElementTypes { get; set; }
 
     // Notifications

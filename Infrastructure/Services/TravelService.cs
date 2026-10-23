@@ -162,6 +162,9 @@ public class TravelService(
                 DepartureTime = flight.DepartureTime,
                 ArrivalTime = flight.ArrivalTime,
                 ImageUrl = flight.ImageUrl,
+                Airline = flight.Airline,
+                Pnr = flight.Pnr,
+                ETicketNumber = flight.ETicketNumber,
                 Legs = flight.Legs
                     .OrderBy(l => l.StartTime).ThenBy(l => l.Id)
                     .Select(l => new FlightLegInput
@@ -174,6 +177,8 @@ public class TravelService(
                         EndTime = l.EndTime,
                         FlightClassId = l.FlightClass?.PublicId,
                         Seat = l.Seat,
+                        BaggageAllowance = l.BaggageAllowance,
+                        BoardingTime = l.BoardingTime,
                     }).ToList(),
             };
         }
@@ -195,6 +200,11 @@ public class TravelService(
                 CheckIn = acc.CheckIn,
                 CheckOut = acc.CheckOut,
                 ImageUrl = acc.ImageUrl,
+                RoomNumber = acc.RoomNumber,
+                ConfirmationNumber = acc.ConfirmationNumber,
+                BoardBasis = acc.BoardBasis,
+                CheckInTime = acc.CheckInTime,
+                CheckOutTime = acc.CheckOutTime,
             };
 
         var tr = await _unitOfWork.Transports.Query()
@@ -455,6 +465,74 @@ public class TravelService(
     /// the SAS token is stripped: it expires, and BlobSasMiddleware re-signs the
     /// bare URL on every read. Stored regardless of what the client sent, so a
     /// caller that forgets to strip it can't persist a dead token.</summary>
+    private static string TextOrNull(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    // ── Delegate-app change requests ─────────────────────────────────────────
+
+    public async Task<ApiResponse<List<Core.ViewModel.DelegateApp.ChangeRequestResponse>>> GetChangeRequestsAsync(
+        Guid eventId, string status, CancellationToken ct = default)
+    {
+        status = status?.Trim().ToLowerInvariant();
+        var rows = await ChangeRequestQuery()
+            .Where(r => r.EventGuest.Event.PublicId == eventId)
+            .Where(r => string.IsNullOrEmpty(status) || r.Status == status)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        return ApiResponse<List<Core.ViewModel.DelegateApp.ChangeRequestResponse>>.SuccessResponse(rows.Select(r =>
+        {
+            var dto = DelegateAppService.MapChangeRequest(r);
+            dto.DelegateName = $"{r.EventGuest.Guest?.FirstName} {r.EventGuest.Guest?.LastName}".Trim();
+            return dto;
+        }).ToList());
+    }
+
+    public async Task<ApiResponse<Core.ViewModel.DelegateApp.ChangeRequestResponse>> ResolveChangeRequestAsync(
+        Guid id, Core.ViewModel.DelegateApp.ResolveChangeRequest request, int userId, CancellationToken ct = default)
+    {
+        var status = request?.Status?.Trim().ToLowerInvariant();
+        if (status is not (BookingChangeStatuses.Done or BookingChangeStatuses.Declined))
+            return ApiResponse<Core.ViewModel.DelegateApp.ChangeRequestResponse>.ErrorResponse("Status must be done or declined");
+
+        var row = await ChangeRequestQuery().AsTracking().FirstOrDefaultAsync(r => r.PublicId == id, ct);
+        if (row == null) return ApiResponse<Core.ViewModel.DelegateApp.ChangeRequestResponse>.NotFoundResponse("Change request not found");
+        if (row.Status != BookingChangeStatuses.Requested)
+            return ApiResponse<Core.ViewModel.DelegateApp.ChangeRequestResponse>.ConflictResponse("This request is already closed");
+
+        row.Status = status;
+        row.ResolutionNote = TextOrNull(request.Note);
+        row.ResolvedBy = userId == 0 ? null : userId;
+        row.ResolvedAt = DateTime.UtcNow;
+        row.SetUpdateAudit(userId);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        try
+        {
+            await _notifications.SendToGuestAsync(row.EventGuest.GuestId, new Core.ViewModel.Noification.NotificationContent
+            {
+                Title = status == BookingChangeStatuses.Done ? "Change request done" : "Change request declined",
+                Message = $"{row.ChangeType.Replace('_', ' ')} · {row.EventGuest.Event.Title}{(row.ResolutionNote is null ? "" : ": " + row.ResolutionNote)}",
+                Type = "change-request",
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Notifying delegate of change request {Id} failed", id);
+        }
+
+        return ApiResponse<Core.ViewModel.DelegateApp.ChangeRequestResponse>.SuccessResponse(
+            DelegateAppService.MapChangeRequest(row), status == BookingChangeStatuses.Done ? "Marked done" : "Declined");
+    }
+
+    private IQueryable<BookingChangeRequest> ChangeRequestQuery()
+        => _unitOfWork.BookingChangeRequests.QueryNoTracking()
+            .Include(r => r.EventGuest).ThenInclude(eg => eg.Event)
+            .Include(r => r.EventGuest).ThenInclude(eg => eg.Guest)
+            .Include(r => r.Flight).ThenInclude(f => f.Legs).ThenInclude(l => l.FromAirport)
+            .Include(r => r.Flight).ThenInclude(f => f.Legs).ThenInclude(l => l.ToAirport)
+            .Include(r => r.Accommodation).ThenInclude(a => a.Contract).ThenInclude(c => c.Hotel)
+            .Include(r => r.FromAirport).Include(r => r.ToAirport).Include(r => r.Hotel);
+
     private static string ImageOrNull(string url)
     {
         var clean = (url ?? string.Empty).Trim();
@@ -697,6 +775,9 @@ public class TravelService(
                 // string is an explicit clear.
                 if (request.Flight.ImageUrl != null)
                     flight.ImageUrl = ImageOrNull(request.Flight.ImageUrl);
+                if (request.Flight.Airline != null) flight.Airline = TextOrNull(request.Flight.Airline);
+                if (request.Flight.Pnr != null) flight.Pnr = TextOrNull(request.Flight.Pnr)?.ToUpperInvariant();
+                if (request.Flight.ETicketNumber != null) flight.ETicketNumber = TextOrNull(request.Flight.ETicketNumber);
 
                 // Legs are matched on their public id so editing keeps the same
                 // rows (the guest app references legs by id); anything the payload
@@ -718,6 +799,8 @@ public class TravelService(
                     leg.EndTime = li.EndTime;
                     leg.FlightClassId = await ResolveNullableId(_unitOfWork.FlightClasses, li.FlightClassId, ct);
                     leg.Seat = li.Seat;
+                    leg.BaggageAllowance = TextOrNull(li.BaggageAllowance);
+                    leg.BoardingTime = li.BoardingTime;
                     keptLegs.Add(leg);
                 }
                 foreach (var stale in flight.Legs.Except(keptLegs).ToList())
@@ -781,6 +864,11 @@ public class TravelService(
                 // Same null-means-untouched rule as the flight image above.
                 if (request.Accommodation.ImageUrl != null)
                     acc.ImageUrl = ImageOrNull(request.Accommodation.ImageUrl);
+                if (request.Accommodation.RoomNumber != null) acc.RoomNumber = TextOrNull(request.Accommodation.RoomNumber);
+                if (request.Accommodation.ConfirmationNumber != null) acc.ConfirmationNumber = TextOrNull(request.Accommodation.ConfirmationNumber);
+                if (request.Accommodation.BoardBasis != null) acc.BoardBasis = TextOrNull(request.Accommodation.BoardBasis);
+                if (request.Accommodation.CheckInTime != null) acc.CheckInTime = request.Accommodation.CheckInTime;
+                if (request.Accommodation.CheckOutTime != null) acc.CheckOutTime = request.Accommodation.CheckOutTime;
 
                 if (isNewAcc) await _unitOfWork.Accommodations.AddAsync(acc, ct);
             }

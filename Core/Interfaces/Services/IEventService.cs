@@ -13,7 +13,7 @@ public interface IEventService
     Task<ApiResponse<EventResponse>> GetEventByIdAsync(Guid id, CancellationToken ct = default);
     Task<ApiResponse<EventResponse>> CreateEventAsync(CreateEventRequest request, int userId, CancellationToken ct = default);
     Task<ApiResponse<EventResponse>> UpdateEventAsync(Guid id, UpdateEventRequest request, int userId, CancellationToken ct = default);
-    Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, int userId, CancellationToken ct = default);
+    Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, int userId, CancellationToken ct = default, string reason = null);
     Task<ApiResponse<bool>> DeleteEventAsync(Guid id, int userId, CancellationToken ct = default);
 
     // Bulk import — template always reflects the venues that exist right now.
@@ -25,6 +25,7 @@ public interface IEventService
 
     // Event types (admin-managed lookup — replaces the old hardcoded list).
     Task<ApiResponse<List<EventTypeDto>>> GetEventTypesAsync(CancellationToken ct = default);
+    Task<ApiResponse<List<CoordinatorOptionDto>>> GetCoordinatorOptionsAsync(CancellationToken ct = default);
     Task<ApiResponse<EventTypeDto>> CreateEventTypeAsync(CreateEventTypeRequest request, int userId, CancellationToken ct = default);
 
     Task<ApiResponse<List<SessionResponse>>> GetSessionsAsync(Guid eventId, CancellationToken ct = default);

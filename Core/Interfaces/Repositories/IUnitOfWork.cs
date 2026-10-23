@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using DomainPersistence.Entities;
@@ -103,6 +103,8 @@ public interface IUnitOfWork : IDisposable
     IGenericRepository<PostMissionReport> PostMissionReports { get; }
     IGenericRepository<CombinedReport> CombinedReports { get; }
     IGenericRepository<GatheringNotification> GatheringNotifications { get; }
+    IGenericRepository<MissionJournalEntry> MissionJournalEntries { get; }
+    IGenericRepository<BookingChangeRequest> BookingChangeRequests { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task BeginTransactionAsync();

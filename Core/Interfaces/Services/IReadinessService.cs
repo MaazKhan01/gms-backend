@@ -16,6 +16,10 @@ public interface IReadinessService
     /// <summary>Mission-level counts for the screen header.</summary>
     Task<ApiResponse<ReadinessSummaryResponse>> GetSummaryAsync(Guid eventId, CancellationToken ct = default);
 
+    /// <summary>One participation's checklist — the delegate app's own view.
+    /// Null when the participation doesn't exist.</summary>
+    Task<ReadinessResponse> GetForParticipationAsync(int eventGuestId, CancellationToken ct = default);
+
     /// <summary>Overrides one red item with a reason.</summary>
     Task<ApiResponse<ReadinessResponse>> WaiveAsync(WaiveReadinessRequest request, int userId, CancellationToken ct = default);
 

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Core.Common.Interfaces;
 using Core.Interfaces.Services;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 
 namespace API.Controllers.v1;
 

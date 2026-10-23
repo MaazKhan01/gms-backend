@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 // Current implementation: delivers over the existing SignalR hub only — no
 // external push SDK. Every recipient (staff, driver, or guest — all Users
 // now) is reached via the built-in Clients.User(...), keyed by their own
-// Users.Id (their NameIdentifier claim — see VipAppService.BuildAccessToken
+// Users.Id (their NameIdentifier claim — see DelegateAppService.BuildAccessToken
 // for why a guest token's NameIdentifier is the guest's linked User.Id, not
 // Guest.Id, precisely so this works uniformly for every audience).
 public class ManualNotificationProvider(

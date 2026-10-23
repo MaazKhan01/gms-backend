@@ -462,6 +462,9 @@ public class NominationService(
         if (group.Invalid) return ApiResponse<NominationResponse>.ErrorResponse("Invalid group");
         participation.GroupId = group.Id;
         participation.Subgroup = group.Name;
+
+        var appError = ApplyDelegateAppFields(participation, request);
+        if (appError != null) return ApiResponse<NominationResponse>.ErrorResponse(appError);
         participation.SetUpdateAudit(userId);
 
         _unitOfWork.EventGuests.Update(participation);
@@ -470,6 +473,69 @@ public class NominationService(
         await DelegateAccountRole.SyncAsync(_unitOfWork, participation.GuestId, ct);
 
         return await GetOneAsync(participation.PublicId, participation.Event, ct);
+    }
+
+    public async Task<ApiResponse<NominationAppFieldsResponse>> GetAppFieldsAsync(Guid id, CancellationToken ct = default)
+    {
+        var p = await _unitOfWork.EventGuests.QueryNoTracking().FirstOrDefaultAsync(eg => eg.PublicId == id, ct);
+        if (p == null) return ApiResponse<NominationAppFieldsResponse>.NotFoundResponse("Nomination not found.");
+
+        List<AccreditationZoneDto> zones;
+        try
+        {
+            zones = string.IsNullOrWhiteSpace(p.AccreditationZonesJson) ? new()
+                : System.Text.Json.JsonSerializer.Deserialize<List<AccreditationZoneDto>>(p.AccreditationZonesJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+        }
+        catch (System.Text.Json.JsonException) { zones = new(); }
+
+        return ApiResponse<NominationAppFieldsResponse>.SuccessResponse(new NominationAppFieldsResponse
+        {
+            AccreditationNumber = p.AccreditationNumber,
+            AccreditationCategory = p.AccreditationCategory,
+            AccreditationCategoryLabel = p.AccreditationCategoryLabel,
+            AccreditationZones = zones,
+            PerDiemStatus = p.PerDiemStatus,
+            PerDiemAmount = p.PerDiemAmount,
+            PerDiemCurrency = p.PerDiemCurrency,
+            SettlementAmount = p.SettlementAmount,
+            SettlementPaidOn = p.SettlementPaidOn,
+        });
+    }
+
+    // Badge + allowance shown in the delegate app. Null = not sent, leave alone.
+    private static string ApplyDelegateAppFields(EventGuest p, UpdateNominationRequest r)
+    {
+        static string Clean(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+        if (r.AccreditationNumber != null) p.AccreditationNumber = Clean(r.AccreditationNumber)?.ToUpperInvariant();
+        if (r.AccreditationCategory != null) p.AccreditationCategory = Clean(r.AccreditationCategory)?.ToUpperInvariant();
+        if (r.AccreditationCategoryLabel != null) p.AccreditationCategoryLabel = Clean(r.AccreditationCategoryLabel);
+        if (r.AccreditationZones != null)
+        {
+            if (r.AccreditationZones.Any(z => z.Number < 0 || string.IsNullOrWhiteSpace(z.Label)))
+                return "Every accreditation zone needs a number and a label.";
+            p.AccreditationZonesJson = r.AccreditationZones.Count == 0 ? null
+                : System.Text.Json.JsonSerializer.Serialize(r.AccreditationZones
+                    .OrderBy(z => z.Number).Select(z => new AccreditationZoneDto { Number = z.Number, Label = z.Label.Trim() }));
+        }
+
+        if (r.PerDiemStatus != null)
+        {
+            var status = Clean(r.PerDiemStatus)?.ToLowerInvariant();
+            if (status != null && !PerDiemStatuses.IsValid(status))
+                return $"Per diem status must be one of: {string.Join(", ", PerDiemStatuses.All)}.";
+            p.PerDiemStatus = status;
+        }
+        if (r.PerDiemAmount.HasValue)
+        {
+            if (r.PerDiemAmount.Value < 0) return "Per diem cannot be negative.";
+            p.PerDiemAmount = r.PerDiemAmount;
+        }
+        if (r.PerDiemCurrency != null) p.PerDiemCurrency = Clean(r.PerDiemCurrency)?.ToUpperInvariant();
+        if (r.SettlementAmount.HasValue) p.SettlementAmount = r.SettlementAmount;
+        if (r.SettlementPaidOn.HasValue) p.SettlementPaidOn = r.SettlementPaidOn;
+        return null;
     }
 
     public async Task<ApiResponse<bool>> RemoveAsync(Guid id, int userId, CancellationToken ct = default)

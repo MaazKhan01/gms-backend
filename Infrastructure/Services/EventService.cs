@@ -68,6 +68,7 @@ public class EventService(
             .Include(e => e.Destination)
             .Include(e => e.HostOrganization)
             .Include(e => e.HostInvitation)
+            .Include(e => e.Coordinator)
             .ToListAsync(ct);
 
         var mapped = _mapper.Map<List<EventResponse>>(items);
@@ -83,6 +84,7 @@ public class EventService(
             .Include(e => e.Destination)
             .Include(e => e.HostOrganization)
             .Include(e => e.HostInvitation)
+            .Include(e => e.Coordinator)
             .FirstOrDefaultAsync(e => e.PublicId == id, ct);
 
         if (ev == null)
@@ -214,6 +216,15 @@ public class EventService(
             ev.HostOrganization = org;
         }
 
+        if (request.CoordinatorUserId is { } coordinatorId && coordinatorId != Guid.Empty)
+        {
+            var coordinator = await _unitOfWork.Users.QueryNoTracking()
+                .Where(u => u.PublicId == coordinatorId && u.IsActive)
+                .Select(u => (int?)u.Id).FirstOrDefaultAsync(ct);
+            if (coordinator == null) return ApiResponse<EventResponse>.ErrorResponse("Coordinator not found.");
+            ev.CoordinatorUserId = coordinator;
+        }
+
         var missionError = NormalizeMissionAttributes(ev);
         if (missionError != null)
             return ApiResponse<EventResponse>.ErrorResponse(missionError);
@@ -279,6 +290,19 @@ public class EventService(
         ev.CostCenter = request.CostCenter ?? ev.CostCenter;
         ev.FundingModel = request.FundingModel ?? ev.FundingModel;
 
+        if (request.CoordinatorUserId is { } coordinatorId)
+        {
+            if (coordinatorId == Guid.Empty) ev.CoordinatorUserId = null;
+            else
+            {
+                var coordinator = await _unitOfWork.Users.QueryNoTracking()
+                    .Where(u => u.PublicId == coordinatorId && u.IsActive)
+                    .Select(u => (int?)u.Id).FirstOrDefaultAsync(ct);
+                if (coordinator == null) return ApiResponse<EventResponse>.ErrorResponse("Coordinator not found.");
+                ev.CoordinatorUserId = coordinator;
+            }
+        }
+
         var missionAttrError = NormalizeMissionAttributes(ev);
         if (missionAttrError != null)
             return ApiResponse<EventResponse>.ErrorResponse(missionAttrError);
@@ -323,6 +347,7 @@ public class EventService(
             var status = request.Status.ToLowerInvariant();
             if (!ValidStatuses.Contains(status))
                 return ApiResponse<EventResponse>.ErrorResponse($"Invalid status '{request.Status}'");
+            if (status == MissionStatuses.Cancelled && ev.Status != MissionStatuses.Cancelled) ev.CancelledAt = DateTime.UtcNow;
             ev.Status = status;
         }
 
@@ -333,7 +358,7 @@ public class EventService(
         return ApiResponse<EventResponse>.SuccessResponse(_mapper.Map<EventResponse>(ev), "Event updated");
     }
 
-    public async Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, int userId, CancellationToken ct = default)
+    public async Task<ApiResponse<EventResponse>> UpdateStatusAsync(Guid id, string status, int userId, CancellationToken ct = default, string reason = null)
     {
         var ev = await _unitOfWork.Events.GetByPublicIdAsync(id, ct);
         if (ev == null)
@@ -347,6 +372,11 @@ public class EventService(
         if (current != target && (!Transitions.TryGetValue(current, out var allowed) || !allowed.Contains(target)))
             return ApiResponse<EventResponse>.ErrorResponse($"Cannot transition from '{current}' to '{target}'");
 
+        if (target == MissionStatuses.Cancelled && current != MissionStatuses.Cancelled)
+        {
+            ev.CancelledAt = DateTime.UtcNow;
+            ev.CancellationReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        }
         ev.Status = target;
         ev.SetUpdateAudit(userId);
         _unitOfWork.Events.Update(ev);
@@ -369,6 +399,23 @@ public class EventService(
     }
 
     // ── Event types (admin-managed lookup) ───────────────────────────────────
+
+    // Active portal users (no delegate profile behind them) — who can be named
+    // a mission's coordinator.
+    public async Task<ApiResponse<List<CoordinatorOptionDto>>> GetCoordinatorOptionsAsync(CancellationToken ct = default)
+    {
+        var data = await _unitOfWork.Users.QueryNoTracking()
+            .Where(u => u.IsActive && u.GuestProfile == null && u.Role != null && u.Role.PortalAccess)
+            .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
+            .Select(u => new CoordinatorOptionDto
+            {
+                Id = u.PublicId,
+                Name = (u.FirstName + " " + u.LastName).Trim(),
+                Role = u.Role.Name,
+            })
+            .ToListAsync(ct);
+        return ApiResponse<List<CoordinatorOptionDto>>.SuccessResponse(data);
+    }
 
     public async Task<ApiResponse<List<EventTypeDto>>> GetEventTypesAsync(CancellationToken ct = default)
     {

@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.ViewModel.Common;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 
 namespace Core.Interfaces.Services;
 
 // VIP Guest App — mobile-facing surface. All guest-scoped: the guest is
 // resolved from the guest JWT, NOT passed in. guestId params below are the
 // resolved caller unless noted.
-public interface IVipAppService
+public interface IDelegateAppService
 {
     // ---- Auth (public) ----
     Task<ApiResponse<bool>> RequestOtpAsync(RequestOtpRequest request, CancellationToken ct);
@@ -67,6 +67,32 @@ public interface IVipAppService
     Task<ApiResponse<GuestProfileResponse>> GetProfileAsync(int guestId, CancellationToken ct);
     Task<ApiResponse<GuestProfileResponse>> UpdateProfileAsync(int guestId, UpdateProfileRequest request, CancellationToken ct);
     Task<ApiResponse<bool>> UpdateSettingsAsync(int guestId, UpdateSettingsRequest request, CancellationToken ct);
+
+    // ---- Mission (one participation; eventId required) ----
+    Task<ApiResponse<MissionHomeResponse>> GetMissionHomeAsync(int guestId, Guid eventId, CancellationToken ct);
+    Task<ApiResponse<AccreditationResponse>> GetAccreditationAsync(int guestId, Guid eventId, CancellationToken ct);
+    Task<ApiResponse<StaysResponse>> GetStaysAsync(int guestId, Guid? eventId, CancellationToken ct);
+    Task<ApiResponse<TransportationResponse>> GetTransportRequestAsync(int guestId, Guid transportId, CancellationToken ct);
+    Task<ApiResponse<PlacesResponse>> GetPlacesAsync(int guestId, Guid eventId, CancellationToken ct);
+    Task<ApiResponse<List<Core.ViewModel.Travel.HotelDto>>> GetMissionHotelsAsync(int guestId, Guid eventId, CancellationToken ct);
+
+    // ---- Booking change requests (flight / stay → coordinator) ----
+    Task<ApiResponse<ChangeRequestResponse>> CreateChangeRequestAsync(int guestId, ChangeRequestCreate request, CancellationToken ct);
+    Task<ApiResponse<List<ChangeRequestResponse>>> GetChangeRequestsAsync(int guestId, Guid? eventId, CancellationToken ct);
+
+    // ---- Help requests (land as Incidents, RaisedVia = app) ----
+    Task<ApiResponse<HelpRequestResponse>> RaiseHelpRequestAsync(int guestId, HelpRequest request, CancellationToken ct);
+    Task<ApiResponse<List<HelpRequestResponse>>> GetHelpRequestsAsync(int guestId, Guid? eventId, CancellationToken ct);
+
+    // ---- Mission journal ----
+    Task<ApiResponse<JournalResponse>> GetJournalAsync(int guestId, Guid eventId, CancellationToken ct);
+    Task<ApiResponse<JournalEntryResponse>> AddJournalEntryAsync(int guestId, Guid eventId, CreateJournalEntryRequest request, CancellationToken ct);
+    Task<ApiResponse<JournalEntryResponse>> UpdateJournalEntryAsync(int guestId, Guid entryId, UpdateJournalEntryRequest request, CancellationToken ct);
+    Task<ApiResponse<bool>> DeleteJournalEntryAsync(int guestId, Guid entryId, CancellationToken ct);
+
+    // ---- Post-mission report ----
+    Task<ApiResponse<DelegateReportResponse>> GetReportAsync(int guestId, Guid eventId, CancellationToken ct);
+    Task<ApiResponse<DelegateReportResponse>> SaveReportAsync(int guestId, Guid eventId, SaveDelegateReportRequest request, CancellationToken ct);
 
     // Support chat lives entirely on ISupportChatService / SupportChatController now.
 

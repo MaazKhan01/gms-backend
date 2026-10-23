@@ -7,7 +7,7 @@ using Core.Common.Interfaces;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.SupportChat;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;

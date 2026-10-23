@@ -6,7 +6,7 @@ using Core.Constants.Notification;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Noification;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 using Microsoft.EntityFrameworkCore;
 
 // Matches the existing convention of this folder — no namespace declared.

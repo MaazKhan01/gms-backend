@@ -182,6 +182,41 @@ public class UpdateNominationRequest
     /// Null clears it. <c>Subgroup</c> is derived from it — the name is mirrored
     /// on save so the roster screens that still group by the string follow.</summary>
     public Guid? GroupId { get; set; }
+
+    // ── Delegate-app badge + allowance. Unlike GroupId, null leaves these alone
+    // (older portal builds don't send them); "" clears a text field. ──
+    public string AccreditationNumber { get; set; }
+    public string AccreditationCategory { get; set; }
+    public string AccreditationCategoryLabel { get; set; }
+    /// <summary>Replaces the zone list; [] clears it.</summary>
+    public List<AccreditationZoneDto> AccreditationZones { get; set; }
+
+    /// <summary>Core.Constants.PerDiemStatuses — pending / approved / paid.</summary>
+    public string PerDiemStatus { get; set; }
+    public decimal? PerDiemAmount { get; set; }
+    public string PerDiemCurrency { get; set; }
+    public decimal? SettlementAmount { get; set; }
+    public DateTime? SettlementPaidOn { get; set; }
+}
+
+/// <summary>What the nomination edit form prefills the badge/allowance fields from.</summary>
+public class NominationAppFieldsResponse
+{
+    public string AccreditationNumber { get; set; }
+    public string AccreditationCategory { get; set; }
+    public string AccreditationCategoryLabel { get; set; }
+    public List<AccreditationZoneDto> AccreditationZones { get; set; } = new();
+    public string PerDiemStatus { get; set; }
+    public decimal? PerDiemAmount { get; set; }
+    public string PerDiemCurrency { get; set; }
+    public decimal? SettlementAmount { get; set; }
+    public DateTime? SettlementPaidOn { get; set; }
+}
+
+public class AccreditationZoneDto
+{
+    public int Number { get; set; }
+    public string Label { get; set; }
 }
 
 /// <summary>

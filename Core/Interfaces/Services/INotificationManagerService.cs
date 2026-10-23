@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.ViewModel.Noification;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 
 namespace Core.Interfaces.Services;
 
@@ -52,7 +52,7 @@ public interface INotificationManagerService
     Task<IReadOnlyList<GuestNotificationResponse>> SendToGuestsAsync(IEnumerable<int> guestIds, NotificationContent content, CancellationToken ct = default);
 
     // Every Guest with NotificationsEnabled (their own in-app preference toggle —
-    // see Guest.NotificationsEnabled / VipAppService.UpdateSettingsAsync). Direct
+    // see Guest.NotificationsEnabled / DelegateAppService.UpdateSettingsAsync). Direct
     // SendToGuest(s)Async targeting ignores this flag deliberately: an admin who
     // picked specific guests (or a 1:1 support reply) should still land, only a
     // broad announcement is opt-outable.

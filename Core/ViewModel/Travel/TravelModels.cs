@@ -55,6 +55,11 @@ public class FlightInput
     /// token). Null leaves whatever is stored alone; "" clears it.</summary>
     public string ImageUrl { get; set; }
 
+    // Booking record for the delegate app. Null leaves the stored value alone; "" clears it.
+    public string Airline { get; set; }
+    public string Pnr { get; set; }
+    public string ETicketNumber { get; set; }
+
     /// <summary>Segments, in travel order. A leg's Id is set only when editing
     /// one that already exists; legs left out of the list are deleted.</summary>
     public List<FlightLegInput> Legs { get; set; } = [];
@@ -71,6 +76,9 @@ public class FlightLegInput
     // A return booking's two legs can be on different fare classes/seats.
     public Guid? FlightClassId { get; set; }
     public string Seat { get; set; }
+    /// <summary>e.g. "2 × 23 kg".</summary>
+    public string BaggageAllowance { get; set; }
+    public DateTime? BoardingTime { get; set; }
 }
 
 public class AccommodationInput
@@ -85,6 +93,13 @@ public class AccommodationInput
     /// POST /api/v1/upload first and send back the returned url. Not the hotel's
     /// own picture — that comes from the hotel lookup.</summary>
     public string ImageUrl { get; set; }
+
+    // Stay details for the delegate app. Null leaves the stored value alone; "" clears it.
+    public string RoomNumber { get; set; }
+    public string ConfirmationNumber { get; set; }
+    public string BoardBasis { get; set; }
+    public TimeOnly? CheckInTime { get; set; }
+    public TimeOnly? CheckOutTime { get; set; }
 }
 
 public class TransportInput

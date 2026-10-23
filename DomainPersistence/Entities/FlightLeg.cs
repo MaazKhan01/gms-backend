@@ -16,6 +16,10 @@ public class FlightLeg : Entity
     public int? FlightClassId { get; set; }
     public string Seat { get; set; }
 
+    /// <summary>Free text, e.g. "2 × 23 kg".</summary>
+    public string BaggageAllowance { get; set; }
+    public DateTime? BoardingTime { get; set; }
+
     public virtual Flight Flight { get; set; }
     public virtual AirportData FromAirport { get; set; }
     public virtual AirportData ToAirport { get; set; }

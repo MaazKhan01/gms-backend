@@ -16,7 +16,7 @@ using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Noification;
 using Core.ViewModel.SupportChat;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;

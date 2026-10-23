@@ -46,3 +46,44 @@ any database — do that as its own reviewed step, with a backup first (see
 docs deliverable §13).
 
 **Standing rule**: never push to development unless told.
+
+## 2026-10-19 — Delegate app: Figma (DMS_DELEGATION) gap pass + mission APIs
+
+**What changed**: `DelegateAppController` gained mission-scoped endpoints —
+`missions/{eventId}/home|accreditation|journal|report`, `help-requests`,
+`stays`, `transport-requests/{id}`, `PATCH/DELETE journal/{id}`. `/events` now
+carries code, venue, destination, delegate-facing `missionStatus`
+(nominated/upcoming/live/completed/cancelled), day X of Y, mission role.
+New table `MissionJournalEntries` (migration `20261019160424_DelegateAppMissionJournal`,
+**scaffolded, not applied**). OTP is now 6 digits + 30s resend cooldown.
+Help requests land as `Incidents` with `RaisedVia = app`; new incident category `transport`.
+
+**Decisions**: mission code derived from title initials + year (no Event.Code
+column yet). Report writes go through `MissionReportService.SaveReportAsync`.
+Readiness checklist reused via new `IReadinessService.GetForParticipationAsync`.
+
+**Open (no DB source — need product/schema decision)**: accreditation badge no. /
+zones, flight PNR / terminal / gate, hotel room no. / booking ref / front-desk
+contact, allowance (per-diem/advances), itinerary "Provisional" status, invite
+activation flag, QR scanner verify endpoint. Figma review was partial — MCP View-seat
+call limit hit after ~11 of ~55 frames.
+
+## 2026-10-22 — Delegate app: full pass against DMS-Delegatev2 HTML prototype
+
+**Source**: `DMS-Delegatev2-theme-teal.html` (all screens + data model), Figma MCP was rate-limited.
+**Schema** (migration `*_DelegateAppPrototypeFields`, **scaffolded, not applied**; additive only):
+Flight.Airline/Pnr/ETicketNumber, FlightLeg.BaggageAllowance/BoardingTime,
+Accommodation.RoomNumber/ConfirmationNumber/BoardBasis/CheckInTime/CheckOutTime,
+Event.CoordinatorUserId/CancellationReason/CancelledAt, EventGuest accreditation
+(number/category/label/zones JSON) + per diem/settlement, PostMissionReport.KeyOutcomes,
+MissionJournalEntry.Visibility, new table BookingChangeRequests.
+**Portal write paths added**: travel save (FlightInput/LegInput/AccommodationInput new fields,
+null = untouched), PUT events (coordinatorUserId), PUT events/{id}/status (reason),
+PUT nominations/{id} (accreditation + per diem, null = untouched),
+GET travel/event/{id}/change-requests + PUT travel/change-requests/{id}.
+**Delegate endpoints added**: missions/{id}/places, missions/{id}/hotels, change-requests (POST/GET);
+home now has allowance, nomination steps, cancellation, completed summary; visa steps read
+from the visa service's form schema; itinerary?eventId= returns full programme + provisional flag.
+**Rules**: journal writable only upcoming/live; report writable only after mission completed.
+**Flagged, not fixed**: `[Authorize]`-only portal controllers (Travel, Lookup, ...) accept a
+delegate (role=guest) token — no global gate exists.

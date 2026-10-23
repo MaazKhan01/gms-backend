@@ -6,7 +6,7 @@ using Core.Constants;
 using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Noification;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 using DomainPersistence.Entities;
 
 // Matches the existing convention of this folder — no namespace declared.

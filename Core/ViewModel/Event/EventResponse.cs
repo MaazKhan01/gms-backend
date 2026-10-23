@@ -36,7 +36,21 @@ public class EventResponse
     /// mission takes no new delegates or bookings, but still accepts reports.</summary>
     public bool IsCompleted { get; set; }
 
+    /// <summary>Users.PublicId of the coordinator delegates call from the app.</summary>
+    public Guid? CoordinatorUserId { get; set; }
+    public string CoordinatorName { get; set; }
+    public string CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+
     public List<SessionResponse> Sessions { get; set; } = new();
+}
+
+/// <summary>A portal user who can be named mission coordinator.</summary>
+public class CoordinatorOptionDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; }
+    public string Role { get; set; }
 }
 
 public class SessionResponse

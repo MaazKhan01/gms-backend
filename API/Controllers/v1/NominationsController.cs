@@ -55,6 +55,12 @@ public class NominationsController(INominationService _nominations, ICurrentUser
     public async Task<IActionResult> CreateStaff([FromBody] CreateStaffRequest request, CancellationToken ct)
         => ToResponse(await _nominations.CreateStaffAsync(request, _currentUser.UserId, ct));
 
+    // Prefill for the badge + allowance fields on the edit form.
+    [HttpGet("{id:guid}/app-fields")]
+    [HasPermission(PermissionCodes.Nominations)]
+    public async Task<IActionResult> GetAppFields(Guid id, CancellationToken ct)
+        => ToResponse(await _nominations.GetAppFieldsAsync(id, ct));
+
     [HttpPut("{id:guid}")]
     [HasPermission(PermissionCodes.Nominations, AccessLevel.Write)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateNominationRequest request, CancellationToken ct)

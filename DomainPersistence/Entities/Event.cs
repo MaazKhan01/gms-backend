@@ -56,6 +56,17 @@ public partial class Event : Entity
     public string HostEmail { get; set; }
 
     public int? HostInvitationId { get; set; }
+
+    /// <summary>The staff member delegates reach from the app ("Mission
+    /// Coordinator · on call 24/7"). Null falls back to whoever nominated them.</summary>
+    public int? CoordinatorUserId { get; set; }
+
+    /// <summary>Set when the mission moves to cancelled — the delegate app's
+    /// cancelled banner shows both.</summary>
+    public string CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+
+    public virtual User Coordinator { get; set; }
     
     public virtual Venue? Venue { get; set;}
     public virtual Location Destination { get; set; }

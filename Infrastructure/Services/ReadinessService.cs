@@ -67,6 +67,14 @@ public class ReadinessService(IUnitOfWork _unitOfWork) : IReadinessService
         return ApiResponse<ReadinessSummaryResponse>.SuccessResponse(summary);
     }
 
+    public async Task<ReadinessResponse> GetForParticipationAsync(int eventGuestId, CancellationToken ct = default)
+    {
+        var participation = await _unitOfWork.EventGuests.QueryNoTracking()
+            .Include(eg => eg.Event)
+            .FirstOrDefaultAsync(eg => eg.Id == eventGuestId, ct);
+        return participation == null ? null : await BuildOneAsync(participation, ct);
+    }
+
     public async Task<ApiResponse<ReadinessResponse>> WaiveAsync(
         WaiveReadinessRequest request, int userId, CancellationToken ct = default)
     {

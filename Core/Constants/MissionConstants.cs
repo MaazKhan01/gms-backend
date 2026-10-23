@@ -92,9 +92,11 @@ public static class IncidentCategories
     public const string Late    = "late";
     public const string Lost    = "lost";
     public const string Medical = "medical";
+    /// <summary>Raised from the delegate app's "Need help" sheet.</summary>
+    public const string Transport = "transport";
     public const string Other   = "other";
 
-    public static readonly string[] All = { Late, Lost, Medical, Other };
+    public static readonly string[] All = { Late, Lost, Medical, Transport, Other };
     public static bool IsValid(string value) => Array.IndexOf(All, value) >= 0;
 }
 
@@ -177,4 +179,80 @@ public static class MissionStatuses
     public const string Completed = "completed";
     public const string Cancelled = "cancelled";
     public const string Closed    = "closed";
+}
+
+/// <summary>What a delegate's journal entry holds, with the upload ceiling for
+/// each kind (from the app's journal screen). Notes carry no file.</summary>
+public static class JournalEntryTypes
+{
+    public const string Note     = "note";
+    public const string Photo    = "photo";
+    public const string Video    = "video";
+    public const string Document = "document";
+
+    public static readonly string[] All = { Note, Photo, Video, Document };
+    public static bool IsValid(string value) => Array.IndexOf(All, value) >= 0;
+
+    public static long MaxBytes(string type) => type switch
+    {
+        Photo    => 10L * 1024 * 1024,
+        Video    => 200L * 1024 * 1024,
+        Document => 25L * 1024 * 1024,
+        _        => 0,
+    };
+
+    /// <summary>Allowed extensions per type, lower-case with the dot.</summary>
+    public static string[] Extensions(string type) => type switch
+    {
+        Photo    => new[] { ".jpg", ".jpeg", ".png", ".heic", ".webp" },
+        Video    => new[] { ".mp4", ".mov", ".m4v" },
+        Document => new[] { ".pdf", ".docx" },
+        _        => Array.Empty<string>(),
+    };
+}
+
+public static class JournalVisibilities
+{
+    public const string Private = "private";
+    public const string Shared  = "shared";
+
+    public static bool IsValid(string value) => value == Private || value == Shared;
+}
+
+public static class PerDiemStatuses
+{
+    public const string Pending  = "pending";
+    public const string Approved = "approved";
+    public const string Paid     = "paid";
+
+    public static readonly string[] All = { Pending, Approved, Paid };
+    public static bool IsValid(string value) => Array.IndexOf(All, value) >= 0;
+}
+
+/// <summary>A delegate's "request a change" on a booking (delegate app).</summary>
+public static class BookingChangeKinds
+{
+    public const string Flight = "flight";
+    public const string Stay   = "stay";
+}
+
+public static class BookingChangeTypes
+{
+    public const string RouteChange  = "route_change";
+    public const string ChangeHotel  = "change_hotel";
+
+    public static readonly string[] Flight = { "date_change", RouteChange, "seat_change", "extra_baggage", "cancel_segment" };
+    public static readonly string[] Stay   = { "extra_night", "room_change", ChangeHotel, "early_check_in", "late_check_out" };
+
+    public static bool IsValid(string kind, string type) =>
+        Array.IndexOf(kind == BookingChangeKinds.Flight ? Flight : kind == BookingChangeKinds.Stay ? Stay : Array.Empty<string>(), type) >= 0;
+}
+
+public static class BookingChangeStatuses
+{
+    public const string Requested = "requested";
+    public const string Done      = "done";
+    public const string Declined  = "declined";
+
+    public static bool IsValid(string value) => value == Requested || value == Done || value == Declined;
 }

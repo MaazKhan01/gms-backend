@@ -48,6 +48,25 @@ public class EventGuest : Entity
 
     public virtual Group Group { get; set; }
 
+    // ── Accreditation (the delegate app's badge) ──
+    /// <summary>Badge number, e.g. "SF27-ATH-0482". Also the QR payload.</summary>
+    public string AccreditationNumber { get; set; }
+    /// <summary>Short category code on the badge, e.g. "ATH".</summary>
+    public string AccreditationCategory { get; set; }
+    public string AccreditationCategoryLabel { get; set; }
+    /// <summary>[{"number":1,"label":"Pool deck &amp; competition hall"}, ...]</summary>
+    public string AccreditationZonesJson { get; set; }
+
+    // ── Allowance (per diem) ──
+    /// <summary>Core.Constants.PerDiemStatuses — pending / approved / paid.</summary>
+    public string PerDiemStatus { get; set; }
+    public decimal? PerDiemAmount { get; set; }
+    public string PerDiemCurrency { get; set; }
+    /// <summary>Final settlement after the mission: positive = paid to the
+    /// delegate, negative = recovered.</summary>
+    public decimal? SettlementAmount { get; set; }
+    public DateTime? SettlementPaidOn { get; set; }
+
     public DateTime? NominatedOn { get; set; }
     public int? NominatedBy { get; set; }
 

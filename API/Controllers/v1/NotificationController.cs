@@ -13,7 +13,7 @@ using Core.ViewModel.Noification;
 namespace API.Controllers.v1;
 
 // User/admin notifications (this file) AND guest notifications (the "guest/"
-// sub-routes below, moved here from VipAppController — same precedent as
+// sub-routes below, moved here from DelegateAppController — same precedent as
 // support chat) both live on this controller. They're deliberately NOT the
 // same routes: a guest is not a row in the Users table (OTP login, separate
 // GuestNotification table, resolved via ICurrentGuest not ICurrentUser), so
@@ -96,7 +96,7 @@ public class NotificationsController : Controllers.BaseApiController
 
     // ============================================================
     // Guest-facing (VIP app, OTP login) — GuestId resolved from ICurrentGuest,
-    // NOT ICurrentUser. Moved from VipAppController's "Notifications / devices"
+    // NOT ICurrentUser. Moved from DelegateAppController's "Notifications / devices"
     // section (same precedent as support chat, extracted earlier).
     // ============================================================
 

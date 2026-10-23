@@ -8,7 +8,7 @@ using Core.Interfaces.Repositories;
 using Core.Interfaces.Services;
 using Core.ViewModel.Common;
 using Core.ViewModel.Noification;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 using DomainPersistence.Entities;
 
 namespace Infrastructure.Services;
@@ -323,7 +323,7 @@ public class NotificationService(
     }
 
     // ============================================================
-    // Guest-facing (VIP app, OTP login) — moved here from VipAppService.
+    // Guest-facing (VIP app, OTP login) — moved here from DelegateAppService.
     // Guests are Users now (Guest.UserId) — these read/write the same
     // Notifications/Devices tables as everyone else, just resolved via the
     // guest's linked UserId instead of ICurrentUser. Kept as their own methods

@@ -287,6 +287,95 @@ public partial class ApplicationDBContext
             i.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
         });
 
+        // Delegate app: the delegate's own day-by-day journal / report evidence.
+        modelBuilder.Entity<MissionJournalEntry>(j =>
+        {
+            j.ToTable("MissionJournalEntries");
+            j.HasKey(x => x.Id);
+            j.Property(x => x.Type).IsRequired().HasMaxLength(20);
+            j.Property(x => x.Title).HasMaxLength(300);
+            j.Property(x => x.Body).HasMaxLength(4000);
+            j.Property(x => x.FileUrl).HasMaxLength(1000);
+            j.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            j.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+
+            j.HasOne(x => x.EventGuest)
+                .WithMany()
+                .HasForeignKey(x => x.EventGuestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // NoAction: Session already cascades from Event, and a second cascade
+            // path into this table (Event → EventGuest → here) is refused by SQL Server.
+            j.HasOne(x => x.Session)
+                .WithMany()
+                .HasForeignKey(x => x.SessionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            j.HasIndex(x => new { x.EventGuestId, x.EntryDate });
+            j.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        // Delegate app: "request a change" on a flight or a stay.
+        modelBuilder.Entity<BookingChangeRequest>(r =>
+        {
+            r.ToTable("BookingChangeRequests");
+            r.HasKey(x => x.Id);
+            r.Property(x => x.BookingKind).IsRequired().HasMaxLength(20);
+            r.Property(x => x.ChangeType).IsRequired().HasMaxLength(40);
+            r.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue("requested");
+            r.Property(x => x.Notes).HasMaxLength(2000);
+            r.Property(x => x.ResolutionNote).HasMaxLength(1000);
+            r.Property(x => x.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            r.Property(x => x.IsDeleted).HasDefaultValueSql("((0))");
+
+            r.HasOne(x => x.EventGuest).WithMany().HasForeignKey(x => x.EventGuestId).OnDelete(DeleteBehavior.Cascade);
+            // Targets and lookups: NoAction — the request is history, and SQL Server
+            // refuses a second cascade path into this table anyway.
+            r.HasOne(x => x.Flight).WithMany().HasForeignKey(x => x.FlightId).OnDelete(DeleteBehavior.NoAction);
+            r.HasOne(x => x.Accommodation).WithMany().HasForeignKey(x => x.AccommodationId).OnDelete(DeleteBehavior.NoAction);
+            r.HasOne(x => x.FromAirport).WithMany().HasForeignKey(x => x.FromAirportId).OnDelete(DeleteBehavior.NoAction);
+            r.HasOne(x => x.ToAirport).WithMany().HasForeignKey(x => x.ToAirportId).OnDelete(DeleteBehavior.NoAction);
+            r.HasOne(x => x.Hotel).WithMany().HasForeignKey(x => x.HotelId).OnDelete(DeleteBehavior.NoAction);
+            r.HasOne(x => x.ResolvedByUser).WithMany().HasForeignKey(x => x.ResolvedBy).OnDelete(DeleteBehavior.Restrict);
+
+            r.HasIndex(x => new { x.EventGuestId, x.Status });
+            r.HasQueryFilter(x => x.IsDeleted == null || x.IsDeleted == false);
+        });
+
+        modelBuilder.Entity<Event>(e =>
+        {
+            e.Property(x => x.CancellationReason).HasMaxLength(500);
+            e.HasOne(x => x.Coordinator).WithMany().HasForeignKey(x => x.CoordinatorUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EventGuest>(eg =>
+        {
+            eg.Property(x => x.AccreditationNumber).HasMaxLength(40);
+            eg.Property(x => x.AccreditationCategory).HasMaxLength(10);
+            eg.Property(x => x.AccreditationCategoryLabel).HasMaxLength(60);
+            eg.Property(x => x.AccreditationZonesJson).HasMaxLength(2000);
+            eg.Property(x => x.PerDiemStatus).HasMaxLength(20);
+            eg.Property(x => x.PerDiemAmount).HasPrecision(12, 2);
+            eg.Property(x => x.PerDiemCurrency).HasMaxLength(3);
+            eg.Property(x => x.SettlementAmount).HasPrecision(12, 2);
+        });
+
+        modelBuilder.Entity<Flight>(f =>
+        {
+            f.Property(x => x.Airline).HasMaxLength(100);
+            f.Property(x => x.Pnr).HasMaxLength(20);
+            f.Property(x => x.ETicketNumber).HasMaxLength(40);
+        });
+        modelBuilder.Entity<FlightLeg>(l => l.Property(x => x.BaggageAllowance).HasMaxLength(60));
+        modelBuilder.Entity<Accommodation>(a =>
+        {
+            a.Property(x => x.RoomNumber).HasMaxLength(20);
+            a.Property(x => x.ConfirmationNumber).HasMaxLength(60);
+            a.Property(x => x.BoardBasis).HasMaxLength(60);
+        });
+        modelBuilder.Entity<PostMissionReport>(p => p.Property(x => x.KeyOutcomes).HasMaxLength(2000));
+        modelBuilder.Entity<MissionJournalEntry>(j => j.Property(x => x.Visibility).IsRequired().HasMaxLength(10).HasDefaultValue("shared"));
+
         modelBuilder.Entity<FieldDecision>(fd =>
         {
             fd.ToTable("FieldDecisions");

@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Core.ViewModel.Common;
 using Core.ViewModel.SupportChat;
-using Core.ViewModel.VipApp;
+using Core.ViewModel.DelegateApp;
 
 namespace Core.Interfaces.Services;
 
@@ -14,7 +14,7 @@ namespace Core.Interfaces.Services;
 // notify. Splitting it would duplicate that sequence in two places.
 public interface ISupportChatService
 {
-    // ---- Guest-facing (called from VipAppController) ----
+    // ---- Guest-facing (called from DelegateAppController) ----
     Task<ApiResponse<List<SupportConversationSummaryResponse>>> GetMyConversationsAsync(int guestId, CancellationToken ct = default);
     Task<ApiResponse<PaginatedResponse<SupportMessageResponse>>> GetGuestMessagesAsync(int guestId, PagedRequest request, CancellationToken ct = default);
     Task<ApiResponse<SupportMessageResponse>> SendGuestMessageAsync(int guestId, SendSupportMessageRequest request, CancellationToken ct = default);

@@ -18,7 +18,7 @@ namespace API.Controllers.v1;
 //
 // Both sides resolve through ICurrentUser: a driver token is a normal staff
 // User token, and a guest token's NameIdentifier is the guest's linked User.Id
-// (see VipAppService.BuildAccessToken), so one code path serves both. The
+// (see DelegateAppService.BuildAccessToken), so one code path serves both. The
 // service rejects any caller whose role isn't "driver" or "guest", and the
 // thread endpoint rejects anyone who isn't one of the two participants.
 // ============================================================================

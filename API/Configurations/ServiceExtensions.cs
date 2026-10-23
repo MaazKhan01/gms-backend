@@ -70,7 +70,6 @@ public static class ServiceExtensions
         services.AddScoped<IGuestOverviewService, GuestOverviewService>();
         services.AddScoped<IVehicleService, VehicleService>();
         services.AddScoped<IFleetProviderService, FleetProviderService>();
-        services.AddScoped<ITransportAppService, TransportAppService>();
         services.AddScoped<ILookupService, LookupService>();
         services.AddScoped<IVenueService, VenueService>();
         services.AddScoped<ISeatingService, SeatingService>();
@@ -98,7 +97,7 @@ public static class ServiceExtensions
         services.AddScoped<IIncidentService, IncidentService>();
         services.AddScoped<IFieldDecisionService, FieldDecisionService>();
         services.AddScoped<IBlobService, BlobService>();
-        services.AddScoped<IVipAppService, VipAppService>();
+        services.AddScoped<IDelegateAppService, DelegateAppService>();
         services.AddScoped<ISupportChatService, SupportChatService>();
         services.AddScoped<IConflictWindowPolicy, ZeroBufferConflictWindowPolicy>();
         services.AddScoped<ITransportationConflictValidator, TransportationConflictValidator>();

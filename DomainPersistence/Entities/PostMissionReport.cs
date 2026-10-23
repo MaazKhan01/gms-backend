@@ -16,6 +16,9 @@ public class PostMissionReport : Entity
     /// so a late correction to a booking is reflected automatically.</summary>
     public string Narrative { get; set; }
 
+    /// <summary>"Results, medals, relationships built…" — one line per outcome.</summary>
+    public string KeyOutcomes { get; set; }
+
     public DateTime? SubmittedOn { get; set; }
 
     /// <summary>How many reminders have gone out. Stored rather than derived
